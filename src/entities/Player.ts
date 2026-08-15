@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { PLAYER_BASE, XP_BASE, XP_GROWTH } from '../config/constants';
-import { TEX } from '../gfx/spriteDefs';
+import type { CharacterDef } from '../config/characters';
 
 export interface PowerupLevels {
   sunbeam: number;
@@ -38,13 +38,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   onLevelUp?: () => void;
   onDied?: () => void;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, TEX.player);
+  constructor(scene: Phaser.Scene, x: number, y: number, character: CharacterDef) {
+    super(scene, x, y, character.textureKey);
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(10);
+
+    this.maxHp = Math.round(PLAYER_BASE.maxHp * character.mods.maxHp);
+    this.hp = this.maxHp;
+    this.baseMoveSpeed = PLAYER_BASE.moveSpeed * character.mods.moveSpeed;
+    this.attackDamage = Math.round(PLAYER_BASE.attackDamage * character.mods.attackDamage);
+    this.attackCooldown = Math.round(PLAYER_BASE.attackCooldown * character.mods.attackCooldown);
+
+    const scale = character.displayScale;
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setCircle(30, 10, 22);
+    body.setCircle(30 * scale, 10 * scale, 22 * scale);
     body.setCollideWorldBounds(true);
 
     const keyboard = scene.input.keyboard!;

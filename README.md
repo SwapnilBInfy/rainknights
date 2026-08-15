@@ -9,12 +9,23 @@ non-anti-aliased pixels for a chunky, retro handheld look.
 
 ## Play
 
-- **Move**: WASD or Arrow keys
+- **Choose a knight**: Rain Knight (balanced), Hail Warden (tanky), or Storm
+  Chaser (fast/fragile) — each with different stats
+- **Move**: WASD or Arrow keys (blocked by lakes and rock clusters on the map)
 - **Attack**: automatic — your Storm Bolt fires at the nearest enemy in range
 - **Level up**: collect XP gems from defeated enemies, then pick one of three
   upgrades (weapon, stat, or weather power)
 - **Goal**: survive the escalating storm fronts and defeat the **Tornado**
   boss that arrives at the 5-minute mark
+
+### Live local weather
+
+Before each run, the game asks your browser for your location and checks the
+**real current weather there** (via the free [Open-Meteo](https://open-meteo.com/)
+API — no key required) to decide which storm front you *start* the run on:
+actually raining where you are means you start further into the storm. If
+location access is denied, unavailable, or the request times out, the run
+just starts calm — there's no hard dependency on it.
 
 ### Weather fronts (escalating difficulty)
 
@@ -61,10 +72,10 @@ environment variables required. It can be deployed to any static host:
 ```
 src/
   main.ts              Phaser game bootstrap
-  scenes/               Boot, Menu, Game, GameOver
+  scenes/               Boot, Menu, CharacterSelect, WeatherCheck, Game, GameOver
   entities/              Player, Projectile, enemy classes
-  systems/                 WeatherDirector, LevelUpSystem, PowerupSystem
+  systems/                 WeatherDirector, WeatherService, Terrain, LevelUpSystem, PowerupSystem
   gfx/                       procedural pixel-sprite generator + palette
   ui/                          HUD
-  config/                        tunable gameplay constants
+  config/                        characters, tunable gameplay constants
 ```

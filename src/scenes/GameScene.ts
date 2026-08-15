@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { WORLD, PLAYER_BASE } from '../config/constants';
 import { TEX } from '../gfx/spriteDefs';
+import { getCharacter } from '../config/characters';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import type { Enemy } from '../entities/enemies/Enemy';
@@ -9,7 +10,14 @@ import { createEnemy } from '../entities/enemies/factory';
 import { WeatherDirector, type WeatherHost } from '../systems/WeatherDirector';
 import { LevelUpSystem } from '../systems/LevelUpSystem';
 import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/PowerupSystem';
+import { buildTerrain, type TerrainResult } from '../systems/Terrain';
 import { HUD } from '../ui/HUD';
+
+interface GameSceneData {
+  characterId?: string;
+  startFrontIndex?: number;
+  weatherLabel?: string;
+}
 
 export class GameScene extends Phaser.Scene implements WeatherHost {
   player!: Player;
@@ -23,20 +31,23 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private bossSummonEvent: Phaser.Time.TimerEvent | null = null;
   private paused = false;
   private ambientDrops: Phaser.GameObjects.Image[] = [];
+  private terrain!: TerrainResult;
 
   constructor() {
     super('GameScene');
   }
 
-  create() {
+  create(data: GameSceneData = {}) {
     this.paused = false;
     this.boss = null;
     this.bossSummonEvent = null;
 
-    this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
-    this.add.tileSprite(0, 0, WORLD.width, WORLD.height, TEX.ground).setOrigin(0, 0).setDepth(0);
+    const character = getCharacter(data.characterId);
 
-    this.player = new Player(this, WORLD.width / 2, WORLD.height / 2);
+    this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
+    this.terrain = buildTerrain(this);
+
+    this.player = new Player(this, WORLD.width / 2, WORLD.height / 2, character);
     this.player.onDied = () => this.endRun(false);
     this.player.onLevelUp = () => this.pauseForLevelUp();
     this.player.on('sunbeamPulse', (radius: number, damage: number) => {
@@ -61,17 +72,22 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       undefined,
       this
     );
+    this.physics.add.collider(this.player, this.terrain.layer);
+    this.physics.add.collider(this.enemyGroup, this.terrain.layer);
 
     this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1.5);
 
-    this.weather = new WeatherDirector(this);
+    this.weather = new WeatherDirector(this, data.startFrontIndex ?? 0);
 
     const uiRoot = document.getElementById('ui')!;
     uiRoot.innerHTML = '';
     this.hud = new HUD(uiRoot);
     this.levelUpSystem = new LevelUpSystem(uiRoot);
+    if (data.weatherLabel) {
+      this.hud.showToast(`Today's storm: ${data.weatherLabel}`);
+    }
 
     this.setupAmbientWeather();
 

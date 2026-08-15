@@ -3,6 +3,10 @@ export const WORLD = {
   height: 3200,
 };
 
+export const TILE = 32;
+export const MAP_COLS = Math.ceil(WORLD.width / TILE);
+export const MAP_ROWS = Math.ceil(WORLD.height / TILE);
+
 export const PLAYER_BASE = {
   maxHp: 100,
   moveSpeed: 160,

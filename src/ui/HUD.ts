@@ -85,6 +85,18 @@ export class HUD {
     this.bossFill.style.width = `${pct}%`;
   }
 
+  showToast(text: string, durationMs = 4000) {
+    const toast = document.createElement('div');
+    toast.className = 'weather-toast';
+    toast.textContent = text;
+    this.root.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('visible'));
+    setTimeout(() => {
+      toast.classList.remove('visible');
+      setTimeout(() => toast.remove(), 400);
+    }, durationMs);
+  }
+
   destroy() {
     this.container.remove();
   }

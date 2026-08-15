@@ -8,13 +8,16 @@ export interface WeatherHost {
 
 export class WeatherDirector {
   private host: WeatherHost;
-  private elapsed = 0;
+  private elapsed: number;
   private spawnTimer = 0;
   private tornadoSpawned = false;
-  currentFrontIndex = 0;
+  currentFrontIndex: number;
 
-  constructor(host: WeatherHost) {
+  constructor(host: WeatherHost, startFrontIndex = 0) {
     this.host = host;
+    const clamped = Math.max(0, Math.min(WEATHER_FRONTS.length - 1, startFrontIndex));
+    this.currentFrontIndex = clamped;
+    this.elapsed = WEATHER_FRONTS[clamped].start;
   }
 
   update(delta: number) {

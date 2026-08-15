@@ -50,7 +50,7 @@ export class MenuScene extends Phaser.Scene {
       )
       .setOrigin(0.5);
 
-    const start = () => this.scene.start('GameScene');
+    const start = () => this.scene.start('CharacterSelectScene');
     this.input.once('pointerdown', start);
     this.input.keyboard?.once('keydown-SPACE', start);
     this.input.keyboard?.once('keydown-ENTER', start);

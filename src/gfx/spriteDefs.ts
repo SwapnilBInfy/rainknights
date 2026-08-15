@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
 import { generateBlobTexture, generateCompositeTexture } from './PixelSpriteFactory';
+import { TILE } from '../config/constants';
 import * as P from './palette';
 
 export const TEX = {
-  player: 'player',
+  playerRainKnight: 'player_rainKnight',
+  playerHailWarden: 'player_hailWarden',
+  playerStormChaser: 'player_stormChaser',
   rainImp: 'rainImp',
   windWraith: 'windWraith',
   hailBrute: 'hailBrute',
@@ -12,7 +15,7 @@ export const TEX = {
   tornadoBoss: 'tornadoBoss',
   xpGem: 'xpGem',
   projectile: 'projectile',
-  ground: 'ground',
+  terrainTiles: 'terrainTiles',
   puSun: 'puSun',
   puRainbow: 'puRainbow',
   puGale: 'puGale',
@@ -20,38 +23,71 @@ export const TEX = {
   puStatic: 'puStatic',
 } as const;
 
-function generateGroundTile(scene: Phaser.Scene) {
-  const key = TEX.ground;
+/** 5 tiles drawn side-by-side into one strip: grassA, grassB, path, water, rock. */
+function generateTerrainTileset(scene: Phaser.Scene) {
+  const key = TEX.terrainTiles;
   if (scene.textures.exists(key)) return;
-  const cell = 8;
-  const cells = 4;
+  const tiles: { main: number; fleck: number }[] = [
+    { main: P.GROUND_A, fleck: P.GROUND_B },
+    { main: P.GROUND_B, fleck: P.GROUND_A },
+    { main: P.PATH.main, fleck: P.PATH.highlight },
+    { main: P.WATER.main, fleck: P.WATER.highlight },
+    { main: P.ROCK.main, fleck: P.ROCK.shadow },
+  ];
   const g = scene.add.graphics();
-  for (let y = 0; y < cells; y++) {
-    for (let x = 0; x < cells; x++) {
-      const c = (x + y) % 2 === 0 ? P.GROUND_A : P.GROUND_B;
-      g.fillStyle(c, 1);
-      g.fillRect(x * cell, y * cell, cell, cell);
+  tiles.forEach((t, i) => {
+    const ox = i * TILE;
+    g.fillStyle(t.main, 1);
+    g.fillRect(ox, 0, TILE, TILE);
+    for (let f = 0; f < 8; f++) {
+      const fx = ox + 2 + Math.floor(Math.random() * (TILE - 8));
+      const fy = 2 + Math.floor(Math.random() * (TILE - 8));
+      g.fillStyle(t.fleck, 0.5);
+      g.fillRect(fx, fy, 4, 4);
     }
-  }
-  g.generateTexture(key, cells * cell, cells * cell);
+  });
+  g.generateTexture(key, tiles.length * TILE, TILE);
   g.destroy();
 }
 
-export function generateAllTextures(scene: Phaser.Scene) {
-  generateGroundTile(scene);
-
-  // Player: chibi knight — body + head + visor accent, stacked.
+/** Composite chibi-knight texture: body + head + visor accent, stacked. */
+function generatePlayerTexture(
+  scene: Phaser.Scene,
+  key: string,
+  palette: { main: number; highlight: number; shadow: number; accent: number },
+  bodyRadius: number,
+  headRadius: number,
+  visorRadius: number,
+  gridSize: number
+) {
+  const bodyOffset = bodyRadius * 0.65;
+  const headOffset = headRadius * 0.88;
   generateCompositeTexture(
     scene,
-    TEX.player,
+    key,
     [
-      { offsetX: 0, offsetY: 3, radius: 4.6, shape: 'circle', ...P.PLAYER },
-      { offsetX: 0, offsetY: -3, radius: 3.4, shape: 'circle', ...P.PLAYER },
-      { offsetX: 0, offsetY: -3.2, radius: 1.1, shape: 'circle', main: P.PLAYER.accent, outline: P.PLAYER.accent },
+      { offsetX: 0, offsetY: bodyOffset, radius: bodyRadius, shape: 'circle', ...palette },
+      { offsetX: 0, offsetY: -headOffset, radius: headRadius, shape: 'circle', ...palette },
+      {
+        offsetX: 0,
+        offsetY: -headOffset - 0.2,
+        radius: visorRadius,
+        shape: 'circle',
+        main: palette.accent,
+        outline: palette.accent,
+      },
     ],
-    20,
+    gridSize,
     5
   );
+}
+
+export function generateAllTextures(scene: Phaser.Scene) {
+  generateTerrainTileset(scene);
+
+  generatePlayerTexture(scene, TEX.playerRainKnight, P.PLAYER, 4.6, 3.4, 1.1, 20);
+  generatePlayerTexture(scene, TEX.playerHailWarden, P.PLAYER_HAIL, 5.6, 4.0, 1.2, 24);
+  generatePlayerTexture(scene, TEX.playerStormChaser, P.PLAYER_STORM, 3.8, 2.8, 0.9, 18);
 
   generateBlobTexture(scene, TEX.rainImp, { radius: 4, shape: 'drop', ...P.RAIN_IMP }, 5);
   generateBlobTexture(

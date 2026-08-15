@@ -58,7 +58,7 @@ export class GameOverScene extends Phaser.Scene {
       .setOrigin(0.5);
     this.tweens.add({ targets: prompt, alpha: 0.2, duration: 650, yoyo: true, repeat: -1 });
 
-    const restart = () => this.scene.start('GameScene');
+    const restart = () => this.scene.start('CharacterSelectScene');
     this.input.once('pointerdown', restart);
     this.input.keyboard?.once('keydown-SPACE', restart);
   }

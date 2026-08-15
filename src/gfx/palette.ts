@@ -11,6 +11,24 @@ export const PLAYER = {
   accent: 0xdb3b3b,
 };
 
+export const PLAYER_HAIL = {
+  main: 0xc9d3da,
+  highlight: 0xffffff,
+  shadow: 0x7c8894,
+  accent: 0x4fd2e8,
+};
+
+export const PLAYER_STORM = {
+  main: 0xfff066,
+  highlight: 0xffffff,
+  shadow: 0xc9a800,
+  accent: 0x2a2440,
+};
+
+export const WATER = { main: 0x2f6fb0, highlight: 0x6fb8e8, shadow: 0x1c3f6f };
+export const ROCK = { main: 0x6b6d78, highlight: 0x9092a0, shadow: 0x3a3b45 };
+export const PATH = { main: 0x8a6a45, highlight: 0xb08a5c, shadow: 0x5c4529 };
+
 export const RAIN_IMP = { main: 0x3aa0e0, highlight: 0x9fd8ff, shadow: 0x1c5f8f };
 export const WIND_WRAITH = { main: 0xbfe9e6, highlight: 0xffffff, shadow: 0x6fb6b0 };
 export const HAIL_BRUTE = { main: 0xc9d3da, highlight: 0xffffff, shadow: 0x7c8894 };
