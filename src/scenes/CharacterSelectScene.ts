@@ -100,6 +100,6 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private choose(character: CharacterDef) {
     this.input.keyboard?.removeAllListeners();
-    this.scene.start('WeatherCheckScene', { characterId: character.id });
+    this.scene.start('RegionSelectScene', { characterId: character.id });
   }
 }

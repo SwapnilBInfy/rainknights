@@ -1,82 +1,83 @@
-import { WEATHER_FRONTS } from '../config/constants';
+import type { RegionDef } from '../config/regions';
 
-export interface LocalWeatherResult {
-  frontIndex: number;
+export interface RegionWeatherState {
+  condition: string;
   label: string;
+  glyph: string;
+  frontIndex: number;
+  tint: number;
+  temp: number;
   source: 'live' | 'fallback';
 }
 
-const FALLBACK: LocalWeatherResult = {
-  frontIndex: 0,
-  label: 'Unknown skies — starting calm',
-  source: 'fallback',
-};
+const THUNDER_CODES = [95, 96, 99];
+const RAINY_CODES = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82];
 
-type Category = 'clear' | 'cloudy' | 'drizzle' | 'rain' | 'snow' | 'thunder';
-
-const CATEGORY_TO_FRONT: Record<Category, number> = {
-  clear: 0,
-  cloudy: 0,
-  drizzle: 0,
-  rain: 2,
-  snow: 4,
-  thunder: 3,
-};
-
-const CATEGORY_LABEL: Record<Category, string> = {
-  clear: 'Clear skies',
-  cloudy: 'Cloudy',
-  drizzle: 'Drizzle',
-  rain: 'Rain',
-  snow: 'Snow',
-  thunder: 'Thunderstorms',
-};
-
-function categorize(code: number): Category {
-  if (code === 0) return 'clear';
-  if ([1, 2, 3, 45, 48].includes(code)) return 'cloudy';
-  if ([51, 53, 55, 56, 57].includes(code)) return 'drizzle';
-  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return 'rain';
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return 'snow';
-  if ([95, 96, 99].includes(code)) return 'thunder';
-  return 'cloudy';
+interface Reading {
+  code: number;
+  temp: number;
+  wind: number;
+  humidity: number;
 }
 
-function getPosition(): Promise<{ lat: number; lon: number }> {
-  return new Promise((resolve, reject) => {
-    if (!('geolocation' in navigator)) {
-      reject(new Error('Geolocation unavailable'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-      (err) => reject(err),
-      { timeout: 6000, maximumAge: 10 * 60 * 1000 }
-    );
-  });
+type Classified = Omit<RegionWeatherState, 'temp' | 'source'>;
+
+function classifyNYC({ code, temp, wind }: Reading): Classified {
+  if (THUNDER_CODES.includes(code)) {
+    return { condition: 'thunderstorm', label: 'Thunderstorm', glyph: '⛈', frontIndex: 3, tint: 0x1c2440 };
+  }
+  if (temp <= 5) {
+    return { condition: 'cold_front', label: 'Cold Front', glyph: '❄', frontIndex: 4, tint: 0x8fd8ff };
+  }
+  if (wind >= 30) {
+    return { condition: 'windy', label: 'Urban Wind', glyph: '💨', frontIndex: 1, tint: 0x6f8f7a };
+  }
+  if (RAINY_CODES.includes(code)) {
+    return { condition: 'rain', label: 'Rain', glyph: '🌧', frontIndex: 0, tint: 0x3a5f7a };
+  }
+  return { condition: 'clear', label: 'Clear', glyph: '☀', frontIndex: 0, tint: 0x8fe0ff };
 }
 
-export async function fetchLocalWeatherFront(): Promise<LocalWeatherResult> {
+function classifyMiami({ code, temp, wind, humidity }: Reading): Classified {
+  if (THUNDER_CODES.includes(code) && wind >= 60) {
+    return { condition: 'hurricane', label: 'Hurricane Risk', glyph: '🌀', frontIndex: 5, tint: 0x2a1f3a };
+  }
+  if (THUNDER_CODES.includes(code) || RAINY_CODES.includes(code)) {
+    return { condition: 'tropical_downpour', label: 'Tropical Downpour', glyph: '🌴', frontIndex: 3, tint: 0x2f6f8f };
+  }
+  if (temp >= 30) {
+    return { condition: 'heat', label: 'Heat', glyph: '🔥', frontIndex: 1, tint: 0xffb347 };
+  }
+  if (humidity >= 70) {
+    return { condition: 'humid', label: 'Humid', glyph: '💧', frontIndex: 0, tint: 0x5fae9a };
+  }
+  return { condition: 'clear', label: 'Clear', glyph: '☀', frontIndex: 0, tint: 0xffe9b3 };
+}
+
+function fallbackFor(region: RegionDef): RegionWeatherState {
+  const base = region.id === 'miami'
+    ? { condition: 'clear', label: 'Unknown skies', glyph: '☀', frontIndex: 0, tint: 0xffe9b3, temp: 28 }
+    : { condition: 'clear', label: 'Unknown skies', glyph: '☀', frontIndex: 0, tint: 0x8fe0ff, temp: 15 };
+  return { ...base, source: 'fallback' };
+}
+
+export async function fetchRegionWeather(region: RegionDef): Promise<RegionWeatherState> {
   try {
-    const { lat, lon } = await getPosition();
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,wind_speed_10m&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${region.lat}&longitude=${region.lon}&current=temperature_2m,weather_code,wind_speed_10m,relative_humidity_2m&timezone=auto`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Weather API error ${res.status}`);
     const json = await res.json();
 
-    const code: number = json.current?.weather_code ?? 0;
-    const temp: number = json.current?.temperature_2m ?? 15;
-    const wind: number = json.current?.wind_speed_10m ?? 0;
+    const reading: Reading = {
+      code: json.current?.weather_code ?? 0,
+      temp: json.current?.temperature_2m ?? 20,
+      wind: json.current?.wind_speed_10m ?? 0,
+      humidity: json.current?.relative_humidity_2m ?? 50,
+    };
 
-    const category = categorize(code);
-    const windy = wind >= 30;
-    let frontIndex = CATEGORY_TO_FRONT[category];
-    if (windy) frontIndex = Math.max(frontIndex, 1);
-    frontIndex = Math.max(0, Math.min(WEATHER_FRONTS.length - 1, frontIndex));
-
-    const label = `${CATEGORY_LABEL[category]} · ${Math.round(temp)}°C${windy ? ' · breezy' : ''}`;
-    return { frontIndex, label, source: 'live' };
+    const classified = region.id === 'miami' ? classifyMiami(reading) : classifyNYC(reading);
+    return { ...classified, temp: reading.temp, source: 'live' };
   } catch {
-    return FALLBACK;
+    return fallbackFor(region);
   }
 }

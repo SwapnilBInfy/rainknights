@@ -15,7 +15,8 @@ export const TEX = {
   tornadoBoss: 'tornadoBoss',
   xpGem: 'xpGem',
   projectile: 'projectile',
-  terrainTiles: 'terrainTiles',
+  terrainTilesNyc: 'terrainTiles_nyc',
+  terrainTilesMiami: 'terrainTiles_miami',
   puSun: 'puSun',
   puRainbow: 'puRainbow',
   puGale: 'puGale',
@@ -23,16 +24,23 @@ export const TEX = {
   puStatic: 'puStatic',
 } as const;
 
+interface RegionTerrainPalette {
+  groundA: number;
+  groundB: number;
+  path: { main: number; highlight: number };
+  water: { main: number; highlight: number };
+  rock: { main: number; shadow: number };
+}
+
 /** 5 tiles drawn side-by-side into one strip: grassA, grassB, path, water, rock. */
-function generateTerrainTileset(scene: Phaser.Scene) {
-  const key = TEX.terrainTiles;
+function generateTerrainTileset(scene: Phaser.Scene, key: string, palette: RegionTerrainPalette) {
   if (scene.textures.exists(key)) return;
   const tiles: { main: number; fleck: number }[] = [
-    { main: P.GROUND_A, fleck: P.GROUND_B },
-    { main: P.GROUND_B, fleck: P.GROUND_A },
-    { main: P.PATH.main, fleck: P.PATH.highlight },
-    { main: P.WATER.main, fleck: P.WATER.highlight },
-    { main: P.ROCK.main, fleck: P.ROCK.shadow },
+    { main: palette.groundA, fleck: palette.groundB },
+    { main: palette.groundB, fleck: palette.groundA },
+    { main: palette.path.main, fleck: palette.path.highlight },
+    { main: palette.water.main, fleck: palette.water.highlight },
+    { main: palette.rock.main, fleck: palette.rock.shadow },
   ];
   const g = scene.add.graphics();
   tiles.forEach((t, i) => {
@@ -83,7 +91,8 @@ function generatePlayerTexture(
 }
 
 export function generateAllTextures(scene: Phaser.Scene) {
-  generateTerrainTileset(scene);
+  generateTerrainTileset(scene, TEX.terrainTilesNyc, P.NYC_TERRAIN);
+  generateTerrainTileset(scene, TEX.terrainTilesMiami, P.MIAMI_TERRAIN);
 
   generatePlayerTexture(scene, TEX.playerRainKnight, P.PLAYER, 4.6, 3.4, 1.1, 20);
   generatePlayerTexture(scene, TEX.playerHailWarden, P.PLAYER_HAIL, 5.6, 4.0, 1.2, 24);

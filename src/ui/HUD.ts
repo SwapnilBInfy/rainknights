@@ -11,6 +11,7 @@ export class HUD {
   private weatherLabel!: HTMLElement;
   private bossWrap!: HTMLElement;
   private bossFill!: HTMLElement;
+  private conditionBadge!: HTMLElement;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -41,6 +42,10 @@ export class HUD {
           <div class="hud-bar-fill boss-fill"></div>
         </div>
       </div>
+      <div class="hud-condition-badge">
+        <span class="hud-condition-glyph"></span>
+        <span class="hud-condition-label"></span>
+      </div>
     `;
     this.root.appendChild(this.container);
 
@@ -52,6 +57,12 @@ export class HUD {
     this.weatherLabel = this.container.querySelector('.hud-weather')!;
     this.bossWrap = this.container.querySelector('.hud-boss-wrap')!;
     this.bossFill = this.container.querySelector('.boss-fill')!;
+    this.conditionBadge = this.container.querySelector('.hud-condition-badge')!;
+  }
+
+  setWeatherCondition(glyph: string, label: string) {
+    this.conditionBadge.querySelector('.hud-condition-glyph')!.textContent = glyph;
+    this.conditionBadge.querySelector('.hud-condition-label')!.textContent = label;
   }
 
   update(player: Player, elapsedSeconds: number, frontName: string) {

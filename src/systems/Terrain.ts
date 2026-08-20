@@ -1,6 +1,18 @@
 import Phaser from 'phaser';
 import { TILE, MAP_COLS, MAP_ROWS } from '../config/constants';
-import { TEX } from '../gfx/spriteDefs';
+import type { RegionDef } from '../config/regions';
+
+interface DensityProfile {
+  waterBlobs: number;
+  rockBlobs: number;
+  pathBlobs: number;
+}
+
+const DENSITY_BY_REGION: Record<string, DensityProfile> = {
+  nyc: { waterBlobs: 3, rockBlobs: 18, pathBlobs: 8 },
+  miami: { waterBlobs: 10, rockBlobs: 6, pathBlobs: 4 },
+};
+const DEFAULT_DENSITY: DensityProfile = { waterBlobs: 5, rockBlobs: 12, pathBlobs: 6 };
 
 export const TileType = {
   GRASS_A: 0,
@@ -30,7 +42,7 @@ function carveBlob(grid: number[][], cx: number, cy: number, radius: number, til
   }
 }
 
-function generateTerrainData(): number[][] {
+function generateTerrainData(density: DensityProfile): number[][] {
   const grid: number[][] = [];
   for (let y = 0; y < MAP_ROWS; y++) {
     const row: number[] = [];
@@ -40,19 +52,19 @@ function generateTerrainData(): number[][] {
     grid.push(row);
   }
 
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < density.pathBlobs; i++) {
     const cx = Phaser.Math.Between(5, MAP_COLS - 5);
     const cy = Phaser.Math.Between(5, MAP_ROWS - 5);
     carveBlob(grid, cx, cy, Phaser.Math.Between(3, 6), TileType.PATH);
   }
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < density.waterBlobs; i++) {
     const cx = Phaser.Math.Between(6, MAP_COLS - 6);
     const cy = Phaser.Math.Between(6, MAP_ROWS - 6);
     carveBlob(grid, cx, cy, Phaser.Math.Between(4, 7), TileType.WATER);
   }
 
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < density.rockBlobs; i++) {
     const cx = Phaser.Math.Between(3, MAP_COLS - 3);
     const cy = Phaser.Math.Between(3, MAP_ROWS - 3);
     carveBlob(grid, cx, cy, Phaser.Math.Between(2, 4), TileType.ROCK);
@@ -73,10 +85,12 @@ function generateTerrainData(): number[][] {
   return grid;
 }
 
-export function buildTerrain(scene: Phaser.Scene): TerrainResult {
-  const data = generateTerrainData();
+export function buildTerrain(scene: Phaser.Scene, region: RegionDef): TerrainResult {
+  const density = DENSITY_BY_REGION[region.id] ?? DEFAULT_DENSITY;
+  const data = generateTerrainData(density);
   const tilemap = scene.make.tilemap({ data, tileWidth: TILE, tileHeight: TILE });
-  const tileset = tilemap.addTilesetImage(TEX.terrainTiles, TEX.terrainTiles, TILE, TILE)!;
+  const key = region.terrainTilesKey;
+  const tileset = tilemap.addTilesetImage(key, key, TILE, TILE)!;
   const layer = tilemap.createLayer(0, tileset, 0, 0)!;
   layer.setCollision([TileType.WATER, TileType.ROCK]);
   layer.setDepth(0);

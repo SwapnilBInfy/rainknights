@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { WORLD, PLAYER_BASE } from '../config/constants';
 import { TEX } from '../gfx/spriteDefs';
 import { getCharacter } from '../config/characters';
+import { getRegion } from '../config/regions';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import type { Enemy } from '../entities/enemies/Enemy';
@@ -15,8 +16,11 @@ import { HUD } from '../ui/HUD';
 
 interface GameSceneData {
   characterId?: string;
+  regionId?: string;
   startFrontIndex?: number;
   weatherLabel?: string;
+  weatherGlyph?: string;
+  weatherTint?: number;
 }
 
 export class GameScene extends Phaser.Scene implements WeatherHost {
@@ -43,9 +47,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.bossSummonEvent = null;
 
     const character = getCharacter(data.characterId);
+    const region = getRegion(data.regionId);
 
     this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
-    this.terrain = buildTerrain(this);
+    this.terrain = buildTerrain(this, region);
 
     this.player = new Player(this, WORLD.width / 2, WORLD.height / 2, character);
     this.player.onDied = () => this.endRun(false);
@@ -85,11 +90,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     uiRoot.innerHTML = '';
     this.hud = new HUD(uiRoot);
     this.levelUpSystem = new LevelUpSystem(uiRoot);
-    if (data.weatherLabel) {
-      this.hud.showToast(`Today's storm: ${data.weatherLabel}`);
-    }
+    this.hud.setWeatherCondition(data.weatherGlyph ?? '☀', data.weatherLabel ?? 'Unknown skies');
 
-    this.setupAmbientWeather();
+    this.setupAmbientWeather(data.weatherTint ?? 0x8fe0ff);
 
     this.events.once('shutdown', () => {
       this.hud.destroy();
@@ -299,7 +302,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   // --- ambient weather ---
 
-  private setupAmbientWeather() {
+  private setupAmbientWeather(tint: number) {
+    this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, tint, 0.08)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(0.5);
+
     const { width, height } = this.scale;
     for (let i = 0; i < 26; i++) {
       const drop = this.add.image(
@@ -307,7 +316,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         Phaser.Math.Between(0, height),
         TEX.projectile
       );
-      drop.setScrollFactor(0).setDepth(1).setAlpha(0.3).setScale(0.55).setTint(0x8fe0ff);
+      drop.setScrollFactor(0).setDepth(1).setAlpha(0.3).setScale(0.55).setTint(tint);
       this.ambientDrops.push(drop);
     }
   }

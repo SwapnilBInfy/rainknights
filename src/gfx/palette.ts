@@ -1,8 +1,21 @@
 // Small limited retro palette. Kept intentionally narrow for a chunky, GBA-era feel.
 export const OUTLINE = 0x14121f;
 
-export const GROUND_A = 0x1c2b1c;
-export const GROUND_B = 0x223522;
+export const NYC_TERRAIN = {
+  groundA: 0x4a4a52,
+  groundB: 0x3a3a42,
+  path: { main: 0x2a2a30, highlight: 0x55555f },
+  water: { main: 0x3a5f7a, highlight: 0x6fa8c9 },
+  rock: { main: 0x55565f, shadow: 0x2f3038 },
+};
+
+export const MIAMI_TERRAIN = {
+  groundA: 0xe8c98a,
+  groundB: 0xd9b56f,
+  path: { main: 0xb08a5c, highlight: 0xd9b56f },
+  water: { main: 0x2fb0a8, highlight: 0x7fe8df },
+  rock: { main: 0xd98f7a, shadow: 0x9a5f4f },
+};
 
 export const PLAYER = {
   main: 0x3b6fd6,
@@ -24,10 +37,6 @@ export const PLAYER_STORM = {
   shadow: 0xc9a800,
   accent: 0x2a2440,
 };
-
-export const WATER = { main: 0x2f6fb0, highlight: 0x6fb8e8, shadow: 0x1c3f6f };
-export const ROCK = { main: 0x6b6d78, highlight: 0x9092a0, shadow: 0x3a3b45 };
-export const PATH = { main: 0x8a6a45, highlight: 0xb08a5c, shadow: 0x5c4529 };
 
 export const RAIN_IMP = { main: 0x3aa0e0, highlight: 0x9fd8ff, shadow: 0x1c5f8f };
 export const WIND_WRAITH = { main: 0xbfe9e6, highlight: 0xffffff, shadow: 0x6fb6b0 };
