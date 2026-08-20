@@ -35,11 +35,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: { up: Phaser.Input.Keyboard.Key; down: Phaser.Input.Keyboard.Key; left: Phaser.Input.Keyboard.Key; right: Phaser.Input.Keyboard.Key };
 
+  private hasSpriteArt: boolean;
+  private walkAnimKey: string;
+  private idleTextureKey: string;
+  private wasMoving = false;
+
   onLevelUp?: () => void;
   onDied?: () => void;
 
   constructor(scene: Phaser.Scene, x: number, y: number, character: CharacterDef) {
-    super(scene, x, y, character.textureKey);
+    const hasSpriteArt =
+      scene.textures.exists(character.idleTextureKey) && scene.textures.exists(character.strideTextureKey);
+    super(scene, x, y, hasSpriteArt ? character.idleTextureKey : character.textureKey);
+    this.hasSpriteArt = hasSpriteArt;
+    this.walkAnimKey = `walk_${character.id}`;
+    this.idleTextureKey = character.idleTextureKey;
+
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(10);
@@ -50,9 +61,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.attackDamage = Math.round(PLAYER_BASE.attackDamage * character.mods.attackDamage);
     this.attackCooldown = Math.round(PLAYER_BASE.attackCooldown * character.mods.attackCooldown);
 
-    const scale = character.displayScale;
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setCircle(30 * scale, 10 * scale, 22 * scale);
+    if (hasSpriteArt) {
+      const scale = character.spriteScale;
+      this.setScale(scale);
+      body.setCircle(90 * scale, 102 * scale, 102 * scale);
+    } else {
+      const scale = character.displayScale;
+      body.setCircle(30 * scale, 10 * scale, 22 * scale);
+    }
     body.setCollideWorldBounds(true);
 
     const keyboard = scene.input.keyboard!;
@@ -85,11 +102,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       (right ? 1 : 0) - (left ? 1 : 0),
       (down ? 1 : 0) - (up ? 1 : 0)
     );
-    if (dir.lengthSq() > 0) {
+    const moving = dir.lengthSq() > 0;
+    if (moving) {
       dir.normalize();
       if (dir.x !== 0) this.setFlipX(dir.x < 0);
     }
     this.setVelocity(dir.x * this.effectiveMoveSpeed, dir.y * this.effectiveMoveSpeed);
+    this.updateWalkAnimation(moving);
+  }
+
+  private updateWalkAnimation(moving: boolean) {
+    if (!this.hasSpriteArt) return;
+    if (moving) {
+      // "Running" is a faster playback of the same 2-pose cycle while
+      // Gale Force is active, rather than a separate sprint sprite.
+      const frameRate = this.powerups.gale > 0 ? 8 : 4;
+      if (!this.anims.isPlaying || this.anims.currentAnim?.key !== this.walkAnimKey) {
+        this.play({ key: this.walkAnimKey, frameRate });
+      } else {
+        this.anims.msPerFrame = 1000 / frameRate;
+      }
+    } else if (this.wasMoving) {
+      this.anims.stop();
+      this.setTexture(this.idleTextureKey);
+    }
+    this.wasMoving = moving;
   }
 
   private handleAuras(time: number, _delta: number) {

@@ -47,9 +47,11 @@ export class CharacterSelectScene extends Phaser.Scene {
         .rectangle(px, panelY, panelW, panelH, 0x14121f, 0.85)
         .setStrokeStyle(2, 0x3a3550);
 
-      this.add
-        .image(px, panelY - 95, character.textureKey)
-        .setScale(character.displayScale * 2.1);
+      if (this.textures.exists(character.idleTextureKey)) {
+        this.add.image(px, panelY - 95, character.idleTextureKey).setDisplaySize(140, 140);
+      } else {
+        this.add.image(px, panelY - 95, character.textureKey).setScale(character.displayScale * 2.1);
+      }
 
       this.add
         .text(px, panelY - 15, character.name, {
