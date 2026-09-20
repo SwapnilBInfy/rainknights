@@ -16,7 +16,8 @@ const OUT_DIR = join(__dirname, '..', 'public', 'assets', 'generated');
 // gpt-image-1 only generates at large fixed sizes; every asset here is
 // displayed small in-game, so these get downscaled/normalized after
 // generation to keep the shipped bundle lean.
-const EMBLEM_SIZE = { width: 384, height: 256 };
+// Emblems are shown at native GBA size (96x64) with a 32-color palette.
+const EMBLEM_SIZE = { width: 96, height: 64 };
 const CHARACTER_CANVAS = 384; // square, character trimmed+centered within it
 
 const PIXEL_ART_STYLE =
@@ -102,13 +103,17 @@ async function generateOne(entry) {
       outPath,
     ]);
   } else {
-    await run('ffmpeg', [
-      '-y',
-      '-i',
+    await run('magick', [
       rawPath,
-      '-vf',
-      `scale=${EMBLEM_SIZE.width}:${EMBLEM_SIZE.height}`,
-      outPath,
+      '-filter',
+      'box',
+      '-resize',
+      `${EMBLEM_SIZE.width}x${EMBLEM_SIZE.height}`,
+      '-dither',
+      'None',
+      '-colors',
+      '32',
+      `PNG8:${outPath}`,
     ]);
   }
 

@@ -51,6 +51,8 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   preUpdate(time: number, delta: number) {
     super.preUpdate(time, delta);
     if (!this.active || !this.target.active) return;
+    // Two-frame idle bob: mirror the sprite every ~280ms, like a GBA critter.
+    this.setFlipX(Math.floor((time + this.wobbleSeed) / 280) % 2 === 0);
     this.behavior(time, delta);
   }
 

@@ -311,13 +311,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       .setDepth(0.5);
 
     const { width, height } = this.scale;
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 22; i++) {
       const drop = this.add.image(
         Phaser.Math.Between(0, width),
         Phaser.Math.Between(0, height),
-        TEX.projectile
+        TEX.rain
       );
-      drop.setScrollFactor(0).setDepth(1).setAlpha(0.3).setScale(0.55).setTint(tint);
+      drop.setScrollFactor(0).setDepth(1).setAlpha(0.65).setTint(tint);
       this.ambientDrops.push(drop);
     }
   }
@@ -325,10 +325,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private updateAmbientWeather(delta: number) {
     const { width, height } = this.scale;
     for (const drop of this.ambientDrops) {
-      drop.y += (130 * delta) / 1000;
-      if (drop.y > height + 10) {
-        drop.y = -10;
-        drop.x = Phaser.Math.Between(0, width);
+      drop.y += (110 * delta) / 1000;
+      drop.x -= (40 * delta) / 1000;
+      if (drop.y > height + 6 || drop.x < -4) {
+        drop.y = -6;
+        drop.x = Phaser.Math.Between(0, width + 40);
       }
     }
   }

@@ -1,20 +1,34 @@
+import type { TerrainTheme } from './tiles';
+
 // Small limited retro palette. Kept intentionally narrow for a chunky, GBA-era feel.
 export const OUTLINE = 0x14121f;
 
-export const NYC_TERRAIN = {
-  groundA: 0x4a4a52,
-  groundB: 0x3a3a42,
-  path: { main: 0x2a2a30, highlight: 0x55555f },
-  water: { main: 0x3a5f7a, highlight: 0x6fa8c9 },
-  rock: { main: 0x55565f, shadow: 0x2f3038 },
+export const NYC_TERRAIN: TerrainTheme = {
+  style: 'pavement',
+  groundA: 0x9aa2b2,
+  groundB: 0x8e96a8,
+  pathA: 0x555c6c,
+  pathB: 0xe8d050,
+  water: 0x5c8cc8,
+  waterLight: 0x98c0f0,
+  waterDark: 0x3c64a0,
+  rock: 0x7c7f8c,
+  rockLight: 0xa8acb8,
+  rockDark: 0x3c3e4a,
 };
 
-export const MIAMI_TERRAIN = {
-  groundA: 0xe8c98a,
-  groundB: 0xd9b56f,
-  path: { main: 0xb08a5c, highlight: 0xd9b56f },
-  water: { main: 0x2fb0a8, highlight: 0x7fe8df },
-  rock: { main: 0xd98f7a, shadow: 0x9a5f4f },
+export const MIAMI_TERRAIN: TerrainTheme = {
+  style: 'sand',
+  groundA: 0xf0dc98,
+  groundB: 0xe6cc80,
+  pathA: 0xc09058,
+  pathB: 0x8c6238,
+  water: 0x38c0c0,
+  waterLight: 0x88f0e8,
+  waterDark: 0x1c8890,
+  rock: 0xe89080,
+  rockLight: 0xf8c0b0,
+  rockDark: 0x8a4a40,
 };
 
 export const RAIN_IMP = { main: 0x3aa0e0, highlight: 0x9fd8ff, shadow: 0x1c5f8f };
