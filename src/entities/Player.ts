@@ -3,6 +3,7 @@ import { PLAYER_BASE, XP_BASE, XP_GROWTH } from '../config/constants';
 import type { CharacterDef } from '../config/characters';
 import { chibiKey, type Facing, type WeaponType } from '../gfx/chibi';
 import { weaponKey, SLASH_KEY } from '../gfx/weapons';
+import { audio } from '../audio/engine';
 
 export interface PowerupLevels {
   sunbeam: number;
@@ -264,6 +265,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   takeDamage(amount: number, time: number) {
     if (this.isInvulnerable(time) || this.hp <= 0) return;
     this.hp -= amount;
+    audio.play('hurt');
     this.invulnerableUntil = time + 500;
     this.setTintFill(0xff4040);
     this.scene.time.delayedCall(120, () => {

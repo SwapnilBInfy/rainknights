@@ -1,3 +1,5 @@
+import type { SongKey } from '../audio/music';
+
 export interface RegionDef {
   id: string;
   name: string;
@@ -6,6 +8,7 @@ export interface RegionDef {
   lon: number;
   emblemKey: string;
   terrainTilesKey: string;
+  music: SongKey;
 }
 
 export const REGIONS: RegionDef[] = [
@@ -17,6 +20,7 @@ export const REGIONS: RegionDef[] = [
     lon: -74.006,
     emblemKey: 'emblem_nyc',
     terrainTilesKey: 'terrainTiles_nyc',
+    music: 'nyc',
   },
   {
     id: 'miami',
@@ -26,6 +30,7 @@ export const REGIONS: RegionDef[] = [
     lon: -80.1918,
     emblemKey: 'emblem_miami',
     terrainTilesKey: 'terrainTiles_miami',
+    music: 'miami',
   },
 ];
 

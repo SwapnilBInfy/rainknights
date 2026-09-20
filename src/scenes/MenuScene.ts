@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTERS } from '../config/characters';
 import { TEX } from '../gfx/spriteDefs';
 import { FONT, textStyle } from '../ui/Window';
+import { audio } from '../audio/engine';
 
 const ANIMATED = ['down', 'side', 'down'] as const;
 
@@ -48,7 +49,13 @@ export class MenuScene extends Phaser.Scene {
       this.drops.push(drop);
     }
 
-    const go = () => this.scene.start('CharacterSelectScene');
+    this.add.text(width - 4, 4, 'M: MUTE', { ...textStyle('#c8c8e8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(1, 0).setDepth(5);
+    audio.playMusic('title');
+
+    const go = () => {
+      audio.play('confirm');
+      this.scene.start('CharacterSelectScene');
+    };
     this.input.once('pointerdown', go);
     this.input.keyboard?.once('keydown-SPACE', go);
     this.input.keyboard?.once('keydown-ENTER', go);

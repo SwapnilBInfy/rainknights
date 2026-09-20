@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
 import { drawWindow, drawCursor, textStyle } from '../ui/Window';
+import { audio } from '../audio/engine';
 
 export interface UpgradeOption {
   id: string;
@@ -129,13 +130,17 @@ export class LevelUpSystem {
         .setInteractive({ useHandCursor: true })
     );
 
+    let lastShown = -1;
     const render = () => {
+      if (lastShown !== -1 && lastShown !== selected) audio.play('move');
+      lastShown = selected;
       cursor.clear();
       drawCursor(cursor, 68, 55 + selected * 16);
       names.forEach((n, i) => n.setColor(i === selected ? '#c07800' : '#383838'));
       desc.setText(options[selected].description);
     };
     const confirm = (i: number) => {
+      audio.play('confirm');
       options[i].apply(player);
       this.close();
       onResume();

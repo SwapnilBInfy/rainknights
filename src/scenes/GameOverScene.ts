@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { drawWindow, FONT, textStyle } from '../ui/Window';
+import { audio } from '../audio/engine';
 
 interface GameOverData {
   won: boolean;
@@ -15,6 +16,8 @@ export class GameOverScene extends Phaser.Scene {
 
   create(data: GameOverData) {
     const { width } = this.scale;
+    audio.setAmbience(null);
+    audio.playMusic(data.won ? 'victory' : 'gameover');
     this.cameras.main.setBackgroundColor('#181c38');
     drawWindow(this, 30, 16, 180, 128);
 
@@ -32,7 +35,10 @@ export class GameOverScene extends Phaser.Scene {
     const prompt = this.add.text(width / 2, 120, 'PRESS START', textStyle('#c07800')).setOrigin(0.5, 0);
     this.tweens.add({ targets: prompt, alpha: 0, duration: 500, yoyo: true, repeat: -1, hold: 200 });
 
-    const restart = () => this.scene.start('CharacterSelectScene');
+    const restart = () => {
+      audio.play('confirm');
+      this.scene.start('CharacterSelectScene');
+    };
     this.input.once('pointerdown', restart);
     this.input.keyboard?.once('keydown-SPACE', restart);
     this.input.keyboard?.once('keydown-ENTER', restart);

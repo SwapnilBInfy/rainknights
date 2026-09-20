@@ -4,6 +4,7 @@ import { fetchRegionWeather, type RegionWeatherState } from '../systems/WeatherS
 import { UI } from '../gfx/palette';
 import { drawWindow, textStyle } from '../ui/Window';
 import { drawWeatherIcon, WEATHER_SHORT } from '../ui/weatherIcons';
+import { audio } from '../audio/engine';
 
 interface RegionSelectData {
   characterId: string;
@@ -24,6 +25,7 @@ export class RegionSelectScene extends Phaser.Scene {
     this.characterId = data.characterId;
     this.chosen = false;
     this.selected = 0;
+    audio.playMusic('title');
     this.cameras.main.setBackgroundColor('#181c38');
 
     const weather: (RegionWeatherState | null)[] = REGIONS.map(() => null);
@@ -67,6 +69,7 @@ export class RegionSelectScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true });
       zone.on('pointerover', () => {
+        if (this.selected !== i) audio.play('move');
         this.selected = i;
         highlight();
       });
@@ -82,8 +85,10 @@ export class RegionSelectScene extends Phaser.Scene {
 
     this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
+      const before = this.selected;
       if (k === 'arrowleft' || k === 'a') this.selected = 0;
       else if (k === 'arrowright' || k === 'd') this.selected = 1;
+      if (this.selected !== before) audio.play('move');
       else if (k === 'enter' || k === ' ' || k === 'z') return this.choose(REGIONS[this.selected], weather[this.selected]);
       else if (k === '1' || k === '2') return this.choose(REGIONS[Number(k) - 1], weather[Number(k) - 1]);
       highlight();
@@ -93,6 +98,7 @@ export class RegionSelectScene extends Phaser.Scene {
   private choose(region: RegionDef, weather: RegionWeatherState | null) {
     if (this.chosen) return;
     this.chosen = true;
+    audio.play('confirm');
     const resolved: RegionWeatherState =
       weather ?? { frontIndex: 0, label: 'Unknown skies', glyph: '', tint: 0x8fe0ff, condition: 'clear', temp: 20, source: 'fallback' };
     this.scene.start('GameScene', {

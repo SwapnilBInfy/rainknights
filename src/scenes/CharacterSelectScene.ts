@@ -3,6 +3,7 @@ import { CHARACTERS, type CharacterDef } from '../config/characters';
 import { chibiKey } from '../gfx/chibi';
 import { UI } from '../gfx/palette';
 import { drawCursor, drawWindow, textStyle } from '../ui/Window';
+import { audio } from '../audio/engine';
 
 /** Maps a stat multiplier to 1-5 filled segments (1.0 = 3). */
 function segments(mult: number, invert = false): number {
@@ -21,6 +22,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   create() {
     this.selected = 0;
     this.chosen = false;
+    audio.playMusic('title');
     const { width } = this.scale;
     this.cameras.main.setBackgroundColor('#181c38');
 
@@ -60,6 +62,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     names: Phaser.GameObjects.Text[],
     detail: Phaser.GameObjects.Container
   ) {
+    if (index !== this.selected) audio.play('move');
     this.selected = index;
     const character = CHARACTERS[index];
     cursor.clear();
@@ -92,6 +95,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   private choose(character: CharacterDef) {
     if (this.chosen) return;
     this.chosen = true;
+    audio.play('confirm');
     this.scene.start('RegionSelectScene', { characterId: character.id });
   }
 }

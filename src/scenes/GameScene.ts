@@ -15,6 +15,7 @@ import { LevelUpSystem } from '../systems/LevelUpSystem';
 import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/PowerupSystem';
 import { buildTerrain, type TerrainResult } from '../systems/Terrain';
 import { HUD } from '../ui/HUD';
+import { audio } from '../audio/engine';
 
 interface GameSceneData {
   characterId?: string;
@@ -63,9 +64,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.player.onDied = () => this.endRun(false);
     this.player.onLevelUp = () => this.pauseForLevelUp();
     this.player.on('sunbeamPulse', (radius: number, damage: number) => {
+      audio.play('sunbeam');
       applySunbeamPulse(this, this.player, radius, damage, this.getActiveEnemies(), () => {});
     });
     this.player.on('shieldActivated', (duration: number) => {
+      audio.play('shield');
       this.player.setAlpha(0.55);
       this.time.delayedCall(duration, () => {
         if (this.player.active) this.player.setAlpha(1);
@@ -93,6 +96,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
     this.weather = new WeatherDirector(this, data.startFrontIndex ?? 0);
 
+    audio.playMusic(region.music);
+    audio.setAmbience(data.weatherCondition ?? null);
     this.hud = new HUD(this);
     this.levelUpSystem = new LevelUpSystem(this);
     this.hud.setWeatherCondition(data.weatherCondition ?? 'clear', data.weatherLabel ?? 'Clear');
@@ -107,6 +112,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.events.once('shutdown', () => {
       this.hud.destroy();
       this.levelUpSystem.close();
+      audio.setMuffled(false);
     });
   }
 
@@ -126,6 +132,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
       this.lastFrontIndex = this.weather.currentFrontIndex;
       this.hud.showMessage(`The ${this.weather.frontName} is rolling in!`);
+      audio.play('front');
     }
   }
 
@@ -146,6 +153,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const dist = 170;
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50);
     const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50);
+    audio.play('bossAppears');
+    audio.playMusic('boss');
     const boss = createEnemy(this, 'tornadoBoss', x, y, this.player) as TornadoBoss;
     boss.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(boss);
@@ -165,6 +174,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   // --- combat ---
 
   private handleEnemyDeath = (enemy: Enemy) => {
+    audio.play('enemyDie');
     this.player.kills += 1;
     this.spawnXpGem(enemy.x, enemy.y, enemy.stats.xp);
     if (enemy === this.boss) {
@@ -183,6 +193,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   /** Damage from any source; also feeds Static Charge chaining. */
   private damageEnemy(enemy: Enemy, damage: number) {
+    audio.play('hit');
     enemy.takeDamage(damage);
     if (this.player.powerups.staticCharge > 0) {
       applyStaticChain(
@@ -255,6 +266,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const stats = MELEE[p.weaponType];
     p.meleeReadyAt = time + stats.cooldownMs * ratio;
     p.playAttackSwing(time, p.x + p.aim.x * 30, p.y + p.aim.y * 30);
+    audio.play('swing', p.weaponType);
 
     const cosHalf = Math.cos(Phaser.Math.DegToRad(stats.arcDeg / 2));
     const damage = Math.round(p.attackDamage * stats.damageMult);
@@ -283,6 +295,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const stats = BEAM[p.weaponType];
     p.startBeamCooldown(time, stats.cooldownMs * ratio);
     p.playCast(time);
+    audio.play('beam', p.weaponType);
 
     const len = p.attackRange * 0.95;
     const ox = p.x + p.aim.x * 8;
@@ -367,6 +380,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       const body = gem.body as Phaser.Physics.Arcade.Body;
 
       if (distSq < 11 * 11) {
+        audio.play('gem');
         this.player.addXp(gem.getData('xp'));
         gem.destroy();
         continue;
@@ -392,12 +406,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.paused = true;
     this.physics.pause();
     this.hud.setVisible(false);
+    audio.play('levelUp');
+    audio.setMuffled(true);
     // If several levels were gained at once, show each level's menu in turn.
     const level = this.player.level - (this.pendingLevelUps - 1);
     this.levelUpSystem.presentChoices(this.player, level, () => {
       this.pendingLevelUps -= 1;
       if (this.pendingLevelUps > 0) return this.showLevelUpMenu();
       this.hud.setVisible(true);
+      audio.setMuffled(false);
       this.physics.resume();
       this.paused = false;
     });

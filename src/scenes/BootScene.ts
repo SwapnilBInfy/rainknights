@@ -38,6 +38,7 @@ export class BootScene extends Phaser.Scene {
       }
     }
 
+    this.scene.launch('OverlayScene');
     this.scene.start('MenuScene');
   }
 }

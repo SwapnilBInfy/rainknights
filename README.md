@@ -26,6 +26,15 @@ are AI-generated (via `npm run art:generate`).
 - **Goal**: survive the escalating storm fronts and defeat the **Tornado**
   boss that arrives at the 5-minute mark
 
+### Music & sound
+
+All audio is original and synthesized live in the browser (WebAudio
+square/triangle/noise chiptune — no audio files): a title theme, a theme per
+city, a boss theme, victory/game-over jingles, sound effects for every
+action, and rain/wind/thunder ambience that follows each city's live weather.
+Browsers only allow sound after your first key press or click. Press **M** to
+mute/unmute (remembered between visits).
+
 ### Live local weather
 
 Before each run, the game asks your browser for your location and checks the
