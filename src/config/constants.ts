@@ -1,20 +1,26 @@
-export const WORLD = {
-  width: 3200,
-  height: 3200,
+/** Native GBA resolution — the canvas is authored in true GBA pixels. */
+export const VIEW = {
+  width: 240,
+  height: 160,
 };
 
-export const TILE = 32;
+export const WORLD = {
+  width: 1600,
+  height: 1600,
+};
+
+export const TILE = 16;
 export const MAP_COLS = Math.ceil(WORLD.width / TILE);
 export const MAP_ROWS = Math.ceil(WORLD.height / TILE);
 
 export const PLAYER_BASE = {
   maxHp: 100,
-  moveSpeed: 160,
+  moveSpeed: 80,
   attackDamage: 12,
-  attackRange: 240,
+  attackRange: 110,
   attackCooldown: 550,
-  magnetRadius: 70,
-  projectileSpeed: 420,
+  magnetRadius: 34,
+  projectileSpeed: 210,
 };
 
 export interface EnemyStats {
@@ -29,12 +35,12 @@ export interface EnemyStats {
 }
 
 export const ENEMY_STATS: Record<string, EnemyStats> = {
-  rainImp: { key: 'rainImp', name: 'Rain Imp', hp: 14, speed: 90, damage: 6, xp: 4, contactCooldown: 700, scale: 1 },
-  windWraith: { key: 'windWraith', name: 'Wind Wraith', hp: 20, speed: 150, damage: 8, xp: 7, contactCooldown: 650, scale: 1 },
-  hailBrute: { key: 'hailBrute', name: 'Hail Brute', hp: 60, speed: 55, damage: 14, xp: 14, contactCooldown: 800, scale: 1.2 },
-  lightningWisp: { key: 'lightningWisp', name: 'Lightning Wisp', hp: 24, speed: 130, damage: 12, xp: 10, contactCooldown: 500, scale: 0.9 },
-  snowGolem: { key: 'snowGolem', name: 'Snow Golem', hp: 140, speed: 40, damage: 20, xp: 26, contactCooldown: 900, scale: 1.4 },
-  tornadoBoss: { key: 'tornadoBoss', name: 'Tornado', hp: 900, speed: 55, damage: 26, xp: 300, contactCooldown: 500, scale: 1 },
+  rainImp: { key: 'rainImp', name: 'Rain Imp', hp: 14, speed: 45, damage: 6, xp: 4, contactCooldown: 700, scale: 1 },
+  windWraith: { key: 'windWraith', name: 'Wind Wraith', hp: 20, speed: 75, damage: 8, xp: 7, contactCooldown: 650, scale: 1 },
+  hailBrute: { key: 'hailBrute', name: 'Hail Brute', hp: 60, speed: 28, damage: 14, xp: 14, contactCooldown: 800, scale: 1.2 },
+  lightningWisp: { key: 'lightningWisp', name: 'Lightning Wisp', hp: 24, speed: 65, damage: 12, xp: 10, contactCooldown: 500, scale: 0.9 },
+  snowGolem: { key: 'snowGolem', name: 'Snow Golem', hp: 140, speed: 20, damage: 20, xp: 26, contactCooldown: 900, scale: 1.4 },
+  tornadoBoss: { key: 'tornadoBoss', name: 'Tornado', hp: 900, speed: 28, damage: 26, xp: 300, contactCooldown: 500, scale: 1 },
 };
 
 export interface WeatherFront {

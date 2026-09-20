@@ -17,27 +17,6 @@ export const MIAMI_TERRAIN = {
   rock: { main: 0xd98f7a, shadow: 0x9a5f4f },
 };
 
-export const PLAYER = {
-  main: 0x3b6fd6,
-  highlight: 0x8fb4f0,
-  shadow: 0x1f3f8a,
-  accent: 0xdb3b3b,
-};
-
-export const PLAYER_HAIL = {
-  main: 0xc9d3da,
-  highlight: 0xffffff,
-  shadow: 0x7c8894,
-  accent: 0x4fd2e8,
-};
-
-export const PLAYER_STORM = {
-  main: 0xfff066,
-  highlight: 0xffffff,
-  shadow: 0xc9a800,
-  accent: 0x2a2440,
-};
-
 export const RAIN_IMP = { main: 0x3aa0e0, highlight: 0x9fd8ff, shadow: 0x1c5f8f };
 export const WIND_WRAITH = { main: 0xbfe9e6, highlight: 0xffffff, shadow: 0x6fb6b0 };
 export const HAIL_BRUTE = { main: 0xc9d3da, highlight: 0xffffff, shadow: 0x7c8894 };
@@ -53,3 +32,20 @@ export const PU_RAINBOW = { main: 0xff5fa2, highlight: 0xffffff, shadow: 0x7a2fd
 export const PU_GALE = { main: 0xb9f5c0, highlight: 0xffffff, shadow: 0x5fbf70 };
 export const PU_FROST = { main: 0xaee9ff, highlight: 0xffffff, shadow: 0x5fa9d6 };
 export const PU_STATIC = { main: 0xfff066, highlight: 0xffffff, shadow: 0xc9a800 };
+
+// GBA-Pokémon-style UI colors (text boxes, HP bars, menus).
+export const UI = {
+  ink: 0x383838,
+  inkSoft: 0x686868,
+  paper: 0xf8f8f8,
+  paperShade: 0xd8d8e0,
+  border: 0x505868,
+  borderLight: 0xa8b0c0,
+  hpGreen: 0x48d048,
+  hpYellow: 0xf8b800,
+  hpRed: 0xf03830,
+  hpTrack: 0x484848,
+  xpBlue: 0x48a0f8,
+  bg: 0x0a0a12,
+  accent: 0xe8a010,
+};

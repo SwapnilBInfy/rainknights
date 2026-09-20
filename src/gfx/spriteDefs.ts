@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
-import { generateBlobTexture, generateCompositeTexture } from './PixelSpriteFactory';
+import { generateBlobTexture } from './PixelSpriteFactory';
+import { generateKnightTextures } from './chibi';
+import { generateWeaponTextures } from './weapons';
+import { CHARACTERS } from '../config/characters';
 import { TILE } from '../config/constants';
 import * as P from './palette';
 
 export const TEX = {
-  playerRainKnight: 'player_rainKnight',
-  playerHailWarden: 'player_hailWarden',
-  playerStormChaser: 'player_stormChaser',
   rainImp: 'rainImp',
   windWraith: 'windWraith',
   hailBrute: 'hailBrute',
@@ -58,45 +58,12 @@ function generateTerrainTileset(scene: Phaser.Scene, key: string, palette: Regio
   g.destroy();
 }
 
-/** Composite chibi-knight texture: body + head + visor accent, stacked. */
-function generatePlayerTexture(
-  scene: Phaser.Scene,
-  key: string,
-  palette: { main: number; highlight: number; shadow: number; accent: number },
-  bodyRadius: number,
-  headRadius: number,
-  visorRadius: number,
-  gridSize: number
-) {
-  const bodyOffset = bodyRadius * 0.65;
-  const headOffset = headRadius * 0.88;
-  generateCompositeTexture(
-    scene,
-    key,
-    [
-      { offsetX: 0, offsetY: bodyOffset, radius: bodyRadius, shape: 'circle', ...palette },
-      { offsetX: 0, offsetY: -headOffset, radius: headRadius, shape: 'circle', ...palette },
-      {
-        offsetX: 0,
-        offsetY: -headOffset - 0.2,
-        radius: visorRadius,
-        shape: 'circle',
-        main: palette.accent,
-        outline: palette.accent,
-      },
-    ],
-    gridSize,
-    5
-  );
-}
-
 export function generateAllTextures(scene: Phaser.Scene) {
   generateTerrainTileset(scene, TEX.terrainTilesNyc, P.NYC_TERRAIN);
   generateTerrainTileset(scene, TEX.terrainTilesMiami, P.MIAMI_TERRAIN);
 
-  generatePlayerTexture(scene, TEX.playerRainKnight, P.PLAYER, 4.6, 3.4, 1.1, 20);
-  generatePlayerTexture(scene, TEX.playerHailWarden, P.PLAYER_HAIL, 5.6, 4.0, 1.2, 24);
-  generatePlayerTexture(scene, TEX.playerStormChaser, P.PLAYER_STORM, 3.8, 2.8, 0.9, 18);
+  for (const character of CHARACTERS) generateKnightTextures(scene, character.id, character.style);
+  generateWeaponTextures(scene);
 
   generateBlobTexture(scene, TEX.rainImp, { radius: 4, shape: 'drop', ...P.RAIN_IMP }, 5);
   generateBlobTexture(

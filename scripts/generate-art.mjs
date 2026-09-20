@@ -27,35 +27,6 @@ const PIXEL_ART_STYLE =
 
 const EMBLEM_STYLE = `${PIXEL_ART_STYLE}, flat rounded-square badge/icon frame like a mobile app icon`;
 
-// All character poses are drawn facing/moving toward the RIGHT of the frame —
-// this is the canonical orientation the game assumes; it flips the sprite
-// horizontally in code for leftward movement, so every pose must agree on
-// this convention or the flip will look backwards in-game.
-const CHARACTER_STYLE =
-  `${PIXEL_ART_STYLE}, full-body character only, 3/4 top-down RPG game camera ` +
-  `angle, character facing and moving toward the right side of the frame, ` +
-  `centered in frame, plenty of empty margin around the character, single ` +
-  `character isolated on a fully empty transparent background, no ground, ` +
-  `no floor, no platform, no drop shadow, no ellipse or patch under the feet`;
-
-/** Builds the 5-pose manifest set (idle, 3-frame walk cycle, attack) for one knight. */
-function knight(id, subject, poses) {
-  const make = (poseId, action) => ({
-    id: `char_${id}_${poseId}`,
-    type: 'character',
-    outFile: `char_${id}_${poseId}.png`,
-    background: 'transparent',
-    prompt: `${subject}, ${action}, ${CHARACTER_STYLE}.`,
-  });
-  return [
-    make('idle', poses.idle),
-    make('walkA', poses.walkA),
-    make('walkB', poses.walkB),
-    make('walkC', poses.walkC),
-    make('attack', poses.attack),
-  ];
-}
-
 const MANIFEST = [
   {
     id: 'emblem_nyc',
@@ -77,41 +48,6 @@ const MANIFEST = [
       `palm trees, heat haze shimmer, ${EMBLEM_STYLE}, warm amber/teal/sandy ` +
       `palette, dark background.`,
   },
-
-  // --- playable knights: idle + 3-frame walk cycle + attack swing ---
-  ...knight(
-    'rainKnight',
-    'A knight in sleek blue-and-silver plate armor with a red-accented visor and a short cape, holding a glowing blue-white energy longsword crackling with faint electricity',
-    {
-      idle: 'standing in a ready combat stance',
-      walkA: 'mid-stride with the right leg planted forward and left leg trailing back, torso leaning slightly into the stride',
-      walkB: 'mid-stride with legs passing directly beneath the body, weight centered, a natural mid-step silhouette',
-      walkC: 'mid-stride with the left leg planted forward and right leg trailing back, torso leaning slightly into the stride',
-      attack: 'lunging forward mid-attack, the energy longsword swung fully through in a forward slashing arc with a faint motion trail, both feet planted in a strike stance',
-    }
-  ),
-  ...knight(
-    'hailWarden',
-    'A knight in heavy white-and-grey plate armor rimed with frost, wielding a massive ice-crystal warhammer',
-    {
-      idle: 'standing in a wide ready combat stance facing right, gripping the warhammer forward and low with both hands, head turned to look toward the right',
-      walkA: 'mid-stride with the right leg planted forward and left leg trailing back, a heavy plodding gait',
-      walkB: 'mid-stride with legs passing directly beneath the body, weight centered, a natural mid-step silhouette',
-      walkC: 'mid-stride with the left leg planted forward and right leg trailing back, a heavy plodding gait',
-      attack: 'mid-attack, slamming the ice-crystal warhammer forward with both hands, icy debris and cracks bursting from the impact, both feet planted in a strike stance',
-    }
-  ),
-  ...knight(
-    'stormChaser',
-    'A knight in light golden-yellow armor with a wind-swept scarf, dual-wielding two slim storm-charged daggers crackling with static',
-    {
-      idle: 'standing in an alert crouch facing right, both daggers held forward and low, head turned to look toward the right',
-      walkA: 'mid-sprint with the right leg planted forward and left leg trailing back, a quick low sprinting gait',
-      walkB: 'mid-sprint with legs passing directly beneath the body, weight centered, a natural mid-step silhouette',
-      walkC: 'mid-sprint with the left leg planted forward and right leg trailing back, a quick low sprinting gait',
-      attack: 'lunging forward mid-attack, both storm-charged daggers thrust forward in an X-slash with crackling electric arcs, both feet planted in a strike stance',
-    }
-  ),
 ];
 
 async function requestImage(entry) {

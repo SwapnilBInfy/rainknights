@@ -82,7 +82,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
     this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
-    this.cameras.main.setZoom(1.5);
+    this.cameras.main.setZoom(1);
 
     this.weather = new WeatherDirector(this, data.startFrontIndex ?? 0);
 
@@ -118,9 +118,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   spawnEnemyAroundPlayer(typeKey: string) {
     const angle = Math.random() * Math.PI * 2;
-    const dist = Phaser.Math.Between(420, 600);
-    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 40, WORLD.width - 40);
-    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 40, WORLD.height - 40);
+    const dist = Phaser.Math.Between(130, 180);
+    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, WORLD.width - 20);
+    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, WORLD.height - 20);
     const enemy = createEnemy(this, typeKey, x, y, this.player);
     enemy.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(enemy);
@@ -128,9 +128,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   spawnBoss() {
     const angle = Math.random() * Math.PI * 2;
-    const dist = 550;
-    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 100, WORLD.width - 100);
-    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 100, WORLD.height - 100);
+    const dist = 170;
+    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50);
+    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50);
     const boss = createEnemy(this, 'tornadoBoss', x, y, this.player) as TornadoBoss;
     boss.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(boss);
@@ -193,7 +193,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const target = this.findNearestEnemy(this.player.attackRange);
     if (!target) return;
     this.player.lastAttackAt = time;
-    this.player.playAttackSwing(time, target.x);
+    this.player.playAttackSwing(time, target.x, target.y);
     this.fireProjectile(target);
   }
 
@@ -236,11 +236,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private updatePull() {
     if (!this.boss || !this.boss.active) return;
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);
-    if (dist < 320 && dist > 50) {
+    if (dist < 140 && dist > 25) {
       const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);
       const body = this.player.body as Phaser.Physics.Arcade.Body;
-      body.velocity.x += Math.cos(angle) * 40;
-      body.velocity.y += Math.sin(angle) * 40;
+      body.velocity.x += Math.cos(angle) * 20;
+      body.velocity.y += Math.sin(angle) * 20;
     }
   }
 
@@ -262,14 +262,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       const distSq = dx * dx + dy * dy;
       const body = gem.body as Phaser.Physics.Arcade.Body;
 
-      if (distSq < 22 * 22) {
+      if (distSq < 11 * 11) {
         this.player.addXp(gem.getData('xp'));
         gem.destroy();
         continue;
       }
       if (distSq < magnetRadiusSq) {
         const dist = Math.sqrt(distSq) || 1;
-        body.setVelocity((dx / dist) * 380, (dy / dist) * 380);
+        body.setVelocity((dx / dist) * 190, (dy / dist) * 190);
       } else {
         body.setVelocity(0, 0);
       }
@@ -325,7 +325,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private updateAmbientWeather(delta: number) {
     const { width, height } = this.scale;
     for (const drop of this.ambientDrops) {
-      drop.y += (260 * delta) / 1000;
+      drop.y += (130 * delta) / 1000;
       if (drop.y > height + 10) {
         drop.y = -10;
         drop.x = Phaser.Math.Between(0, width);

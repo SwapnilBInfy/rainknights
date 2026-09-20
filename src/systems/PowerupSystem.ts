@@ -56,7 +56,7 @@ export function applyStaticChain(
   const candidates = enemies
     .filter((e) => e.active && e !== origin)
     .map((e) => ({ e, dist: Phaser.Math.Distance.Between(origin.x, origin.y, e.x, e.y) }))
-    .filter((c) => c.dist <= 140)
+    .filter((c) => c.dist <= 70)
     .sort((a, b) => a.dist - b.dist)
     .slice(0, chainCount);
 
