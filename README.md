@@ -3,15 +3,19 @@
 A top-down survival game: you play a lone knight fighting off waves of enemies
 conjured from real weather patterns, as an incoming storm escalates around you.
 
-Built with **Phaser 3** + **TypeScript** + **Vite**. All art is procedurally
-generated pixel-art (no external image/audio assets), rendered with hard,
-non-anti-aliased pixels for a chunky, retro handheld look.
+Built with **Phaser 3** + **TypeScript** + **Vite**. The look and feel is a
+homage to the GBA Pokémon games: a native 240×160 canvas (integer-scaled to
+your window), 16×16 tiles, chibi 4-direction overworld sprites, Pokémon-style
+text boxes/menus and the Press Start 2P pixel font. All characters, tiles and
+UI are original and procedurally drawn in code; only the two region emblems
+are AI-generated (via `npm run art:generate`).
 
 ## Play
 
 - **Choose a knight**: Rain Knight (balanced), Hail Warden (tanky), or Storm
   Chaser (fast/fragile) — each with different stats
 - **Move**: WASD or Arrow keys (blocked by lakes and rock clusters on the map)
+- **Menus**: Arrow keys / W-S + Enter/Space/Z, number keys, or the mouse
 - **Attack**: automatic — your Storm Bolt fires at the nearest enemy in range
 - **Level up**: collect XP gems from defeated enemies, then pick one of three
   upgrades (weapon, stat, or weather power)

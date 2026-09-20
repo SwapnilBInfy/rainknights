@@ -95,7 +95,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.levelUpSystem = new LevelUpSystem(this);
     this.hud.setWeatherCondition(data.weatherCondition ?? 'clear', data.weatherLabel ?? 'Clear');
     this.lastFrontIndex = this.weather.currentFrontIndex;
-    this.hud.showMessage(`Live weather: ${data.weatherLabel ?? 'unknown'}. The ${this.weather.frontName} begins!`);
+    this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
 
     this.setupAmbientWeather(data.weatherTint ?? 0x8fe0ff);
 
