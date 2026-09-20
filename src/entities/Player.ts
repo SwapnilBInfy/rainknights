@@ -38,18 +38,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private hasSpriteArt: boolean;
   private walkAnimKey: string;
   private idleTextureKey: string;
-  private wasMoving = false;
+  private attackTextureKey: string;
+  private attackSwingUntil = 0;
 
   onLevelUp?: () => void;
   onDied?: () => void;
 
   constructor(scene: Phaser.Scene, x: number, y: number, character: CharacterDef) {
     const hasSpriteArt =
-      scene.textures.exists(character.idleTextureKey) && scene.textures.exists(character.strideTextureKey);
+      scene.textures.exists(character.idleTextureKey) &&
+      scene.textures.exists(character.attackTextureKey) &&
+      character.walkTextureKeys.every((key) => scene.textures.exists(key));
     super(scene, x, y, hasSpriteArt ? character.idleTextureKey : character.textureKey);
     this.hasSpriteArt = hasSpriteArt;
     this.walkAnimKey = `walk_${character.id}`;
     this.idleTextureKey = character.idleTextureKey;
+    this.attackTextureKey = character.attackTextureKey;
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -88,11 +92,22 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   preUpdate(time: number, delta: number) {
     super.preUpdate(time, delta);
-    this.handleMovement();
+    this.handleMovement(time);
     this.handleAuras(time, delta);
   }
 
-  private handleMovement() {
+  /** Briefly overrides the sprite with the attack pose, facing the target, synced to auto-attacks. */
+  playAttackSwing(time: number, targetX?: number) {
+    if (!this.hasSpriteArt) return;
+    if (targetX !== undefined && Math.abs(targetX - this.x) > 4) {
+      this.setFlipX(targetX < this.x);
+    }
+    this.attackSwingUntil = time + 180;
+    this.anims.stop();
+    this.setTexture(this.attackTextureKey);
+  }
+
+  private handleMovement(time: number) {
     const left = this.cursors.left?.isDown || this.wasd.left.isDown;
     const right = this.cursors.right?.isDown || this.wasd.right.isDown;
     const up = this.cursors.up?.isDown || this.wasd.up.isDown;
@@ -108,25 +123,26 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       if (dir.x !== 0) this.setFlipX(dir.x < 0);
     }
     this.setVelocity(dir.x * this.effectiveMoveSpeed, dir.y * this.effectiveMoveSpeed);
-    this.updateWalkAnimation(moving);
+    this.updateWalkAnimation(moving, time);
   }
 
-  private updateWalkAnimation(moving: boolean) {
+  private updateWalkAnimation(moving: boolean, time: number) {
     if (!this.hasSpriteArt) return;
+    if (time < this.attackSwingUntil) return; // let the attack pose finish showing first
+
     if (moving) {
-      // "Running" is a faster playback of the same 2-pose cycle while
-      // Gale Force is active, rather than a separate sprint sprite.
-      const frameRate = this.powerups.gale > 0 ? 8 : 4;
+      // "Running" is a faster playback of the same walk cycle while Gale
+      // Force is active, rather than a separate sprint sprite.
+      const frameRate = this.powerups.gale > 0 ? 12 : 6;
       if (!this.anims.isPlaying || this.anims.currentAnim?.key !== this.walkAnimKey) {
         this.play({ key: this.walkAnimKey, frameRate });
       } else {
         this.anims.msPerFrame = 1000 / frameRate;
       }
-    } else if (this.wasMoving) {
+    } else if (this.anims.isPlaying || this.texture.key !== this.idleTextureKey) {
       this.anims.stop();
       this.setTexture(this.idleTextureKey);
     }
-    this.wasMoving = moving;
   }
 
   private handleAuras(time: number, _delta: number) {

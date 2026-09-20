@@ -19,7 +19,10 @@ export class BootScene extends Phaser.Scene {
     }
     for (const character of CHARACTERS) {
       this.load.image(character.idleTextureKey, `assets/generated/${character.idleTextureKey}.png`);
-      this.load.image(character.strideTextureKey, `assets/generated/${character.strideTextureKey}.png`);
+      this.load.image(character.attackTextureKey, `assets/generated/${character.attackTextureKey}.png`);
+      for (const key of character.walkTextureKeys) {
+        this.load.image(key, `assets/generated/${key}.png`);
+      }
     }
   }
 
@@ -27,15 +30,15 @@ export class BootScene extends Phaser.Scene {
     generateAllTextures(this);
 
     for (const character of CHARACTERS) {
-      if (
-        this.textures.exists(character.idleTextureKey) &&
-        this.textures.exists(character.strideTextureKey) &&
-        !this.anims.exists(`walk_${character.id}`)
-      ) {
+      const [a, b, c] = character.walkTextureKeys;
+      const hasWalkArt = [a, b, c].every((key) => this.textures.exists(key));
+      if (hasWalkArt && !this.anims.exists(`walk_${character.id}`)) {
         this.anims.create({
           key: `walk_${character.id}`,
-          frames: [{ key: character.idleTextureKey }, { key: character.strideTextureKey }],
-          frameRate: 4,
+          // B (the centered passing pose) plays twice per cycle for a
+          // smoother 4-tick cadence out of only 3 generated frames.
+          frames: [{ key: a }, { key: b }, { key: c }, { key: b }],
+          frameRate: 6,
           repeat: -1,
         });
       }

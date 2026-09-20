@@ -193,6 +193,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const target = this.findNearestEnemy(this.player.attackRange);
     if (!target) return;
     this.player.lastAttackAt = time;
+    this.player.playAttackSwing(time, target.x);
     this.fireProjectile(target);
   }
 
