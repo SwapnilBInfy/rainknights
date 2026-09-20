@@ -7,7 +7,6 @@ import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { RegionSelectScene } from './scenes/RegionSelectScene';
 import { GameScene } from './scenes/GameScene';
 import { GameOverScene } from './scenes/GameOverScene';
-import './style.css';
 
 /** Largest whole-number zoom that fits the window, like a GBA on a screen. */
 function fitZoom(): number {

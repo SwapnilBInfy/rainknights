@@ -1,16 +1,20 @@
 import Phaser from 'phaser';
 import { REGIONS, type RegionDef } from '../config/regions';
 import { fetchRegionWeather, type RegionWeatherState } from '../systems/WeatherService';
+import { UI } from '../gfx/palette';
+import { drawWindow, textStyle } from '../ui/Window';
+import { drawWeatherIcon, WEATHER_SHORT } from '../ui/weatherIcons';
 
 interface RegionSelectData {
   characterId: string;
 }
 
-const FONT = 'Courier New, monospace';
+const PANEL_XS = [2, 122];
 
 export class RegionSelectScene extends Phaser.Scene {
   private characterId!: string;
   private chosen = false;
+  private selected = 0;
 
   constructor() {
     super('RegionSelectScene');
@@ -19,106 +23,84 @@ export class RegionSelectScene extends Phaser.Scene {
   create(data: RegionSelectData) {
     this.characterId = data.characterId;
     this.chosen = false;
-    const { width, height } = this.scale;
-    this.cameras.main.setBackgroundColor('#0a0a12');
+    this.selected = 0;
+    this.cameras.main.setBackgroundColor('#181c38');
 
-    this.add
-      .text(width / 2, 40, 'CHOOSE YOUR REGION', {
-        fontFamily: FONT,
-        fontSize: '24px',
-        color: '#ffd76b',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, 66, 'live weather, checked now — click a region, or press 1 / 2', {
-        fontFamily: FONT,
-        fontSize: '11px',
-        color: '#9a94c0',
-      })
-      .setOrigin(0.5);
-
-    const panelXs = [width * 0.28, width * 0.72];
-    const panelY = height * 0.58;
-    const panelW = 260;
-    const panelH = 320;
+    const weather: (RegionWeatherState | null)[] = REGIONS.map(() => null);
+    const frames = REGIONS.map(() => this.add.graphics().setDepth(2));
+    const highlight = () =>
+      frames.forEach((g, i) => {
+        g.clear();
+        if (i !== this.selected) return;
+        g.lineStyle(2, UI.accent, 1);
+        g.strokeRect(PANEL_XS[i] + 1, 9, 114, 116);
+      });
 
     REGIONS.forEach((region, i) => {
-      const px = panelXs[i];
-      const border = this.add
-        .rectangle(px, panelY, panelW, panelH, 0x14121f, 0.85)
-        .setStrokeStyle(2, 0x3a3550);
+      const x0 = PANEL_XS[i];
+      drawWindow(this, x0, 8, 116, 118);
 
       if (this.textures.exists(region.emblemKey)) {
-        this.add.image(px, panelY - 95, region.emblemKey).setDisplaySize(160, 110);
+        this.add.image(x0 + 10, 14, region.emblemKey).setOrigin(0, 0);
       } else {
-        this.add.circle(px, panelY - 95, 46, 0x1c1a2c).setStrokeStyle(2, 0x3a3550);
-        this.add
-          .text(px, panelY - 95, region.id === 'nyc' ? '🏙' : '🌴', { fontSize: '36px' })
-          .setOrigin(0.5);
+        this.add.rectangle(x0 + 10, 14, 96, 64, 0x303848).setOrigin(0, 0);
       }
-
+      this.add.text(x0 + 58, 84, region.name, textStyle()).setOrigin(0.5, 0);
       this.add
-        .text(px, panelY - 8, region.name, {
-          fontFamily: FONT,
-          fontSize: '16px',
-          color: '#eef0ff',
-          fontStyle: 'bold',
-        })
-        .setOrigin(0.5);
+        .text(x0 + 58, 96, region.subtitle.replace(/^The /, ''), textStyle('#686868'))
+        .setOrigin(0.5, 0);
 
-      this.add
-        .text(px, panelY + 14, `"${region.subtitle}"`, {
-          fontFamily: FONT,
-          fontSize: '10px',
-          color: '#9a94c0',
-        })
-        .setOrigin(0.5);
+      const status = this.add.text(x0 + 58, 110, 'checking...', textStyle('#3078d8')).setOrigin(0.5, 0);
+      const icon = this.add.graphics();
+      this.tweens.add({ targets: status, alpha: 0.35, duration: 450, yoyo: true, repeat: -1 });
 
-      const status = this.add
-        .text(px, panelY + 44, 'reading skies…', {
-          fontFamily: FONT,
-          fontSize: '12px',
-          color: '#8fe0ff',
-          align: 'center',
-          wordWrap: { width: panelW - 24 },
-        })
-        .setOrigin(0.5);
-      this.tweens.add({ targets: status, alpha: 0.3, duration: 550, yoyo: true, repeat: -1 });
-
-      let currentWeather: RegionWeatherState | null = null;
-
-      fetchRegionWeather(region).then((weather) => {
-        currentWeather = weather;
+      fetchRegionWeather(region).then((w) => {
+        weather[i] = w;
         this.tweens.killTweensOf(status);
-        status.setAlpha(1).setText(`${weather.glyph} ${weather.label} · ${Math.round(weather.temp)}°C`);
+        const label = `${WEATHER_SHORT[w.condition] ?? w.label} ${Math.round(w.temp)}C`;
+        status.setAlpha(1).setText(label).setColor('#383838').setX(x0 + 62);
+        drawWeatherIcon(icon, x0 + 62 - status.width / 2 - 11, 110, w.condition);
       });
 
       const zone = this.add
-        .rectangle(px, panelY, panelW, panelH, 0xffffff, 0)
+        .rectangle(x0, 8, 116, 118, 0xffffff, 0)
+        .setOrigin(0, 0)
         .setInteractive({ useHandCursor: true });
+      zone.on('pointerover', () => {
+        this.selected = i;
+        highlight();
+      });
+      zone.on('pointerdown', () => this.choose(region, weather[i]));
+    });
 
-      zone.on('pointerover', () => border.setStrokeStyle(3, 0xffd76b));
-      zone.on('pointerout', () => border.setStrokeStyle(2, 0x3a3550));
-      zone.on('pointerdown', () => this.choose(region, currentWeather));
+    const box = drawWindow(this, 4, 128, 232, 30);
+    box.setDepth(1);
+    this.add
+      .text(12, 133, 'Live weather from each city. Choose where to fight!', { ...textStyle(), wordWrap: { width: 216 } })
+      .setDepth(3);
+    highlight();
 
-      this.input.keyboard?.once(`keydown-${['ONE', 'TWO'][i]}`, () => this.choose(region, currentWeather));
+    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowleft' || k === 'a') this.selected = 0;
+      else if (k === 'arrowright' || k === 'd') this.selected = 1;
+      else if (k === 'enter' || k === ' ' || k === 'z') return this.choose(REGIONS[this.selected], weather[this.selected]);
+      else if (k === '1' || k === '2') return this.choose(REGIONS[Number(k) - 1], weather[Number(k) - 1]);
+      highlight();
     });
   }
 
   private choose(region: RegionDef, weather: RegionWeatherState | null) {
     if (this.chosen) return;
     this.chosen = true;
-    this.input.keyboard?.removeAllListeners();
-    const resolved =
-      weather ?? { frontIndex: 0, label: 'Unknown skies', glyph: '☀', tint: 0x8fe0ff, condition: 'clear', temp: 20, source: 'fallback' as const };
+    const resolved: RegionWeatherState =
+      weather ?? { frontIndex: 0, label: 'Unknown skies', glyph: '', tint: 0x8fe0ff, condition: 'clear', temp: 20, source: 'fallback' };
     this.scene.start('GameScene', {
       characterId: this.characterId,
       regionId: region.id,
       startFrontIndex: resolved.frontIndex,
       weatherLabel: resolved.label,
-      weatherGlyph: resolved.glyph,
+      weatherCondition: resolved.condition,
       weatherTint: resolved.tint,
     });
   }

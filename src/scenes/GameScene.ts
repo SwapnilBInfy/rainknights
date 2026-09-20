@@ -19,7 +19,7 @@ interface GameSceneData {
   regionId?: string;
   startFrontIndex?: number;
   weatherLabel?: string;
-  weatherGlyph?: string;
+  weatherCondition?: string;
   weatherTint?: number;
 }
 
@@ -36,6 +36,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private paused = false;
   private ambientDrops: Phaser.GameObjects.Image[] = [];
   private terrain!: TerrainResult;
+  private lastFrontIndex = 0;
+  private pendingLevelUps = 0;
+  private ended = false;
 
   constructor() {
     super('GameScene');
@@ -43,6 +46,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   create(data: GameSceneData = {}) {
     this.paused = false;
+    this.pendingLevelUps = 0;
+    this.ended = false;
     this.boss = null;
     this.bossSummonEvent = null;
 
@@ -86,11 +91,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
     this.weather = new WeatherDirector(this, data.startFrontIndex ?? 0);
 
-    const uiRoot = document.getElementById('ui')!;
-    uiRoot.innerHTML = '';
-    this.hud = new HUD(uiRoot);
-    this.levelUpSystem = new LevelUpSystem(uiRoot);
-    this.hud.setWeatherCondition(data.weatherGlyph ?? '☀', data.weatherLabel ?? 'Unknown skies');
+    this.hud = new HUD(this);
+    this.levelUpSystem = new LevelUpSystem(this);
+    this.hud.setWeatherCondition(data.weatherCondition ?? 'clear', data.weatherLabel ?? 'Clear');
+    this.lastFrontIndex = this.weather.currentFrontIndex;
+    this.hud.showMessage(`Live weather: ${data.weatherLabel ?? 'unknown'}. The ${this.weather.frontName} begins!`);
 
     this.setupAmbientWeather(data.weatherTint ?? 0x8fe0ff);
 
@@ -110,8 +115,12 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.updatePull();
     this.handleAttack(time);
 
-    this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName);
+    this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta);
     this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1);
+    if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
+      this.lastFrontIndex = this.weather.currentFrontIndex;
+      this.hud.showMessage(`The ${this.weather.frontName} is rolling in!`);
+    }
   }
 
   // --- WeatherHost ---
@@ -279,16 +288,30 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   // --- level up / end of run ---
 
   private pauseForLevelUp() {
+    this.pendingLevelUps += 1;
+    if (this.paused) return; // a menu is already open — this level is queued behind it
+    this.showLevelUpMenu();
+  }
+
+  private showLevelUpMenu() {
     this.paused = true;
     this.physics.pause();
-    this.levelUpSystem.presentChoices(this.player, () => {
+    this.hud.setVisible(false);
+    // If several levels were gained at once, show each level's menu in turn.
+    const level = this.player.level - (this.pendingLevelUps - 1);
+    this.levelUpSystem.presentChoices(this.player, level, () => {
+      this.pendingLevelUps -= 1;
+      if (this.pendingLevelUps > 0) return this.showLevelUpMenu();
+      this.hud.setVisible(true);
       this.physics.resume();
       this.paused = false;
     });
   }
 
   private endRun(won: boolean) {
-    if (this.paused) return;
+    if (this.ended) return; // (a level-up menu being open must not block the ending)
+    this.ended = true;
+    this.levelUpSystem.close();
     this.paused = true;
     this.physics.pause();
     this.bossSummonEvent?.remove(false);

@@ -1,114 +1,172 @@
+import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
+import { UI } from '../gfx/palette';
+import { drawWindow, textStyle } from './Window';
+import { drawWeatherIcon, WEATHER_SHORT } from './weatherIcons';
 
+const DEPTH = 100;
+
+/**
+ * GBA-Pokémon-style in-canvas HUD, authored in native 240x160 pixels:
+ * boxed status panel (level, timer, HP bar, XP bar) top-left, a weather
+ * condition badge top-right, a boss HP bar, and a bottom message box.
+ */
 export class HUD {
-  private root: HTMLElement;
-  private container!: HTMLElement;
-  private hpFill!: HTMLElement;
-  private hpLabel!: HTMLElement;
-  private xpFill!: HTMLElement;
-  private levelLabel!: HTMLElement;
-  private timerLabel!: HTMLElement;
-  private weatherLabel!: HTMLElement;
-  private bossWrap!: HTMLElement;
-  private bossFill!: HTMLElement;
-  private conditionBadge!: HTMLElement;
+  private scene: Phaser.Scene;
+  private objects: Phaser.GameObjects.GameObject[] = [];
 
-  constructor(root: HTMLElement) {
-    this.root = root;
-    this.build();
+  private bars: Phaser.GameObjects.Graphics;
+  private lvText: Phaser.GameObjects.Text;
+  private timeText: Phaser.GameObjects.Text;
+  private hpText: Phaser.GameObjects.Text;
+
+  private badge: Phaser.GameObjects.Container | null = null;
+  private condition = 'clear';
+  private conditionLabel = '';
+  private frontName = '';
+
+  private bossGfx: Phaser.GameObjects.Graphics;
+  private bossFrame: Phaser.GameObjects.Container | null = null;
+
+  private message: Phaser.GameObjects.Container | null = null;
+  private messageTimer: Phaser.Time.TimerEvent | null = null;
+
+  private displayHp = -1;
+
+  constructor(scene: Phaser.Scene) {
+    this.scene = scene;
+
+    this.add(drawWindow(scene, 2, 2, 100, 44));
+    this.lvText = this.text(7, 6, 'Lv1');
+    this.timeText = this.text(97, 6, '00:00').setOrigin(1, 0);
+    this.text(7, 18, 'HP', '#c07800');
+    this.hpText = this.text(97, 26, '', '#383838').setOrigin(1, 0);
+    this.bars = this.add(scene.add.graphics());
+
+    this.bossGfx = scene.add.graphics().setScrollFactor(0).setDepth(DEPTH + 1);
   }
 
-  private build() {
-    this.container = document.createElement('div');
-    this.container.className = 'hud';
-    this.container.innerHTML = `
-      <div class="hud-top">
-        <div class="hud-bar-wrap hp">
-          <div class="hud-bar-fill hp-fill"></div>
-          <span class="hud-bar-label hp-label"></span>
-        </div>
-        <div class="hud-bar-wrap xp">
-          <div class="hud-bar-fill xp-fill"></div>
-        </div>
-      </div>
-      <div class="hud-mid">
-        <div class="hud-level"></div>
-        <div class="hud-timer">00:00</div>
-        <div class="hud-weather"></div>
-      </div>
-      <div class="hud-boss-wrap hidden">
-        <div class="hud-boss-label">TORNADO</div>
-        <div class="hud-bar-wrap boss">
-          <div class="hud-bar-fill boss-fill"></div>
-        </div>
-      </div>
-      <div class="hud-condition-badge">
-        <span class="hud-condition-glyph"></span>
-        <span class="hud-condition-label"></span>
-      </div>
-    `;
-    this.root.appendChild(this.container);
-
-    this.hpFill = this.container.querySelector('.hp-fill')!;
-    this.hpLabel = this.container.querySelector('.hp-label')!;
-    this.xpFill = this.container.querySelector('.xp-fill')!;
-    this.levelLabel = this.container.querySelector('.hud-level')!;
-    this.timerLabel = this.container.querySelector('.hud-timer')!;
-    this.weatherLabel = this.container.querySelector('.hud-weather')!;
-    this.bossWrap = this.container.querySelector('.hud-boss-wrap')!;
-    this.bossFill = this.container.querySelector('.boss-fill')!;
-    this.conditionBadge = this.container.querySelector('.hud-condition-badge')!;
+  private add<T extends Phaser.GameObjects.GameObject>(obj: T): T {
+    (obj as unknown as Phaser.GameObjects.Components.ScrollFactor).setScrollFactor(0);
+    (obj as unknown as Phaser.GameObjects.Components.Depth).setDepth(DEPTH);
+    this.objects.push(obj);
+    return obj;
   }
 
-  setWeatherCondition(glyph: string, label: string) {
-    this.conditionBadge.querySelector('.hud-condition-glyph')!.textContent = glyph;
-    this.conditionBadge.querySelector('.hud-condition-label')!.textContent = label;
+  private text(x: number, y: number, str: string, color = '#383838') {
+    return this.add(this.scene.add.text(x, y, str, textStyle(color)));
   }
 
-  update(player: Player, elapsedSeconds: number, frontName: string) {
-    const hpPct = Math.max(0, (player.hp / player.maxHp) * 100);
-    this.hpFill.style.width = `${hpPct}%`;
-    this.hpLabel.textContent = `${Math.ceil(player.hp)} / ${player.maxHp}`;
+  update(player: Player, elapsedSeconds: number, frontName: string, delta = 16) {
+    if (this.displayHp < 0) this.displayHp = player.hp;
+    // HP drains/refills smoothly like the real games.
+    const step = (60 * delta) / 1000;
+    if (this.displayHp > player.hp) this.displayHp = Math.max(player.hp, this.displayHp - step);
+    else if (this.displayHp < player.hp) this.displayHp = Math.min(player.hp, this.displayHp + step);
 
-    const xpPct = Math.max(0, Math.min(100, (player.xp / player.xpToNext) * 100));
-    this.xpFill.style.width = `${xpPct}%`;
+    this.lvText.setText(`Lv${player.level}`);
+    const m = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
+    const s = Math.floor(elapsedSeconds % 60).toString().padStart(2, '0');
+    this.timeText.setText(`${m}:${s}`);
+    this.hpText.setText(`${Math.ceil(player.hp)}/${player.maxHp}`);
 
-    this.levelLabel.textContent = `Lv ${player.level}`;
+    const g = this.bars;
+    g.clear();
+    const pct = Phaser.Math.Clamp(this.displayHp / player.maxHp, 0, 1);
+    g.fillStyle(UI.ink, 1);
+    g.fillRect(26, 17, 72, 8);
+    g.fillStyle(UI.hpTrack, 1);
+    g.fillRect(27, 18, 70, 6);
+    g.fillStyle(pct > 0.5 ? UI.hpGreen : pct > 0.2 ? UI.hpYellow : UI.hpRed, 1);
+    g.fillRect(27, 18, Math.round(70 * pct), 6);
 
-    const m = Math.floor(elapsedSeconds / 60)
-      .toString()
-      .padStart(2, '0');
-    const s = Math.floor(elapsedSeconds % 60)
-      .toString()
-      .padStart(2, '0');
-    this.timerLabel.textContent = `${m}:${s}`;
+    const xpPct = Phaser.Math.Clamp(player.xp / player.xpToNext, 0, 1);
+    g.fillStyle(UI.ink, 1);
+    g.fillRect(6, 36, 92, 5);
+    g.fillStyle(UI.hpTrack, 1);
+    g.fillRect(7, 37, 90, 3);
+    g.fillStyle(UI.xpBlue, 1);
+    g.fillRect(7, 37, Math.round(90 * xpPct), 3);
 
-    this.weatherLabel.textContent = frontName;
+    if (frontName !== this.frontName) {
+      this.frontName = frontName;
+      this.renderBadge();
+    }
+  }
+
+  /** Persistent weather condition for the run, shown top-right. */
+  setWeatherCondition(condition: string, label: string) {
+    this.condition = condition;
+    this.conditionLabel = WEATHER_SHORT[condition] ?? label;
+    this.renderBadge();
+  }
+
+  private renderBadge() {
+    this.badge?.destroy();
+    const chars = Math.max(this.conditionLabel.length + 2, this.frontName.length);
+    const w = chars * 8 + 10;
+    const x = 240 - w - 2;
+    const win = drawWindow(this.scene, x, 2, w, 26);
+    const icon = this.scene.add.graphics();
+    drawWeatherIcon(icon, x + 5, 6, this.condition);
+    const label = this.scene.add.text(x + 16, 6, this.conditionLabel, textStyle());
+    const front = this.scene.add.text(x + 5, 17, this.frontName, textStyle('#686868'));
+    this.badge = this.scene.add.container(0, 0, [win, icon, label, front]).setScrollFactor(0).setDepth(DEPTH);
   }
 
   setBoss(hp: number | null, maxHp: number) {
+    const g = this.bossGfx;
+    g.clear();
     if (hp === null) {
-      this.bossWrap.classList.add('hidden');
+      this.bossFrame?.destroy();
+      this.bossFrame = null;
       return;
     }
-    this.bossWrap.classList.remove('hidden');
-    const pct = Math.max(0, (hp / maxHp) * 100);
-    this.bossFill.style.width = `${pct}%`;
+    if (!this.bossFrame) {
+      const win = drawWindow(this.scene, 40, 50, 160, 14);
+      const label = this.scene.add.text(45, 53, 'TORNADO', textStyle('#6c5b8f'));
+      this.bossFrame = this.scene.add.container(0, 0, [win, label]).setScrollFactor(0).setDepth(DEPTH);
+    }
+    const pct = Phaser.Math.Clamp(hp / maxHp, 0, 1);
+    g.fillStyle(UI.ink, 1);
+    g.fillRect(106, 54, 90, 6);
+    g.fillStyle(UI.hpTrack, 1);
+    g.fillRect(107, 55, 88, 4);
+    g.fillStyle(0xa080d0, 1);
+    g.fillRect(107, 55, Math.round(88 * pct), 4);
   }
 
-  showToast(text: string, durationMs = 4000) {
-    const toast = document.createElement('div');
-    toast.className = 'weather-toast';
-    toast.textContent = text;
-    this.root.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add('visible'));
-    setTimeout(() => {
-      toast.classList.remove('visible');
-      setTimeout(() => toast.remove(), 400);
-    }, durationMs);
+  /** Pokémon-style bottom message box; replaces any message currently showing. */
+  showMessage(text: string, durationMs = 2600) {
+    this.message?.destroy();
+    this.messageTimer?.remove(false);
+    const win = drawWindow(this.scene, 4, 118, 232, 38);
+    const label = this.scene.add.text(12, 126, text, {
+      ...textStyle(),
+      wordWrap: { width: 216 },
+    });
+    this.message = this.scene.add.container(0, 0, [win, label]).setScrollFactor(0).setDepth(DEPTH + 1);
+    this.messageTimer = this.scene.time.delayedCall(durationMs, () => {
+      this.message?.destroy();
+      this.message = null;
+    });
+  }
+
+  /** Hides/shows the whole HUD (e.g. behind a full-screen menu). */
+  setVisible(visible: boolean) {
+    this.objects.forEach((o) => (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(visible));
+    this.bossGfx.setVisible(visible);
+    this.bossFrame?.setVisible(visible);
+    this.badge?.setVisible(visible);
+    this.message?.setVisible(visible);
   }
 
   destroy() {
-    this.container.remove();
+    this.objects.forEach((o) => o.destroy());
+    this.bossGfx.destroy();
+    this.bossFrame?.destroy();
+    this.badge?.destroy();
+    this.message?.destroy();
+    this.messageTimer?.remove(false);
   }
 }

@@ -1,11 +1,11 @@
+import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
+import { drawWindow, drawCursor, textStyle } from '../ui/Window';
 
 export interface UpgradeOption {
   id: string;
   name: string;
   description: string;
-  glyph: string;
-  color: string;
   apply: (player: Player) => void;
 }
 
@@ -16,40 +16,30 @@ export const UPGRADE_POOL: UpgradeOption[] = [
     id: 'weapon_damage',
     name: 'Storm Bolt+',
     description: 'Auto-attack damage +6',
-    glyph: '⚔',
-    color: '#8fe0ff',
     apply: (p) => (p.attackDamage += 6),
   },
   {
     id: 'weapon_speed',
     name: 'Squall Rhythm',
     description: 'Attack cooldown -12%',
-    glyph: '⏱',
-    color: '#8fe0ff',
     apply: (p) => (p.attackCooldown = Math.max(WEAPON_MIN_COOLDOWN, Math.round(p.attackCooldown * 0.88))),
   },
   {
     id: 'weapon_range',
     name: 'Long Gust',
-    description: 'Attack range +50',
-    glyph: '🎯',
-    color: '#8fe0ff',
-    apply: (p) => (p.attackRange += 50),
+    description: 'Attack range +25',
+    apply: (p) => (p.attackRange += 25),
   },
   {
     id: 'weapon_pierce',
     name: 'Piercing Hail',
     description: 'Storm Bolt pierces +1 enemy',
-    glyph: '➶',
-    color: '#8fe0ff',
     apply: (p) => (p.pierce += 1),
   },
   {
     id: 'vitality',
     name: 'Vitality',
     description: 'Max HP +20 and full heal',
-    glyph: '❤',
-    color: '#ff5f5f',
     apply: (p) => {
       p.maxHp += 20;
       p.hp = p.maxHp;
@@ -58,49 +48,37 @@ export const UPGRADE_POOL: UpgradeOption[] = [
   {
     id: 'magnet',
     name: 'Lodestone',
-    description: 'XP magnet radius +40',
-    glyph: '🧲',
-    color: '#4be05a',
-    apply: (p) => (p.magnetRadius += 40),
+    description: 'XP magnet radius +20',
+    apply: (p) => (p.magnetRadius += 20),
   },
   {
     id: 'sunbeam',
     name: 'Sunbeam',
     description: 'Periodic heal + burst damage aura',
-    glyph: '☀',
-    color: '#ffb020',
     apply: (p) => (p.powerups.sunbeam += 1),
   },
   {
     id: 'rainbow_shield',
     name: 'Rainbow Shield',
     description: 'Periodic brief invulnerability',
-    glyph: '🌈',
-    color: '#ff5fa2',
     apply: (p) => (p.powerups.rainbowShield += 1),
   },
   {
     id: 'gale',
     name: 'Gale Force',
     description: 'Move speed +20%',
-    glyph: '💨',
-    color: '#b9f5c0',
     apply: (p) => (p.powerups.gale += 1),
   },
   {
     id: 'frost',
     name: 'Frost Aura',
     description: 'Slows nearby enemies',
-    glyph: '❄',
-    color: '#aee9ff',
     apply: (p) => (p.powerups.frost += 1),
   },
   {
     id: 'static',
     name: 'Static Charge',
     description: 'Attacks chain to a second enemy',
-    glyph: '⚡',
-    color: '#fff066',
     apply: (p) => (p.powerups.staticCharge += 1),
   },
 ];
@@ -115,63 +93,86 @@ function pickThree(): UpgradeOption[] {
   return picks;
 }
 
+/**
+ * Pokémon-style level-up menu: a boxed list with a ▶ cursor, the highlighted
+ * upgrade's description in a bottom text box. Arrows/W-S move, Enter/Space/Z
+ * confirm, 1-3 pick directly, or use the mouse.
+ */
 export class LevelUpSystem {
-  private root: HTMLElement;
-  private modal: HTMLElement | null = null;
+  private scene: Phaser.Scene;
+  private root: Phaser.GameObjects.Container | null = null;
+  private keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
-  constructor(root: HTMLElement) {
-    this.root = root;
+  constructor(scene: Phaser.Scene) {
+    this.scene = scene;
   }
 
-  presentChoices(player: Player, onResume: () => void) {
+  presentChoices(player: Player, level: number, onResume: () => void) {
+    this.close();
     const options = pickThree();
+    let selected = 0;
 
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
+    const dim = this.scene.add.rectangle(0, 0, 240, 160, 0x000000, 0.4).setOrigin(0, 0);
+    const titleWin = drawWindow(this.scene, 60, 22, 96, 20);
+    const title = this.scene.add.text(68, 28, `LEVEL ${level}!`, textStyle());
+    const listWin = drawWindow(this.scene, 60, 44, 176, 20 + options.length * 16);
+    const cursor = this.scene.add.graphics();
+    const names = options.map((opt, i) => this.scene.add.text(80, 54 + i * 16, opt.name, textStyle()));
+    const descWin = drawWindow(this.scene, 4, 118, 232, 38);
+    const desc = this.scene.add.text(12, 126, '', { ...textStyle(), wordWrap: { width: 216 } });
 
-    const panel = document.createElement('div');
-    panel.className = 'modal-panel';
+    const zones = options.map((_, i) =>
+      this.scene.add
+        .rectangle(64, 50 + i * 16, 168, 16, 0xffffff, 0)
+        .setOrigin(0, 0)
+        .setScrollFactor(0) // hit-testing uses the child's own scroll factor, not the container's
+        .setInteractive({ useHandCursor: true })
+    );
 
-    const title = document.createElement('div');
-    title.className = 'modal-title';
-    title.textContent = `LEVEL ${player.level}`;
-    panel.appendChild(title);
+    const render = () => {
+      cursor.clear();
+      drawCursor(cursor, 68, 55 + selected * 16);
+      names.forEach((n, i) => n.setColor(i === selected ? '#c07800' : '#383838'));
+      desc.setText(options[selected].description);
+    };
+    const confirm = (i: number) => {
+      options[i].apply(player);
+      this.close();
+      onResume();
+    };
 
-    const sub = document.createElement('div');
-    sub.className = 'modal-subtitle';
-    sub.textContent = 'Choose an upgrade';
-    panel.appendChild(sub);
-
-    const cards = document.createElement('div');
-    cards.className = 'choice-row';
-
-    for (const opt of options) {
-      const card = document.createElement('button');
-      card.className = 'choice-card';
-      card.style.setProperty('--accent', opt.color);
-      card.innerHTML = `
-        <div class="choice-glyph">${opt.glyph}</div>
-        <div class="choice-name">${opt.name}</div>
-        <div class="choice-desc">${opt.description}</div>
-      `;
-      card.addEventListener('click', () => {
-        opt.apply(player);
-        this.close();
-        onResume();
+    zones.forEach((z, i) => {
+      z.on('pointerover', () => {
+        selected = i;
+        render();
       });
-      cards.appendChild(card);
-    }
+      z.on('pointerdown', () => confirm(i));
+    });
 
-    panel.appendChild(cards);
-    overlay.appendChild(panel);
-    this.root.appendChild(overlay);
-    this.modal = overlay;
+    this.keyHandler = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowup' || k === 'w') selected = (selected + options.length - 1) % options.length;
+      else if (k === 'arrowdown' || k === 's') selected = (selected + 1) % options.length;
+      else if (k === 'enter' || k === ' ' || k === 'z') return confirm(selected);
+      else if (k >= '1' && k <= String(options.length)) return confirm(Number(k) - 1);
+      else return;
+      render();
+    };
+    this.scene.input.keyboard?.on('keydown', this.keyHandler);
+
+    this.root = this.scene.add
+      .container(0, 0, [dim, titleWin, title, listWin, cursor, ...names, descWin, desc, ...zones])
+      .setScrollFactor(0)
+      .setDepth(200);
+    render();
   }
 
   close() {
-    if (this.modal) {
-      this.modal.remove();
-      this.modal = null;
+    if (this.keyHandler) {
+      this.scene.input.keyboard?.off('keydown', this.keyHandler);
+      this.keyHandler = null;
     }
+    this.root?.destroy();
+    this.root = null;
   }
 }
