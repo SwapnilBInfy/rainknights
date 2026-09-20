@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { WeaponType } from './chibi';
+import { BEAM } from '../config/weapons';
 
 /**
  * Tiny procedural weapon sprites (16x16, drawn pointing UP with the grip at
@@ -75,6 +76,11 @@ export function weaponKey(type: WeaponType): string {
 }
 
 export const SLASH_KEY = 'fx_slash';
+export const SPARK_KEY = 'fx_spark';
+
+export function beamKey(type: WeaponType): string {
+  return `fx_beam_${type}`;
+}
 
 function css(n: number): string {
   return `#${n.toString(16).padStart(6, '0')}`;
@@ -112,9 +118,40 @@ function slash(): Grid {
   return g;
 }
 
+/**
+ * Beam segment texture (2px wide, stretched to beam length in game): banded
+ * edge → mid → white core, symmetric around the center row.
+ */
+function generateBeamTexture(scene: Phaser.Scene, type: WeaponType) {
+  const key = beamKey(type);
+  if (scene.textures.exists(key)) return;
+  const { halfWidth, colors } = BEAM[type];
+  const h = halfWidth * 2 + 1;
+  const tex = scene.textures.createCanvas(key, 2, h)!;
+  const ctx = tex.getContext();
+  for (let row = 0; row < h; row++) {
+    const d = Math.abs(row - halfWidth) / Math.max(1, halfWidth);
+    const color = d <= 0.3 ? colors[2] : d <= 0.7 ? colors[1] : colors[0];
+    ctx.fillStyle = css(color);
+    ctx.fillRect(0, row, 2, 1);
+  }
+  tex.refresh();
+}
+
+/** 5x5 star burst used for beam muzzle / impact flashes. */
+function sparks(): Grid {
+  const g = newGrid();
+  for (const [x, y] of [[2, 0], [2, 1], [0, 2], [1, 2], [2, 2], [3, 2], [4, 2], [2, 3], [2, 4], [1, 1], [3, 1], [1, 3], [3, 3]]) {
+    g[y][x] = x === 2 && y === 2 ? 0xffffff : 0xfff8c0;
+  }
+  return g;
+}
+
 export function generateWeaponTextures(scene: Phaser.Scene) {
   for (const type of Object.keys(BUILDERS) as WeaponType[]) {
     paint(scene, weaponKey(type), outlined(BUILDERS[type]()));
   }
   paint(scene, SLASH_KEY, slash());
+  paint(scene, SPARK_KEY, sparks());
+  for (const type of Object.keys(BUILDERS) as WeaponType[]) generateBeamTexture(scene, type);
 }

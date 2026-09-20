@@ -38,7 +38,7 @@ export class MenuScene extends Phaser.Scene {
 
     const start = this.add.text(width / 2, 128, 'PRESS START', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(5);
     this.tweens.add({ targets: start, alpha: 0, duration: 500, yoyo: true, repeat: -1, hold: 200 });
-    this.add.text(width / 2, height - 12, 'WASD: MOVE   AUTO-ATTACK', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(5);
+    this.add.text(width / 2, height - 12, 'WASD MOVE  SPACE SWING  J BEAM', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(5);
 
     for (let i = 0; i < 26; i++) {
       const drop = this.add

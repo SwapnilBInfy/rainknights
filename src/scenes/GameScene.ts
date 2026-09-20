@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
-import { WORLD, PLAYER_BASE } from '../config/constants';
+import { WORLD, PLAYER_BASE, AUTO_ATTACK } from '../config/constants';
+import { MELEE, BEAM } from '../config/weapons';
+import { beamKey, SPARK_KEY } from '../gfx/weapons';
 import { TEX } from '../gfx/spriteDefs';
 import { getCharacter } from '../config/characters';
 import { getRegion } from '../config/regions';
@@ -95,6 +97,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.levelUpSystem = new LevelUpSystem(this);
     this.hud.setWeatherCondition(data.weatherCondition ?? 'clear', data.weatherLabel ?? 'Clear');
     this.lastFrontIndex = this.weather.currentFrontIndex;
+    this.time.delayedCall(3000, () => {
+      if (!this.ended && !this.paused) this.hud.showMessage('SPACE: swing weapon\nJ or X: energy beam');
+    });
     this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
 
     this.setupAmbientWeather(data.weatherTint ?? 0x8fe0ff);
@@ -113,9 +118,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.updateGems();
     applyFrostAura(this.player, this.getActiveEnemies());
     this.updatePull();
+    this.handleManualAttacks(time);
     this.handleAttack(time);
 
-    this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta);
+    this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta, this.player.beamCharge(time));
     this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1);
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
       this.lastFrontIndex = this.weather.currentFrontIndex;
@@ -175,34 +181,39 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.player.takeDamage(enemy.stats.damage, this.time.now);
   };
 
+  /** Damage from any source; also feeds Static Charge chaining. */
+  private damageEnemy(enemy: Enemy, damage: number) {
+    enemy.takeDamage(damage);
+    if (this.player.powerups.staticCharge > 0) {
+      applyStaticChain(
+        this,
+        enemy,
+        Math.round(damage * 0.5),
+        this.player.powerups.staticCharge,
+        this.getActiveEnemies(),
+        () => {}
+      );
+    }
+  }
+
   private onProjectileHitEnemy = (projObj: unknown, enemyObj: unknown) => {
     const proj = projObj as Projectile;
     const enemy = enemyObj as Enemy;
     if (!proj.active || !enemy.active || proj.hitSet.has(enemy)) return;
     proj.hitSet.add(enemy);
 
-    enemy.takeDamage(proj.damage);
-    if (this.player.powerups.staticCharge > 0) {
-      applyStaticChain(
-        this,
-        enemy,
-        Math.round(proj.damage * 0.5),
-        this.player.powerups.staticCharge,
-        this.getActiveEnemies(),
-        () => {}
-      );
-    }
+    this.damageEnemy(enemy, proj.damage);
 
     proj.pierceLeft -= 1;
     if (proj.pierceLeft < 0) proj.destroy();
   };
 
+  /** Automatic Storm Bolt — a weaker backup to the manual swing and beam. */
   private handleAttack(time: number) {
-    if (time - this.player.lastAttackAt < this.player.attackCooldown) return;
+    if (time - this.player.lastAttackAt < this.player.attackCooldown * AUTO_ATTACK.cooldownMult) return;
     const target = this.findNearestEnemy(this.player.attackRange);
     if (!target) return;
     this.player.lastAttackAt = time;
-    this.player.playAttackSwing(time, target.x, target.y);
     this.fireProjectile(target);
   }
 
@@ -211,7 +222,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.add.existing(proj);
     this.physics.add.existing(proj);
     proj.setDepth(6);
-    proj.damage = this.player.attackDamage;
+    proj.damage = Math.max(1, Math.round(this.player.attackDamage * AUTO_ATTACK.damageMult));
     proj.pierceLeft = this.player.pierce;
 
     const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, target.x, target.y);
@@ -223,6 +234,90 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.time.delayedCall(1000, () => {
       if (proj.active) proj.destroy();
     });
+  }
+
+  // --- manual attacks: Space swings the weapon, J / X fires the energy beam ---
+
+  private handleManualAttacks(time: number) {
+    // Upgrades and character speed that shorten the auto cooldown speed these up too.
+    const ratio = this.player.attackCooldown / PLAYER_BASE.attackCooldown;
+    if (this.player.wantsSwing && time >= this.player.meleeReadyAt) this.swingWeapon(time, ratio);
+    if (this.player.wantsBeam && time >= this.player.beamReadyAt) this.fireBeam(time, ratio);
+  }
+
+  private hitSpark(x: number, y: number) {
+    const spark = this.add.image(x, y, SPARK_KEY).setDepth(13);
+    this.tweens.add({ targets: spark, scale: 1.8, alpha: 0, duration: 140, onComplete: () => spark.destroy() });
+  }
+
+  private swingWeapon(time: number, ratio: number) {
+    const p = this.player;
+    const stats = MELEE[p.weaponType];
+    p.meleeReadyAt = time + stats.cooldownMs * ratio;
+    p.playAttackSwing(time, p.x + p.aim.x * 30, p.y + p.aim.y * 30);
+
+    const cosHalf = Math.cos(Phaser.Math.DegToRad(stats.arcDeg / 2));
+    const damage = Math.round(p.attackDamage * stats.damageMult);
+    for (const enemy of this.getActiveEnemies()) {
+      const dx = enemy.x - p.x;
+      const dy = enemy.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      const radius = (enemy.body as Phaser.Physics.Arcade.Body).halfWidth;
+      if (dist > stats.reach + radius) continue;
+      const cos = dist > 0.001 ? (dx * p.aim.x + dy * p.aim.y) / dist : 1;
+      if (dist > radius + 6 && cos < cosHalf) continue; // point-blank enemies are always hit
+
+      this.damageEnemy(enemy, damage);
+      if (enemy.active && dist > 0.001) {
+        const shove = enemy === this.boss ? stats.knockback * 0.25 : stats.knockback;
+        enemy.x += (dx / dist) * shove;
+        enemy.y += (dy / dist) * shove;
+      }
+      this.hitSpark(enemy.x, enemy.y);
+    }
+    if (p.weaponType === 'hammer') this.cameras.main.shake(90, 0.002);
+  }
+
+  private fireBeam(time: number, ratio: number) {
+    const p = this.player;
+    const stats = BEAM[p.weaponType];
+    p.startBeamCooldown(time, stats.cooldownMs * ratio);
+    p.playCast(time);
+
+    const len = p.attackRange * 0.95;
+    const ox = p.x + p.aim.x * 8;
+    const oy = p.y + p.aim.y * 8 + 2;
+    const abx = p.aim.x * len;
+    const aby = p.aim.y * len;
+    const ex = ox + abx;
+    const ey = oy + aby;
+
+    const damage = Math.round(p.attackDamage * stats.damageMult);
+    for (const enemy of this.getActiveEnemies()) {
+      const t = Phaser.Math.Clamp(((enemy.x - ox) * abx + (enemy.y - oy) * aby) / (len * len), 0, 1);
+      const dist = Math.hypot(enemy.x - (ox + abx * t), enemy.y - (oy + aby * t));
+      const radius = (enemy.body as Phaser.Physics.Arcade.Body).halfWidth;
+      if (dist > stats.halfWidth + radius) continue;
+      this.damageEnemy(enemy, damage); // the beam pierces everything in line
+      this.hitSpark(enemy.x, enemy.y);
+    }
+
+    const beam = this.add
+      .image(ox, oy, beamKey(p.weaponType))
+      .setOrigin(0, 0.5)
+      .setRotation(Math.atan2(p.aim.y, p.aim.x))
+      .setDisplaySize(len, stats.halfWidth * 2 + 1)
+      .setDepth(12);
+    this.tweens.add({
+      targets: beam,
+      scaleY: beam.scaleY * 0.25,
+      alpha: 0,
+      duration: 240,
+      onComplete: () => beam.destroy(),
+    });
+    this.hitSpark(ox, oy);
+    this.hitSpark(ex, ey);
+    this.cameras.main.shake(70, 0.0015);
   }
 
   private findNearestEnemy(range: number): Enemy | null {

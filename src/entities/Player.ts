@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { PLAYER_BASE, XP_BASE, XP_GROWTH } from '../config/constants';
 import type { CharacterDef } from '../config/characters';
-import { chibiKey, type Facing } from '../gfx/chibi';
+import { chibiKey, type Facing, type WeaponType } from '../gfx/chibi';
 import { weaponKey, SLASH_KEY } from '../gfx/weapons';
 
 export interface PowerupLevels {
@@ -41,6 +41,21 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private facing: Facing = 'down';
   private weapon: Phaser.GameObjects.Image;
   private attackSwingUntil = 0;
+  private castUntil = 0;
+  private castAngle = 0;
+
+  readonly weaponType: WeaponType;
+  /** Direction of the last movement (8-way); melee and beam go this way. */
+  readonly aim = new Phaser.Math.Vector2(0, 1);
+  meleeReadyAt = 0;
+  beamReadyAt = 0;
+  private beamCooldownMs = 1;
+  private swingKey!: Phaser.Input.Keyboard.Key;
+  private beamKeys!: Phaser.Input.Keyboard.Key[];
+  // A tap shorter than one frame would be missed by polling isDown, so a
+  // press also "latches" for a moment.
+  private swingPressedAt = -Infinity;
+  private beamPressedAt = -Infinity;
 
   onLevelUp?: () => void;
   onDied?: () => void;
@@ -48,6 +63,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   constructor(scene: Phaser.Scene, x: number, y: number, character: CharacterDef) {
     super(scene, x, y, chibiKey(character.id, 'down', 'stand'));
     this.characterId = character.id;
+    this.weaponType = character.style.weapon;
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -75,6 +91,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       left: keyboard.addKey('A'),
       right: keyboard.addKey('D'),
     };
+    this.swingKey = keyboard.addKey('SPACE');
+    this.beamKeys = [keyboard.addKey('J'), keyboard.addKey('X')];
+    keyboard.on('keydown-SPACE', () => (this.swingPressedAt = scene.time.now));
+    keyboard.on('keydown-J', () => (this.beamPressedAt = scene.time.now));
+    keyboard.on('keydown-X', () => (this.beamPressedAt = scene.time.now));
+  }
+
+  /** Space held: swing the held weapon. */
+  get wantsSwing(): boolean {
+    return this.swingKey.isDown || this.scene.time.now - this.swingPressedAt < 150;
+  }
+
+  /** J or X held: fire the energy beam. */
+  get wantsBeam(): boolean {
+    return this.beamKeys.some((k) => k.isDown) || this.scene.time.now - this.beamPressedAt < 150;
+  }
+
+  /** 0..1 recharge of the beam, for the HUD gauge. */
+  beamCharge(time: number): number {
+    return Phaser.Math.Clamp(1 - (this.beamReadyAt - time) / this.beamCooldownMs, 0, 1);
+  }
+
+  startBeamCooldown(time: number, ms: number) {
+    this.beamCooldownMs = ms;
+    this.beamReadyAt = time + ms;
   }
 
   get effectiveMoveSpeed(): number {
@@ -85,7 +126,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     super.preUpdate(time, delta);
     this.handleMovement(time);
     this.handleAuras(time, delta);
-    this.updateWeaponRest();
+    this.updateWeaponRest(time);
   }
 
   private facingFor(dx: number, dy: number): { facing: Facing; flip: boolean } {
@@ -100,14 +141,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   /** Keeps the held weapon at the knight's hand while it isn't mid-swing. */
-  private updateWeaponRest() {
+  private updateWeaponRest(time: number) {
     const flip = this.flipX ? -1 : 1;
     const hand = { down: { x: -5, y: 4, rot: -0.4 }, up: { x: 5, y: 3, rot: 0.4 }, side: { x: 5 * flip, y: 4, rot: 0.5 * flip } }[
       this.facing
     ];
     this.weapon.setPosition(this.x + hand.x, this.y + hand.y);
     this.weapon.setDepth(this.facing === 'up' ? 9 : 11);
-    if (!this.scene.tweens.isTweening(this.weapon)) this.weapon.setRotation(hand.rot);
+    if (time < this.castUntil) this.weapon.setRotation(this.castAngle);
+    else if (!this.scene.tweens.isTweening(this.weapon)) this.weapon.setRotation(hand.rot);
   }
 
   /** Faces the target, shows the attack pose and swings the weapon through an arc. */
@@ -138,6 +180,17 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     });
   }
 
+  /** Beam pose: face the aim direction with the weapon leveled along it. */
+  playCast(time: number) {
+    this.face(this.aim.x, this.aim.y);
+    this.attackSwingUntil = time + 260;
+    this.castUntil = time + 260;
+    this.castAngle = Math.atan2(this.aim.y, this.aim.x) + Math.PI / 2;
+    this.scene.tweens.killTweensOf(this.weapon);
+    this.anims.stop();
+    this.setTexture(chibiKey(this.characterId, this.facing, 'attack'));
+  }
+
   private handleMovement(time: number) {
     const left = this.cursors.left?.isDown || this.wasd.left.isDown;
     const right = this.cursors.right?.isDown || this.wasd.right.isDown;
@@ -151,6 +204,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const moving = dir.lengthSq() > 0;
     if (moving) {
       dir.normalize();
+      this.aim.copy(dir);
       if (time >= this.attackSwingUntil) this.face(dir.x, dir.y);
     }
     this.setVelocity(dir.x * this.effectiveMoveSpeed, dir.y * this.effectiveMoveSpeed);

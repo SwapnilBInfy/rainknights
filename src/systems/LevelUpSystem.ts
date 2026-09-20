@@ -149,7 +149,11 @@ export class LevelUpSystem {
       z.on('pointerdown', () => confirm(i));
     });
 
+    // Ignore key-repeat and anything in the first moments, so mashing Space to swing
+    // when the menu pops up can't accidentally pick an upgrade.
+    const openedAt = this.scene.time.now;
     this.keyHandler = (e: KeyboardEvent) => {
+      if (e.repeat || this.scene.time.now - openedAt < 400) return;
       const k = e.key.toLowerCase();
       if (k === 'arrowup' || k === 'w') selected = (selected + options.length - 1) % options.length;
       else if (k === 'arrowdown' || k === 's') selected = (selected + 1) % options.length;

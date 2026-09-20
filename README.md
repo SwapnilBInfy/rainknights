@@ -16,7 +16,11 @@ are AI-generated (via `npm run art:generate`).
   Chaser (fast/fragile) — each with different stats
 - **Move**: WASD or Arrow keys (blocked by lakes and rock clusters on the map)
 - **Menus**: Arrow keys / W-S + Enter/Space/Z, number keys, or the mouse
-- **Attack**: automatic — your Storm Bolt fires at the nearest enemy in range
+- **Swing**: hold **Space** to swing your weapon (sword / hammer / daggers) in an arc
+  toward the way you're facing — strong, with knockback
+- **Energy beam**: hold **J** or **X** to fire a piercing beam in your facing
+  direction (short recharge, shown by the gauge under your HP)
+- **Auto-attack**: a weaker Storm Bolt still fires at the nearest enemy as a backup
 - **Level up**: collect XP gems from defeated enemies, then pick one of three
   upgrades (weapon, stat, or weather power)
 - **Goal**: survive the escalating storm fronts and defeat the **Tornado**

@@ -23,6 +23,12 @@ export const PLAYER_BASE = {
   projectileSpeed: 210,
 };
 
+/** The automatic Storm Bolt is a weaker backup to the manual swing and beam. */
+export const AUTO_ATTACK = {
+  damageMult: 0.6,
+  cooldownMult: 1.5,
+};
+
 export interface EnemyStats {
   key: string;
   name: string;

@@ -36,11 +36,12 @@ export class HUD {
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
 
-    this.add(drawWindow(scene, 2, 2, 100, 44));
+    this.add(drawWindow(scene, 2, 2, 100, 54));
     this.lvText = this.text(7, 6, 'Lv1');
     this.timeText = this.text(97, 6, '00:00').setOrigin(1, 0);
     this.text(7, 18, 'HP', '#c07800');
     this.hpText = this.text(97, 26, '', '#383838').setOrigin(1, 0);
+    this.text(7, 45, 'J', '#3078d8');
     this.bars = this.add(scene.add.graphics());
 
     this.bossGfx = scene.add.graphics().setScrollFactor(0).setDepth(DEPTH + 1);
@@ -57,7 +58,7 @@ export class HUD {
     return this.add(this.scene.add.text(x, y, str, textStyle(color)));
   }
 
-  update(player: Player, elapsedSeconds: number, frontName: string, delta = 16) {
+  update(player: Player, elapsedSeconds: number, frontName: string, delta = 16, beamCharge = 1) {
     if (this.displayHp < 0) this.displayHp = player.hp;
     // HP drains/refills smoothly like the real games.
     const step = (60 * delta) / 1000;
@@ -87,6 +88,14 @@ export class HUD {
     g.fillRect(7, 37, 90, 3);
     g.fillStyle(UI.xpBlue, 1);
     g.fillRect(7, 37, Math.round(90 * xpPct), 3);
+
+    // energy beam recharge gauge (fires on J / X)
+    g.fillStyle(UI.ink, 1);
+    g.fillRect(20, 45, 78, 7);
+    g.fillStyle(UI.hpTrack, 1);
+    g.fillRect(21, 46, 76, 5);
+    g.fillStyle(beamCharge >= 1 ? 0x60e0ff : 0x3078a8, 1);
+    g.fillRect(21, 46, Math.round(76 * beamCharge), 5);
 
     if (frontName !== this.frontName) {
       this.frontName = frontName;
@@ -123,17 +132,17 @@ export class HUD {
       return;
     }
     if (!this.bossFrame) {
-      const win = drawWindow(this.scene, 40, 50, 160, 14);
-      const label = this.scene.add.text(45, 53, 'TORNADO', textStyle('#6c5b8f'));
+      const win = drawWindow(this.scene, 40, 60, 160, 14);
+      const label = this.scene.add.text(45, 63, 'TORNADO', textStyle('#6c5b8f'));
       this.bossFrame = this.scene.add.container(0, 0, [win, label]).setScrollFactor(0).setDepth(DEPTH);
     }
     const pct = Phaser.Math.Clamp(hp / maxHp, 0, 1);
     g.fillStyle(UI.ink, 1);
-    g.fillRect(106, 54, 90, 6);
+    g.fillRect(106, 64, 90, 6);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(107, 55, 88, 4);
+    g.fillRect(107, 65, 88, 4);
     g.fillStyle(0xa080d0, 1);
-    g.fillRect(107, 55, Math.round(88 * pct), 4);
+    g.fillRect(107, 65, Math.round(88 * pct), 4);
   }
 
   /** Pokémon-style bottom message box; replaces any message currently showing. */
