@@ -22,6 +22,7 @@ class AudioEngine {
   ctx: AudioContext | null = null;
   muted = loadMuted();
   onMuteChange?: (muted: boolean) => void;
+  private muteListeners = new Set<(muted: boolean) => void>();
 
   private master!: GainNode;
   private musicBus!: GainNode;
@@ -207,7 +208,19 @@ class AudioEngine {
       /* storage unavailable — mute just won't persist */
     }
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 1, this.ctx.currentTime, 0.05);
+    this.notifyMute();
+  }
+
+  /** Extra listeners (the pause menu) without replacing the HUD badge callback. */
+  subscribeMute(listener: (muted: boolean) => void): () => void {
+    this.muteListeners.add(listener);
+    listener(this.muted);
+    return () => this.muteListeners.delete(listener);
+  }
+
+  private notifyMute() {
     this.onMuteChange?.(this.muted);
+    for (const listener of this.muteListeners) listener(this.muted);
   }
 }
 
