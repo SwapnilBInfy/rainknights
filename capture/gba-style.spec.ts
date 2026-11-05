@@ -13,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const run = promisify(execFile);
 const OUTPUT_DIR = join(__dirname, 'output');
 const FEATURE = 'gba-style';
-const BASE_URL = process.env.CAPTURE_URL ?? 'https://swapnilbinfy.github.io/rainknights/';
+const BASE_URL = process.env.CAPTURE_URL ?? 'https://rainknights.vercel.app/';
 
 test('game looks and feels like a GBA Pokémon title', async () => {
   await mkdir(OUTPUT_DIR, { recursive: true });

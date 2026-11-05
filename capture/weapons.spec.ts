@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const run = promisify(execFile);
 const OUTPUT_DIR = join(__dirname, 'output');
 const FEATURE = 'weapons';
-const BASE_URL = process.env.CAPTURE_URL ?? 'https://swapnilbinfy.github.io/rainknights/';
+const BASE_URL = process.env.CAPTURE_URL ?? 'https://rainknights.vercel.app/';
 
 test('Space swings the weapon and J fires a piercing energy beam', async () => {
   await mkdir(OUTPUT_DIR, { recursive: true });
