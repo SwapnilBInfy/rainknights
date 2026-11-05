@@ -73,6 +73,25 @@ npm run build     # type-check and build a static dist/ bundle
 npm run preview   # preview the production build locally
 ```
 
+## Development & CI
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm run build       # type-check and build a static dist/ bundle
+npm run test:smoke  # Playwright smoke test against vite preview of dist/
+```
+
+The smoke test needs a production build first (`npm run build`) and a local
+Chromium install (`npx playwright install chromium`). It loads the preview,
+checks the page title, and asserts that a Phaser canvas is on screen with no
+console errors. `npm run capture` is separate: those specs record clips of a
+deployed build and are not part of CI.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on pull requests and on
+pushes to `main`: `npm ci`, typecheck, `npm run build`, then the Chromium-only
+smoke test. If the smoke test fails, the Playwright HTML report and trace are
+uploaded as a workflow artifact.
+
 ## Hosting
 
 `npm run build` produces a fully static `dist/` folder with no backend or
