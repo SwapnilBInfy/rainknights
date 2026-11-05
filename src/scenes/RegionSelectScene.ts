@@ -29,6 +29,10 @@ export class RegionSelectScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#181c38');
 
     const weather: (RegionWeatherState | null)[] = REGIONS.map(() => null);
+    let alive = true;
+    this.events.once('shutdown', () => {
+      alive = false;
+    });
     const frames = REGIONS.map(() => this.add.graphics().setDepth(2));
     const highlight = () =>
       frames.forEach((g, i) => {
@@ -58,6 +62,8 @@ export class RegionSelectScene extends Phaser.Scene {
 
       fetchRegionWeather(region).then((w) => {
         weather[i] = w;
+        // The player can leave this scene before the forecast returns.
+        if (!alive || !status.active) return;
         this.tweens.killTweensOf(status);
         const label = `${WEATHER_SHORT[w.condition] ?? w.label} ${Math.round(w.temp)}C`;
         status.setAlpha(1).setText(label).setColor('#383838').setX(x0 + 62);

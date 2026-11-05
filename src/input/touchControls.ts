@@ -18,6 +18,30 @@ interface Dirs {
 
 const NO_DIRS: Dirs = { up: false, down: false, left: false, right: false };
 
+let touchActive = false;
+const touchListeners = new Set<(active: boolean) => void>();
+
+/** True once the on-screen A / B / Start cluster is actually shown. */
+export function isTouchControlsActive(): boolean {
+  return touchActive;
+}
+
+/** Fires immediately with the current value, then on every visibility change. */
+export function onTouchControlsChange(listener: (active: boolean) => void): () => void {
+  touchListeners.add(listener);
+  listener(touchActive);
+  return () => {
+    touchListeners.delete(listener);
+  };
+}
+
+function setTouchActive(next: boolean) {
+  if (next === touchActive) return;
+  touchActive = next;
+  document.documentElement.dataset.touchControls = next ? '1' : '0';
+  for (const listener of touchListeners) listener(next);
+}
+
 /**
  * On-screen d-pad (drag it like a stick; diagonals hold two arrows) plus
  * A / B / Start. Hidden unless the device actually has a touch screen.
@@ -217,6 +241,7 @@ export function mountTouchControls(game: Phaser.Game) {
     const coarse = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
     const show = touched || navigator.maxTouchPoints > 0 || coarse;
     root.hidden = !show;
+    setTouchActive(show);
     if (show) {
       const canvas = game.canvas;
       if (canvas?.isConnected) {

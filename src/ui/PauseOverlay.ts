@@ -16,9 +16,16 @@ export interface PauseHost {
 
 const CHOICES = ['resume', 'sound', 'quit'] as const;
 type Choice = (typeof CHOICES)[number];
+type Mode = 'menu' | 'confirm';
 
 let overlay: HTMLDivElement | null = null;
+let titleEl: HTMLParagraphElement | null = null;
+let menuPanel: HTMLDivElement | null = null;
+let confirmPanel: HTMLDivElement | null = null;
+let menuButtons: HTMLButtonElement[] = [];
+let confirmButtons: HTMLButtonElement[] = [];
 let buttons: HTMLButtonElement[] = [];
+let mode: Mode = 'menu';
 let selected = 0;
 let frame: ScreenFrame | null = null;
 let repeatTimer = 0;
@@ -29,6 +36,10 @@ let repeatAt = 0;
  * DOM pause menu scaled onto the canvas. GameScene owns when the simulation
  * actually freezes; this only draws the menu and turns Esc / P / Start /
  * blur / a gamepad Start button into that request.
+ *
+ * QUIT asks "Abandon run?" first. NO is the default, so a second tap on A
+ * does not throw the run away. Esc / Start / P backs out of that question
+ * instead of resuming.
  */
 export function attachPauseOverlay(game: Phaser.Game) {
   ensureOverlay();
@@ -40,8 +51,7 @@ export function attachPauseOverlay(game: Phaser.Game) {
 
 export function openPauseMenu() {
   ensureOverlay();
-  selected = 0;
-  render();
+  setMode('menu', 0);
   if (overlay) overlay.hidden = false;
   layout();
   buttons[0]?.focus({ preventScroll: true });
@@ -50,6 +60,7 @@ export function openPauseMenu() {
 
 export function closePauseMenu() {
   if (overlay) overlay.hidden = true;
+  setMode('menu', 0);
   disarmRepeat();
   if (document.activeElement instanceof HTMLElement && overlay?.contains(document.activeElement)) {
     document.activeElement.blur();
@@ -70,7 +81,7 @@ export function bindGameplayPause(host: PauseHost): () => void {
       e.preventDefault();
       e.stopPropagation();
       if (pauseKey) {
-        if (!e.repeat) host.resume();
+        if (!e.repeat) requestResume(host);
         return;
       }
       // The stick injects untrusted arrows; the repeat poller owns those.
@@ -119,7 +130,7 @@ export function bindGameplayPause(host: PauseHost): () => void {
       return;
     }
     if (down && !startWasDown) {
-      if (host.isUserPaused()) host.resume();
+      if (host.isUserPaused()) requestResume(host);
       else if (host.canPause()) host.pause();
     }
     startWasDown = down;
@@ -130,7 +141,7 @@ export function bindGameplayPause(host: PauseHost): () => void {
     if (host.isEnded()) return false;
     if (host.isLevelUp()) return true;
     if (host.isUserPaused()) {
-      host.resume();
+      requestResume(host);
       return true;
     }
     if (host.canPause()) {
@@ -156,6 +167,15 @@ export function bindGameplayPause(host: PauseHost): () => void {
   };
 }
 
+/** Esc, Start, and P resume — unless the abandon question is up, which they cancel. */
+function requestResume(host: PauseHost) {
+  if (mode === 'confirm') {
+    setMode('menu', CHOICES.indexOf('quit'));
+    return;
+  }
+  host.resume();
+}
+
 function ensureOverlay() {
   if (overlay) return;
   overlay = document.createElement('div');
@@ -170,16 +190,29 @@ function ensureOverlay() {
   panel.className = 'panel';
   const inner = document.createElement('div');
   inner.className = 'panel-inner';
-  const title = document.createElement('p');
-  title.className = 'title';
-  title.id = 'pause-title';
-  title.textContent = 'PAUSED';
+  titleEl = document.createElement('p');
+  titleEl.className = 'title';
+  titleEl.id = 'pause-title';
+  titleEl.textContent = 'PAUSED';
 
+  menuPanel = document.createElement('div');
+  menuPanel.dataset.panel = 'menu';
   const resume = menuButton('resume', 'RESUME');
   const sound = menuButton('sound', 'SOUND ON');
   const quit = menuButton('quit', 'QUIT');
-  buttons = [resume, sound, quit];
-  inner.append(title, resume, sound, quit);
+  menuButtons = [resume, sound, quit];
+  menuPanel.append(resume, sound, quit);
+
+  confirmPanel = document.createElement('div');
+  confirmPanel.dataset.panel = 'confirm';
+  confirmPanel.hidden = true;
+  const no = menuButton('no', 'NO');
+  const yes = menuButton('yes', 'YES');
+  confirmButtons = [no, yes];
+  confirmPanel.append(no, yes);
+
+  buttons = menuButtons;
+  inner.append(titleEl, menuPanel, confirmPanel);
   panel.append(inner);
   overlay.append(panel);
   document.body.append(overlay);
@@ -189,7 +222,7 @@ function ensureOverlay() {
   });
 }
 
-function menuButton(choice: Choice, text: string) {
+function menuButton(choice: string, text: string) {
   const el = document.createElement('button');
   el.type = 'button';
   el.dataset.choice = choice;
@@ -198,24 +231,41 @@ function menuButton(choice: Choice, text: string) {
 }
 
 function wireButtons(host: PauseHost) {
-  buttons.forEach((button, index) => {
-    button.onpointerover = () => {
-      if (overlay?.hidden || selected === index) return;
-      selected = index;
-      audio.play('move');
-      render();
-    };
-    button.onclick = () => {
-      if (overlay?.hidden) return;
-      selected = index;
-      render();
-      activate(host);
-    };
-  });
+  const wire = (group: HTMLButtonElement[]) => {
+    group.forEach((button, index) => {
+      button.onpointerover = () => {
+        if (overlay?.hidden || buttons !== group || selected === index) return;
+        selected = index;
+        audio.play('move');
+        render();
+      };
+      button.onclick = () => {
+        if (overlay?.hidden || buttons !== group) return;
+        selected = index;
+        render();
+        activate(host);
+      };
+    });
+  };
+  wire(menuButtons);
+  wire(confirmButtons);
+}
+
+function setMode(next: Mode, index: number) {
+  mode = next;
+  selected = index;
+  if (menuPanel) menuPanel.hidden = next !== 'menu';
+  if (confirmPanel) confirmPanel.hidden = next !== 'confirm';
+  buttons = next === 'menu' ? menuButtons : confirmButtons;
+  if (titleEl) titleEl.textContent = next === 'confirm' ? 'Abandon run?' : 'PAUSED';
+  if (overlay) overlay.setAttribute('aria-label', next === 'confirm' ? 'Abandon run?' : 'Paused');
+  render();
 }
 
 function step(delta: number) {
-  const next = (selected + delta + CHOICES.length) % CHOICES.length;
+  const count = buttons.length;
+  if (count === 0) return;
+  const next = (selected + delta + count) % count;
   if (next === selected) return;
   selected = next;
   audio.play('move');
@@ -223,7 +273,13 @@ function step(delta: number) {
 }
 
 function activate(host: PauseHost) {
-  const choice = CHOICES[selected];
+  if (mode === 'confirm') {
+    audio.play('confirm');
+    if (selected === 1) host.quit();
+    else setMode('menu', CHOICES.indexOf('quit'));
+    return;
+  }
+  const choice: Choice = CHOICES[selected];
   if (choice === 'sound') {
     audio.toggleMute();
     audio.play('confirm');
@@ -231,15 +287,21 @@ function activate(host: PauseHost) {
     return;
   }
   audio.play('confirm');
-  if (choice === 'quit') host.quit();
+  if (choice === 'quit') setMode('confirm', 0);
   else host.resume();
 }
 
 function render() {
-  const sound = audio.muted ? 'SOUND OFF' : 'SOUND ON';
-  const labels = ['RESUME', sound, 'QUIT'];
+  if (mode === 'menu') {
+    const sound = audio.muted ? 'SOUND OFF' : 'SOUND ON';
+    const labels = ['RESUME', sound, 'QUIT'];
+    menuButtons.forEach((button, index) => {
+      button.textContent = labels[index];
+    });
+  }
+  const inactive = mode === 'menu' ? confirmButtons : menuButtons;
+  inactive.forEach((button) => button.removeAttribute('aria-current'));
   buttons.forEach((button, index) => {
-    button.textContent = labels[index];
     if (index === selected) button.setAttribute('aria-current', 'true');
     else button.removeAttribute('aria-current');
   });

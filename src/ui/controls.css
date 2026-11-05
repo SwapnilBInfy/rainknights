@@ -109,6 +109,7 @@ body {
   appearance: none;
   pointer-events: auto;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
   font-family: inherit;
   font-size: 8px;
   line-height: 8px;
@@ -116,6 +117,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  transform-origin: center center;
 }
 
 #touch-controls .start {
@@ -156,14 +158,11 @@ body {
   clip-path: polygon(5px 0, calc(100% - 5px) 0, 100% 5px, 100% calc(100% - 5px), calc(100% - 5px) 100%, 5px 100%, 0 calc(100% - 5px), 0 5px);
 }
 
-#touch-controls .start.down {
-  background: #1a1c28;
-}
-#touch-controls .b.down {
-  background: #1c58a8;
-}
-#touch-controls .a.down {
-  background: #b02820;
+/* Pressed: a small shrink and a slight darken. A solid fill swap (and the
+   browser's white tap highlight) read as a flash under a thumb. */
+#touch-controls button.down {
+  transform: scale(0.86);
+  filter: brightness(0.78);
 }
 
 #pause-overlay {
@@ -178,9 +177,9 @@ body {
 
 #pause-overlay .panel {
   position: absolute;
-  left: 58px;
-  top: 36px;
-  width: 124px;
+  left: 36px;
+  top: 32px;
+  width: 168px;
   background: #505868;
   box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.45);
   clip-path: polygon(

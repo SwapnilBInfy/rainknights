@@ -17,7 +17,23 @@ import { buildTerrain, type TerrainResult } from '../systems/Terrain';
 import { HUD } from '../ui/HUD';
 import { audio } from '../audio/engine';
 import { replayHeldKeys } from '../input/keys';
+import { attackHint, beamKeyLabel } from '../input/prompts';
+import { isTouchControlsActive, onTouchControlsChange } from '../input/touchControls';
 import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
+
+interface RunBridge {
+  /** Queue exactly enough XP for one level. Applied on the next scene update. */
+  grantLevel: () => void;
+  isScenePaused: () => boolean;
+  elapsedSeconds: () => number;
+  levelUpOpen: () => boolean;
+}
+
+declare global {
+  interface Window {
+    __rk?: RunBridge;
+  }
+}
 
 interface GameSceneData {
   characterId?: string;
@@ -47,6 +63,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private lastFrontIndex = 0;
   private pendingLevelUps = 0;
   private ended = false;
+  private xpGrant = 0;
+  private detachTouch: (() => void) | null = null;
 
   constructor() {
     super('GameScene');
@@ -107,6 +125,18 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.setAmbience(data.weatherCondition ?? null);
     this.hud = new HUD(this);
     this.levelUpSystem = new LevelUpSystem(this);
+    this.detachTouch = onTouchControlsChange((touch) => this.hud.setBeamKeyLabel(beamKeyLabel(touch)));
+    const bridge: RunBridge = {
+      grantLevel: () => {
+        if (this.ended || this.levelUpOpen || this.paused || this.userPaused) return;
+        const need = this.player.xpToNext - this.player.xp;
+        if (need > 0) this.xpGrant += need;
+      },
+      isScenePaused: () => this.sys.isPaused(),
+      elapsedSeconds: () => this.weather.elapsedSeconds,
+      levelUpOpen: () => this.levelUpOpen,
+    };
+    window.__rk = bridge;
     this.detachPause = bindGameplayPause({
       canPause: () => this.sys.isActive() && !this.ended && !this.levelUpOpen && !this.userPaused,
       isUserPaused: () => this.userPaused,
@@ -118,9 +148,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     });
     this.hud.setWeatherCondition(data.weatherCondition ?? 'clear', data.weatherLabel ?? 'Clear');
     this.lastFrontIndex = this.weather.currentFrontIndex;
-    this.time.delayedCall(3000, () => {
-      if (!this.ended && !this.paused) this.hud.showMessage('SPACE: swing weapon\nJ or X: energy beam');
-    });
+    this.time.delayedCall(3000, () => this.showAttackHint());
     this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
 
     this.setupAmbientWeather(data.weatherTint ?? 0x8fe0ff);
@@ -128,13 +156,30 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.events.once('shutdown', () => {
       this.detachPause?.();
       this.detachPause = null;
+      this.detachTouch?.();
+      this.detachTouch = null;
+      if (window.__rk === bridge) delete window.__rk;
       this.hud.destroy();
       this.levelUpSystem.close();
       audio.setMuffled(false);
     });
   }
 
+  /** Controls reminder. Touch leads with A / B / Start and keeps the key aliases. */
+  private showAttackHint() {
+    if (this.ended || this.paused) return;
+    const text = attackHint(isTouchControlsActive());
+    this.hud.showMessage(text);
+    const app = document.getElementById('app');
+    if (app) app.dataset.attackHint = text;
+  }
+
   update(time: number, delta: number) {
+    if (this.xpGrant > 0 && !this.ended && !this.paused && !this.userPaused) {
+      const amount = this.xpGrant;
+      this.xpGrant = 0;
+      this.player.addXp(amount);
+    }
     if (this.paused || this.userPaused) return;
 
     this.weather.update(delta);
@@ -423,7 +468,6 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private showLevelUpMenu() {
     this.levelUpOpen = true;
     this.paused = true;
-    this.physics.pause();
     this.hud.setVisible(false);
     audio.play('levelUp');
     audio.setMuffled(true);
@@ -433,11 +477,18 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.pendingLevelUps -= 1;
       if (this.pendingLevelUps > 0) return this.showLevelUpMenu();
       this.levelUpOpen = false;
+      if (this.sys.isPaused()) this.sys.resume();
+      this.input.keyboard?.resetKeys();
+      replayHeldKeys();
       this.hud.setVisible(true);
       audio.setMuffled(false);
-      this.physics.resume();
       this.paused = false;
     });
+    // Same full-scene pause as Esc/Start. Enemy AI and auras run in preUpdate,
+    // and the storm clock lives in this scene's update — physics.pause() left
+    // both of those running. Phaser drops the scene's own input while paused,
+    // so the menu listens on window (see LevelUpSystem).
+    if (this.sys.isActive()) this.sys.pause();
   }
 
   private enterUserPause() {
@@ -484,7 +535,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.ended) return; // (a level-up menu being open must not block the ending)
     this.ended = true;
     this.levelUpOpen = false;
+    this.userPaused = false;
+    closePauseMenu();
     this.levelUpSystem.close();
+    if (this.sys.isPaused()) this.sys.resume();
+    audio.setMuffled(false);
     this.paused = true;
     this.physics.pause();
     this.bossSummonEvent?.remove(false);
