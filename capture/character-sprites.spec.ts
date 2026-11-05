@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const run = promisify(execFile);
 const OUTPUT_DIR = join(__dirname, 'output');
 const FEATURE = 'character-sprites';
-const BASE_URL = process.env.CAPTURE_URL ?? 'https://swapnilbinfy.github.io/rainknights/';
+const BASE_URL = process.env.CAPTURE_URL ?? 'https://rainknights.vercel.app/';
 
 test('playable knights show real armor/weapon art and animate while moving', async () => {
   await mkdir(OUTPUT_DIR, { recursive: true });

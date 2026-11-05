@@ -7,7 +7,7 @@ export default defineConfig({
   testDir: './capture',
   timeout: 30_000,
   use: {
-    baseURL: process.env.CAPTURE_URL ?? 'https://swapnilbinfy.github.io/rainknights/',
+    baseURL: process.env.CAPTURE_URL ?? 'https://rainknights.vercel.app/',
     viewport: { width: 800, height: 560 },
     video: 'off', // each spec records its own short clip explicitly
   },

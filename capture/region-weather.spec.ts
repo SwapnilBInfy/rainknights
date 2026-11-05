@@ -22,7 +22,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const run = promisify(execFile);
 const OUTPUT_DIR = join(__dirname, 'output');
 const FEATURE = 'region-weather';
-const BASE_URL = process.env.CAPTURE_URL ?? 'https://swapnilbinfy.github.io/rainknights/';
+const BASE_URL = process.env.CAPTURE_URL ?? 'https://rainknights.vercel.app/';
 
 test('two regions each show independently live weather', async () => {
   await mkdir(OUTPUT_DIR, { recursive: true });
