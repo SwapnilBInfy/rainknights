@@ -19,6 +19,7 @@ export class HUD {
   private lvText: Phaser.GameObjects.Text;
   private timeText: Phaser.GameObjects.Text;
   private hpText: Phaser.GameObjects.Text;
+  private beamKeyText: Phaser.GameObjects.Text;
 
   private badge: Phaser.GameObjects.Container | null = null;
   private condition = 'clear';
@@ -41,7 +42,7 @@ export class HUD {
     this.timeText = this.text(97, 6, '00:00').setOrigin(1, 0);
     this.text(7, 18, 'HP', '#c07800');
     this.hpText = this.text(97, 26, '', '#383838').setOrigin(1, 0);
-    this.text(7, 45, 'J', '#3078d8');
+    this.beamKeyText = this.text(7, 45, 'J', '#3078d8');
     this.bars = this.add(scene.add.graphics());
 
     this.bossGfx = scene.add.graphics().setScrollFactor(0).setDepth(DEPTH + 1);
@@ -89,7 +90,7 @@ export class HUD {
     g.fillStyle(UI.xpBlue, 1);
     g.fillRect(7, 37, Math.round(90 * xpPct), 3);
 
-    // energy beam recharge gauge (fires on J / X)
+    // energy beam recharge gauge (J / X on a keyboard, B on the touch cluster)
     g.fillStyle(UI.ink, 1);
     g.fillRect(20, 45, 78, 7);
     g.fillStyle(UI.hpTrack, 1);
@@ -101,6 +102,13 @@ export class HUD {
       this.frontName = frontName;
       this.renderBadge();
     }
+  }
+
+  /** The glyph beside the beam gauge: J on a keyboard, B when touch is active. */
+  setBeamKeyLabel(label: string) {
+    this.beamKeyText.setText(label);
+    const app = document.getElementById('app');
+    if (app) app.dataset.beamKey = label;
   }
 
   /** Persistent weather condition for the run, shown top-right. */

@@ -3,6 +3,8 @@ import { CHARACTERS } from '../config/characters';
 import { TEX } from '../gfx/spriteDefs';
 import { FONT, textStyle } from '../ui/Window';
 import { audio } from '../audio/engine';
+import { menuHint } from '../input/prompts';
+import { onTouchControlsChange } from '../input/touchControls';
 
 const ANIMATED = ['down', 'side', 'down'] as const;
 
@@ -39,7 +41,21 @@ export class MenuScene extends Phaser.Scene {
 
     const start = this.add.text(width / 2, 128, 'PRESS START', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(5);
     this.tweens.add({ targets: start, alpha: 0, duration: 500, yoyo: true, repeat: -1, hold: 200 });
-    this.add.text(width / 2, height - 12, 'WASD MOVE  SPACE SWING  J BEAM', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(5);
+    const controls = this.add
+      .text(width / 2, height - 12, menuHint(false), { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 })
+      .setOrigin(0.5, 0)
+      .setDepth(5);
+    const detachTouch = onTouchControlsChange((touch) => {
+      const hint = menuHint(touch);
+      controls.setText(hint);
+      const app = document.getElementById('app');
+      if (app) app.dataset.menuHint = hint;
+    });
+    this.events.once('shutdown', () => {
+      detachTouch();
+      const app = document.getElementById('app');
+      if (app) delete app.dataset.menuHint;
+    });
 
     for (let i = 0; i < 26; i++) {
       const drop = this.add

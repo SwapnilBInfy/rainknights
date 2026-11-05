@@ -90,7 +90,8 @@ deployed build and are not part of CI.
 GitHub Actions (`.github/workflows/ci.yml`) runs on pull requests and on
 pushes to `main`: `npm ci`, typecheck, `npm run build`, then the Chromium-only
 smoke test. If the smoke test fails, the Playwright HTML report and trace are
-uploaded as a workflow artifact.
+uploaded as a workflow artifact. The feel-follow-up screenshots under
+`e2e-artifacts/` are uploaded on every run.
 
 ## Hosting
 

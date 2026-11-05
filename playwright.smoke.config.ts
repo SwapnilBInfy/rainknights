@@ -7,6 +7,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: '**/feel-demo.spec.ts',
   timeout: 30_000,
   expect: { timeout: 10_000 },
   fullyParallel: true,

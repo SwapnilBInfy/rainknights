@@ -12,6 +12,9 @@ export interface UpgradeOption {
 
 const WEAPON_MIN_COOLDOWN = 180;
 
+/** Ignore confirms that arrive with the swing which opened the menu. */
+const ARM_MS = 400;
+
 export const UPGRADE_POOL: UpgradeOption[] = [
   {
     id: 'weapon_damage',
@@ -94,15 +97,31 @@ function pickThree(): UpgradeOption[] {
   return picks;
 }
 
+interface HitBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  index: number;
+}
+
 /**
  * Pokémon-style level-up menu: a boxed list with a ▶ cursor, the highlighted
  * upgrade's description in a bottom text box. Arrows/W-S move, Enter/Space/Z
  * confirm, 1-3 pick directly, or use the mouse.
+ *
+ * GameScene pauses the whole scene while this is open. Phaser then ignores
+ * the scene's keyboard and pointer plugins, so input is read from window.
+ * Confirms are ignored for a short beat so a held swing (Space / A) cannot
+ * pick an upgrade by accident. Start is consumed by the pause binder and
+ * does not confirm.
  */
 export class LevelUpSystem {
   private scene: Phaser.Scene;
   private root: Phaser.GameObjects.Container | null = null;
-  private keyHandler: ((e: KeyboardEvent) => void) | null = null;
+  private onKey: ((e: KeyboardEvent) => void) | null = null;
+  private onPointer: ((e: PointerEvent) => void) | null = null;
+  private armTimer = 0;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -112,8 +131,10 @@ export class LevelUpSystem {
     this.close();
     const options = pickThree();
     let selected = 0;
+    let settled = false;
+    let armed = false;
 
-    const dim = this.scene.add.rectangle(0, 0, 240, 160, 0x000000, 0.4).setOrigin(0, 0);
+    const dim = this.scene.add.rectangle(0, 0, 240, 160, 0x080810, 0.62).setOrigin(0, 0);
     const titleWin = drawWindow(this.scene, 60, 22, 96, 20);
     const title = this.scene.add.text(68, 28, `LEVEL ${level}!`, textStyle());
     const listWin = drawWindow(this.scene, 60, 44, 176, 20 + options.length * 16);
@@ -121,14 +142,7 @@ export class LevelUpSystem {
     const names = options.map((opt, i) => this.scene.add.text(80, 54 + i * 16, opt.name, textStyle()));
     const descWin = drawWindow(this.scene, 4, 118, 232, 38);
     const desc = this.scene.add.text(12, 126, '', { ...textStyle(), wordWrap: { width: 216 } });
-
-    const zones = options.map((_, i) =>
-      this.scene.add
-        .rectangle(64, 50 + i * 16, 168, 16, 0xffffff, 0)
-        .setOrigin(0, 0)
-        .setScrollFactor(0) // hit-testing uses the child's own scroll factor, not the container's
-        .setInteractive({ useHandCursor: true })
-    );
+    const boxes: HitBox[] = options.map((_, i) => ({ x: 64, y: 50 + i * 16, w: 168, h: 16, index: i }));
 
     let lastShown = -1;
     const render = () => {
@@ -140,48 +154,92 @@ export class LevelUpSystem {
       desc.setText(options[selected].description);
     };
     const confirm = (i: number) => {
+      if (settled || !armed) return;
+      settled = true;
       audio.play('confirm');
       options[i].apply(player);
       this.close();
       onResume();
     };
-
-    zones.forEach((z, i) => {
-      z.on('pointerover', () => {
-        selected = i;
-        render();
-      });
-      z.on('pointerdown', () => confirm(i));
-    });
-
-    // Ignore key-repeat and anything in the first moments, so mashing Space to swing
-    // when the menu pops up can't accidentally pick an upgrade.
-    const openedAt = this.scene.time.now;
-    this.keyHandler = (e: KeyboardEvent) => {
-      if (e.repeat || this.scene.time.now - openedAt < 400) return;
-      const k = e.key.toLowerCase();
-      if (k === 'arrowup' || k === 'w') selected = (selected + options.length - 1) % options.length;
-      else if (k === 'arrowdown' || k === 's') selected = (selected + 1) % options.length;
-      else if (k === 'enter' || k === ' ' || k === 'z') return confirm(selected);
-      else if (k >= '1' && k <= String(options.length)) return confirm(Number(k) - 1);
-      else return;
+    const move = (delta: number) => {
+      if (!armed) return;
+      selected = (selected + delta + options.length) % options.length;
       render();
     };
-    this.scene.input.keyboard?.on('keydown', this.keyHandler);
+
+    this.armTimer = window.setTimeout(() => {
+      armed = true;
+    }, ARM_MS);
+
+    this.onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      const k = e.key.toLowerCase();
+      if (k === 'arrowup' || k === 'w') {
+        e.preventDefault();
+        move(-1);
+      } else if (k === 'arrowdown' || k === 's') {
+        e.preventDefault();
+        move(1);
+      } else if (k === 'enter' || k === ' ' || k === 'z') {
+        e.preventDefault();
+        confirm(selected);
+      } else if (k >= '1' && k <= String(options.length)) {
+        e.preventDefault();
+        confirm(Number(k) - 1);
+      }
+    };
+    this.onPointer = (e: PointerEvent) => {
+      if (e.target !== this.scene.game.canvas) return;
+      const point = this.canvasPoint(e.clientX, e.clientY);
+      if (!point) return;
+      const hit = boxes.find((box) => point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h);
+      if (!hit) return;
+      if (e.type === 'pointermove') {
+        if (hit.index === selected) return;
+        selected = hit.index;
+        render();
+        return;
+      }
+      if (e.type === 'pointerdown') confirm(hit.index);
+    };
+
+    window.addEventListener('keydown', this.onKey);
+    window.addEventListener('pointerdown', this.onPointer);
+    window.addEventListener('pointermove', this.onPointer);
+
+    const app = document.getElementById('app');
+    if (app) app.dataset.levelUp = 'open';
 
     this.root = this.scene.add
-      .container(0, 0, [dim, titleWin, title, listWin, cursor, ...names, descWin, desc, ...zones])
+      .container(0, 0, [dim, titleWin, title, listWin, cursor, ...names, descWin, desc])
       .setScrollFactor(0)
       .setDepth(200);
     render();
   }
 
   close() {
-    if (this.keyHandler) {
-      this.scene.input.keyboard?.off('keydown', this.keyHandler);
-      this.keyHandler = null;
+    if (this.armTimer) window.clearTimeout(this.armTimer);
+    this.armTimer = 0;
+    if (this.onKey) window.removeEventListener('keydown', this.onKey);
+    if (this.onPointer) {
+      window.removeEventListener('pointerdown', this.onPointer);
+      window.removeEventListener('pointermove', this.onPointer);
     }
+    this.onKey = null;
+    this.onPointer = null;
     this.root?.destroy();
     this.root = null;
+    const app = document.getElementById('app');
+    if (app) delete app.dataset.levelUp;
+  }
+
+  private canvasPoint(clientX: number, clientY: number): { x: number; y: number } | null {
+    const canvas = this.scene.game.canvas;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return null;
+    return {
+      x: ((clientX - rect.left) / rect.width) * 240,
+      y: ((clientY - rect.top) / rect.height) * 160,
+    };
   }
 }
