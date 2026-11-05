@@ -171,14 +171,7 @@ backend and no environment variables.
 `rainknights` (Vite) deploys that production URL automatically from
 pushes to `main`.
 
-A GitHub Pages copy is also published at
-**https://swapnilbinfy.github.io/rainknights/**. Repository settings deploy
-Pages from a branch: the `gh-pages` branch, folder `/` (the root of that
-branch). No workflow in this repo publishes it. GitHub's built-in
-`pages-build-deployment` workflow serves the files already committed there
-— a static `index.html` plus `assets/`. That branch is a snapshot last
-updated on 2026-08-20, and pushes to `main` do not rebuild it. Whether the
-Pages copy stays up is pending a decision by the owner.
+The GitHub Pages copy is retired. **https://rainknights.vercel.app** is the only site.
 
 ## Project structure
 
