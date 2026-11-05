@@ -1,0 +1,259 @@
+/* On-screen controls and the pause menu are authored in GBA pixels and
+   scaled with the same integer zoom as the canvas (transform-origin is set
+   in JS). They must not steal taps meant for the playfield. */
+/* touch-action is not inherited, so the canvas needs it too — otherwise a
+   finger on the playfield can still pan or pinch-zoom the page. */
+html,
+body,
+#app,
+canvas,
+#touch-controls,
+#touch-controls .stick,
+#touch-controls button,
+#pause-overlay {
+  touch-action: none;
+}
+
+html,
+body {
+  overscroll-behavior: none;
+}
+
+#touch-controls,
+#pause-overlay {
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: "Press Start 2P", monospace;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#touch-controls[hidden],
+#pause-overlay[hidden] {
+  display: none !important;
+}
+
+#touch-controls {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+#touch-controls .stick-wrap,
+#touch-controls .actions {
+  position: fixed;
+  transform-origin: top left;
+  pointer-events: none;
+}
+
+#touch-controls .stick-wrap {
+  width: 72px;
+  height: 72px;
+}
+
+/* Full square is the hit target so diagonals and near-misses still count. The cross is only paint. */
+#touch-controls .stick {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+#touch-controls .cross-h,
+#touch-controls .cross-v {
+  position: absolute;
+  background: #3c4158;
+  box-shadow:
+    inset 2px 2px 0 #8b93ad,
+    inset -2px -2px 0 #1a1c28;
+  pointer-events: none;
+}
+
+#touch-controls .cross-h {
+  left: 0;
+  top: 23px;
+  width: 72px;
+  height: 26px;
+}
+
+#touch-controls .cross-v {
+  left: 23px;
+  top: 0;
+  width: 26px;
+  height: 72px;
+}
+
+#touch-controls .nub {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 27px;
+  top: 27px;
+  background: #f4f4fb;
+  box-shadow:
+    inset 2px 2px 0 #ffffff,
+    inset -2px -2px 0 #7c7c90;
+  pointer-events: none;
+}
+
+#touch-controls .actions {
+  width: 78px;
+  height: 90px;
+}
+
+#touch-controls button {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  pointer-events: auto;
+  touch-action: none;
+  font-family: inherit;
+  font-size: 8px;
+  line-height: 8px;
+  color: #f8f8f8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#touch-controls .start {
+  left: 0;
+  top: 0;
+  width: 78px;
+  height: 26px;
+  color: #f8f8f8;
+  background: #2a2c3c;
+  box-shadow:
+    inset 1px 1px 0 #6a7088,
+    inset -1px -1px 0 #12131c;
+}
+
+#touch-controls .b {
+  left: 0;
+  top: 54px;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  background: #3078d8;
+  box-shadow:
+    inset 2px 2px 0 #9fd0ff,
+    inset -2px -2px 0 #184888;
+  clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px);
+}
+
+#touch-controls .a {
+  left: 36px;
+  top: 40px;
+  z-index: 2;
+  width: 42px;
+  height: 42px;
+  background: #e04038;
+  box-shadow:
+    inset 2px 2px 0 #ffb0a8,
+    inset -2px -2px 0 #881810;
+  clip-path: polygon(5px 0, calc(100% - 5px) 0, 100% 5px, 100% calc(100% - 5px), calc(100% - 5px) 100%, 5px 100%, 0 calc(100% - 5px), 0 5px);
+}
+
+#touch-controls .start.down {
+  background: #1a1c28;
+}
+#touch-controls .b.down {
+  background: #1c58a8;
+}
+#touch-controls .a.down {
+  background: #b02820;
+}
+
+#pause-overlay {
+  position: fixed;
+  width: 240px;
+  height: 160px;
+  transform-origin: top left;
+  z-index: 20;
+  background: rgba(8, 8, 16, 0.62);
+  pointer-events: auto;
+}
+
+#pause-overlay .panel {
+  position: absolute;
+  left: 58px;
+  top: 36px;
+  width: 124px;
+  background: #505868;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.45);
+  clip-path: polygon(
+    1px 0,
+    calc(100% - 1px) 0,
+    100% 1px,
+    100% calc(100% - 1px),
+    calc(100% - 1px) 100%,
+    1px 100%,
+    0 calc(100% - 1px),
+    0 1px
+  );
+}
+
+#pause-overlay .panel-inner {
+  margin: 1px;
+  padding: 8px 8px 10px;
+  background: #f8f8f8;
+  clip-path: polygon(
+    1px 0,
+    calc(100% - 1px) 0,
+    100% 1px,
+    100% calc(100% - 1px),
+    calc(100% - 1px) 100%,
+    1px 100%,
+    0 calc(100% - 1px),
+    0 1px
+  );
+}
+
+#pause-overlay .title {
+  margin: 0 0 8px;
+  font-size: 8px;
+  line-height: 8px;
+  text-align: center;
+  color: #383838;
+}
+
+#pause-overlay button {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  padding: 0 0 0 14px;
+  border: 0;
+  background: transparent;
+  color: #383838;
+  font-family: inherit;
+  font-size: 8px;
+  line-height: 16px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+#pause-overlay button:focus {
+  outline: none;
+}
+
+#pause-overlay button[aria-current='true'] {
+  color: #c07800;
+}
+
+/* Pixel ▶, drawn so it does not depend on the font having that glyph. */
+#pause-overlay button[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 4px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 5px;
+  border-color: transparent transparent transparent #383838;
+}

@@ -16,6 +16,8 @@ import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/
 import { buildTerrain, type TerrainResult } from '../systems/Terrain';
 import { HUD } from '../ui/HUD';
 import { audio } from '../audio/engine';
+import { replayHeldKeys } from '../input/keys';
+import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
 
 interface GameSceneData {
   characterId?: string;
@@ -37,6 +39,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private boss: TornadoBoss | null = null;
   private bossSummonEvent: Phaser.Time.TimerEvent | null = null;
   private paused = false;
+  private levelUpOpen = false;
+  private userPaused = false;
+  private detachPause: (() => void) | null = null;
   private ambientDrops: Phaser.GameObjects.Image[] = [];
   private terrain!: TerrainResult;
   private lastFrontIndex = 0;
@@ -49,6 +54,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   create(data: GameSceneData = {}) {
     this.paused = false;
+    this.levelUpOpen = false;
+    this.userPaused = false;
     this.pendingLevelUps = 0;
     this.ended = false;
     this.boss = null;
@@ -100,6 +107,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.setAmbience(data.weatherCondition ?? null);
     this.hud = new HUD(this);
     this.levelUpSystem = new LevelUpSystem(this);
+    this.detachPause = bindGameplayPause({
+      canPause: () => this.sys.isActive() && !this.ended && !this.levelUpOpen && !this.userPaused,
+      isUserPaused: () => this.userPaused,
+      isLevelUp: () => this.levelUpOpen,
+      isEnded: () => this.ended,
+      pause: () => this.enterUserPause(),
+      resume: () => this.resumeFromUserPause(),
+      quit: () => this.quitToTitle(),
+    });
     this.hud.setWeatherCondition(data.weatherCondition ?? 'clear', data.weatherLabel ?? 'Clear');
     this.lastFrontIndex = this.weather.currentFrontIndex;
     this.time.delayedCall(3000, () => {
@@ -110,6 +126,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.setupAmbientWeather(data.weatherTint ?? 0x8fe0ff);
 
     this.events.once('shutdown', () => {
+      this.detachPause?.();
+      this.detachPause = null;
       this.hud.destroy();
       this.levelUpSystem.close();
       audio.setMuffled(false);
@@ -117,7 +135,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   update(time: number, delta: number) {
-    if (this.paused) return;
+    if (this.paused || this.userPaused) return;
 
     this.weather.update(delta);
     this.updateAmbientWeather(delta);
@@ -403,6 +421,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   private showLevelUpMenu() {
+    this.levelUpOpen = true;
     this.paused = true;
     this.physics.pause();
     this.hud.setVisible(false);
@@ -413,6 +432,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.levelUpSystem.presentChoices(this.player, level, () => {
       this.pendingLevelUps -= 1;
       if (this.pendingLevelUps > 0) return this.showLevelUpMenu();
+      this.levelUpOpen = false;
       this.hud.setVisible(true);
       audio.setMuffled(false);
       this.physics.resume();
@@ -420,9 +440,50 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     });
   }
 
+  private enterUserPause() {
+    if (!this.sys.isActive() || this.ended || this.levelUpOpen || this.userPaused) return;
+    this.userPaused = true;
+    this.paused = true;
+    this.hud.setVisible(false);
+    audio.setMuffled(true);
+    // Pause the whole scene, not just physics: enemy AI and auras live in
+    // preUpdate, and the storm clock would keep running otherwise.
+    this.sys.pause();
+    openPauseMenu();
+  }
+
+  private resumeFromUserPause() {
+    if (!this.userPaused) return;
+    this.userPaused = false;
+    closePauseMenu();
+    if (this.sys.isPaused()) this.sys.resume();
+    this.input.keyboard?.resetKeys();
+    replayHeldKeys();
+    if (this.pendingLevelUps > 0 && !this.ended) {
+      this.showLevelUpMenu();
+      return;
+    }
+    audio.setMuffled(false);
+    this.hud.setVisible(true);
+    this.paused = false;
+  }
+
+  private quitToTitle() {
+    this.userPaused = false;
+    this.levelUpOpen = false;
+    closePauseMenu();
+    audio.setMuffled(false);
+    if (this.sys.isPaused()) this.sys.resume();
+    this.ended = true;
+    this.paused = true;
+    this.levelUpSystem.close();
+    this.scene.start('MenuScene');
+  }
+
   private endRun(won: boolean) {
     if (this.ended) return; // (a level-up menu being open must not block the ending)
     this.ended = true;
+    this.levelUpOpen = false;
     this.levelUpSystem.close();
     this.paused = true;
     this.physics.pause();

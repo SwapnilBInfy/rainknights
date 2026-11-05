@@ -11,6 +11,9 @@ import { OverlayScene } from './scenes/OverlayScene';
 import { audio } from './audio/engine';
 import { renderSong } from './audio/music';
 import { SFX } from './audio/sfx';
+import { mountTouchControls } from './input/touchControls';
+import { attachPauseOverlay } from './ui/PauseOverlay';
+import './ui/controls.css';
 
 /** Largest whole-number zoom that fits the window, like a GBA on a screen. */
 function fitZoom(): number {
@@ -54,11 +57,34 @@ async function start() {
   });
 
   window.addEventListener('resize', () => game.scale.setZoom(fitZoom()));
+  markScenes(game);
+  mountTouchControls(game);
+  attachPauseOverlay(game);
 
   if (import.meta.env.DEV) {
     (window as unknown as Record<string, unknown>).__game = game;
     (window as unknown as Record<string, unknown>).__audio = { audio, renderSong, SFX };
   }
+}
+
+const MARKED_SCENES = new Set(['MenuScene', 'CharacterSelectScene', 'RegionSelectScene', 'GameScene', 'GameOverScene']);
+
+/** Lets tests wait for a scene instead of guessing how long a transition takes. */
+function markScenes(game: Phaser.Game) {
+  const app = document.getElementById('app');
+  if (!app) return;
+  // Scene.events is not installed until a scene boots, so listen on the game
+  // step and read whichever gameplay scene is actually running. A paused
+  // GameScene drops out of the active list; leave the last marker in place.
+  game.events.on('poststep', () => {
+    for (const scene of game.scene.getScenes(true)) {
+      const key = scene.sys.settings.key;
+      if (MARKED_SCENES.has(key)) {
+        app.dataset.scene = key;
+        return;
+      }
+    }
+  });
 }
 
 start();
