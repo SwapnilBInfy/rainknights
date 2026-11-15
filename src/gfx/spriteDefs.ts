@@ -25,15 +25,30 @@ export const TEX = {
   rain: 'fx_rain',
 } as const;
 
-export function generateAllTextures(scene: Phaser.Scene) {
+/**
+ * Rasterize every procedural texture. `afterBatch` runs between groups so
+ * boot does not hold the main thread in one long task; the pixels are the same.
+ */
+export async function generateAllTextures(scene: Phaser.Scene, afterBatch?: () => Promise<void>) {
+  const pause = async () => {
+    if (afterBatch) await afterBatch();
+  };
+
   generateTerrainTileset(scene, TEX.terrainTilesNyc, P.NYC_TERRAIN);
+  await pause();
   generateTerrainTileset(scene, TEX.terrainTilesMiami, P.MIAMI_TERRAIN);
   generateRainTexture(scene, TEX.rain);
+  await pause();
 
-  for (const character of CHARACTERS) generateKnightTextures(scene, character.id, character.style);
+  for (const character of CHARACTERS) {
+    generateKnightTextures(scene, character.id, character.style);
+    await pause();
+  }
   generateWeaponTextures(scene);
+  await pause();
 
   generateBlobTexture(scene, TEX.rainImp, { radius: 4, shape: 'drop', ...P.RAIN_IMP }, 1);
+  await pause();
   generateBlobTexture(
     scene,
     TEX.windWraith,
@@ -41,6 +56,7 @@ export function generateAllTextures(scene: Phaser.Scene) {
     1
   );
   generateBlobTexture(scene, TEX.hailBrute, { radius: 5.5, shape: 'square', ...P.HAIL_BRUTE }, 1);
+  await pause();
   generateBlobTexture(
     scene,
     TEX.lightningWisp,
@@ -48,6 +64,7 @@ export function generateAllTextures(scene: Phaser.Scene) {
     1
   );
   generateBlobTexture(scene, TEX.snowGolem, { radius: 7.5, shape: 'square', ...P.SNOW_GOLEM }, 1);
+  await pause();
   generateBlobTexture(
     scene,
     TEX.tornadoBoss,
@@ -57,6 +74,7 @@ export function generateAllTextures(scene: Phaser.Scene) {
 
   generateBlobTexture(scene, TEX.xpGem, { radius: 2.4, shape: 'diamond', ...P.XP_GEM }, 1);
   generateBlobTexture(scene, TEX.projectile, { radius: 2, shape: 'diamond', ...P.PROJECTILE }, 1);
+  await pause();
 
   generateBlobTexture(
     scene,

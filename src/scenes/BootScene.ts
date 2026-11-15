@@ -21,7 +21,13 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
-    generateAllTextures(this);
+    // Phaser does not await create(). The promise keeps BootScene up until
+    // every texture exists, yielding between batches so input can be processed.
+    void this.boot();
+  }
+
+  private async boot() {
+    await generateAllTextures(this, () => new Promise((resolve) => setTimeout(resolve, 0)));
 
     for (const character of CHARACTERS) {
       for (const facing of FACINGS) {
