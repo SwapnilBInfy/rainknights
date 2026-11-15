@@ -1,6 +1,14 @@
 import Phaser from 'phaser';
 import { drawWindow, FONT, textStyle } from '../ui/Window';
 import { audio } from '../audio/engine';
+import { loadGame } from '../save/save';
+
+function clock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(total / 60);
+  const remain = total % 60;
+  return `${minutes.toString().padStart(2, '0')}:${remain.toString().padStart(2, '0')}`;
+}
 
 interface GameOverData {
   won: boolean;
@@ -31,8 +39,9 @@ export class GameOverScene extends Phaser.Scene {
     this.add.text(50, 60, `TIME     ${m}:${s}`, textStyle());
     this.add.text(50, 76, `LEVEL    ${data.level}`, textStyle());
     this.add.text(50, 92, `DEFEATED ${data.kills}`, textStyle());
+    this.add.text(50, 108, `BEST     ${clock(loadGame().meta.bestTime)}`, textStyle('#686868'));
 
-    const prompt = this.add.text(width / 2, 120, 'PRESS START', textStyle('#c07800')).setOrigin(0.5, 0);
+    const prompt = this.add.text(width / 2, 124, 'PRESS START', textStyle('#c07800')).setOrigin(0.5, 0);
     this.tweens.add({ targets: prompt, alpha: 0, duration: 500, yoyo: true, repeat: -1, hold: 200 });
 
     const restart = () => {

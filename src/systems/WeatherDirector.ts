@@ -57,4 +57,22 @@ export class WeatherDirector {
   get bossSpawned(): boolean {
     return this.tornadoSpawned;
   }
+
+  /**
+   * Jump the storm clock to a checkpoint. The next spawn waits out a full
+   * interval so continuing does not dump a catch-up wave on the first frame.
+   * A boss already on the field is marked spawned; the scene places it.
+   */
+  restoreClock(elapsedSeconds: number, bossOnField: boolean) {
+    this.elapsed = Math.max(0, elapsedSeconds);
+    this.currentFrontIndex = 0;
+    for (let i = WEATHER_FRONTS.length - 1; i >= 0; i--) {
+      if (this.elapsed >= WEATHER_FRONTS[i].start) {
+        this.currentFrontIndex = i;
+        break;
+      }
+    }
+    this.tornadoSpawned = bossOnField;
+    this.spawnTimer = WEATHER_FRONTS[this.currentFrontIndex].spawnIntervalMs;
+  }
 }

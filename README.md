@@ -37,8 +37,8 @@ Keyboard, the on-screen buttons on a touch screen, and a gamepad Start button.
 | Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. On the city screen, Left/A selects New York and Right/D selects Miami. |
 | Space | Swing (hold). Also confirms menus, starts a run, and continues from game over. |
 | J or X | Energy beam (hold). |
-| Enter | Confirm a menu, start a run, or continue from game over. |
-| Esc or P | Pause or resume a live run. |
+| Enter | Confirm a menu, start a run, or continue from game over. On the title menu, confirms Continue, New game, or Reset save. |
+| Esc or P | Pause or resume a live run. On the title's "Erase save?" question, backs out without erasing. |
 | M | Mute or unmute. The choice is remembered between visits, and M still works while paused. |
 | 1–3, Z, mouse | Number keys pick a listed option. Z confirms, the same as Enter. Hover and click work on menus, the title, and game over. |
 
@@ -52,7 +52,7 @@ canvas fills the window.
 | D-pad | Arrow keys, including diagonals |
 | A | Space (swing, confirm, start) |
 | B | J (energy beam). X remains the keyboard alias |
-| Start | Pause while a run is live. Otherwise Enter, which covers the title and the game-over "PRESS START" |
+| Start | Pause while a run is live. Otherwise Enter, which covers the title (PRESS START, Continue, New game) and the game-over "PRESS START" |
 
 With touch in use, the hints lead with those labels (`STICK MOVE  A SWING  B BEAM`
 on the title, and `A/SPACE`, `B/J`, `START: pause` once a run has started).
@@ -65,16 +65,61 @@ and attacks stay on the keyboard and the touch cluster.
 
 Pausing freezes the whole scene: enemy movement, auras, and the storm clock.
 The menu is **Resume**, **Sound** (SOUND ON / SOUND OFF, the same mute as M),
-and **Quit**. Arrows, W/S, or the d-pad move the selection. Enter, Space, Z,
-or A activates it.
+**Quit**, and **Reset save**. Arrows, W/S, or the d-pad move the selection.
+Enter, Space, Z, or A activates it.
 
 **Quit** asks **Abandon run?** **No** is selected by default, so confirming
 again returns to the pause menu with the run still paused. **Yes** drops
 the run and returns to the title. Esc, P, touch Start, and gamepad Start
 leave that question and return to the pause menu.
 
+**Reset save** asks **Erase save?** **No** is selected by default. **Yes**
+wipes the save — the run, bests, and the mute setting — and returns to the
+title. Esc, P, touch Start, and gamepad Start leave that question too.
+
 The run also pauses if the window loses focus or the tab is hidden, while a
 run is underway and a level-up menu is not already open.
+
+### Continue
+
+With nothing stored, the title is still **PRESS START**.
+
+Once a run is in progress, the title offers **Continue**, **New game**, and
+**Reset save**, in a GBA-style window. Up/Down, W/S, or the d-pad move the
+cursor. Enter, Space, Z, A, or Start confirms. 1–3 pick a row. **Continue**
+is selected first. The window shows the saved level and storm clock.
+
+**New game** does not delete the checkpoint. The old run stays available
+until the new fight actually starts. **Reset save** asks **Erase save?**
+first, with **No** selected. The same question is on the pause menu.
+
+If you have never left a run unfinished, but you have a best or the sound
+is muted, the title offers **New game** and **Reset save** instead of
+PRESS START. Space still starts a run.
+
+Bests (time, level, enemies defeated, finished runs, victories) are kept
+when a run ends. Abandoning from the pause menu drops the in-progress run
+and keeps the bests and the mute setting. The game-over screen shows your
+best time.
+
+Progress is stored only in this browser (`localStorage`, key
+`rainknights:save`, schema version 1). There is no account and no server.
+The game writes that save when a fight starts, when you pick a level-up,
+when the weather front changes, when you pause, and when the tab is hidden
+or the page closes.
+
+A checkpoint keeps the knight, city, weather, storm clock, position, HP,
+level, XP, upgrades, and the tornado's HP if it is already on the field.
+Enemies, shots, and XP gems are not stored; the storm keeps spawning after
+you continue. A level-up menu that was open is opened again.
+
+Mute used to live in its own key (`rainknights:muted`). The first load
+folds that into the save and then removes the old key.
+
+If the save is corrupt, the game boots on PRESS START and replaces it the
+next time it writes. A save from a newer version is left untouched and this
+build plays as if nothing was stored. If storage is blocked (private mode),
+the fight still runs and nothing is written.
 
 A level-up menu freezes the scene the same way and stays up until you pick an
 upgrade. Esc, P, and Start leave that menu alone, and Start cannot confirm a
@@ -128,6 +173,7 @@ npm run dev         # Vite dev server (port 5173)
 npm run typecheck   # tsc --noEmit
 npm run build       # tsc -b && vite build → static dist/
 npm run preview     # serve dist/ locally
+npm run test:unit   # save/load/migration tests (vitest, no build)
 npm run test:smoke  # Playwright smoke tests against a vite preview of dist/
 ```
 
@@ -136,7 +182,9 @@ first. Install Chromium once with `npx playwright install chromium`. The
 smoke config (`playwright.smoke.config.ts`) starts `vite preview` on
 `127.0.0.1:4173` and runs `e2e/smoke.spec.ts`: page title, the 240×160 Phaser
 canvas, region emblems, a clean console, the pause menu, touch controls under
-phone emulation, the quit confirmation, and the level-up freeze. It skips
+phone emulation, the quit confirmation, the level-up freeze, and a save that
+survives reload (Continue restores the run and the mute; Reset save clears
+it). It skips
 `e2e/feel-demo.spec.ts`. Passing runs also write screenshots under
 `e2e-artifacts/` (gitignored).
 
@@ -151,10 +199,11 @@ pushes to `main`, on Ubuntu with Node 22:
 
 1. `npm ci`
 2. `npm run typecheck`
-3. `npm run build`
-4. install Playwright Chromium (`npx playwright install --with-deps chromium`,
+3. `npm run test:unit`
+4. `npm run build`
+5. install Playwright Chromium (`npx playwright install --with-deps chromium`,
    with `~/.cache/ms-playwright` cached on the lockfile)
-5. `npm run test:smoke`
+6. `npm run test:smoke`
 
 If the smoke test fails, the Playwright HTML report and trace
 (`playwright-report/` and `test-results/`) are uploaded as the
@@ -177,7 +226,8 @@ The GitHub Pages copy is retired. **https://rainknights.vercel.app** is the only
 
 ```
 src/
-  main.ts          Phaser game bootstrap, touch controls, pause overlay
+  main.ts          Phaser game bootstrap, touch controls, pause overlay, exit save
+  save/            versioned localStorage save, migration, run checkpoints
   scenes/          Boot, Menu, CharacterSelect, RegionSelect, Game, GameOver, Overlay
   entities/        Player, Projectile, enemy classes
   systems/         WeatherDirector, WeatherService, Terrain, LevelUpSystem, PowerupSystem
@@ -187,6 +237,7 @@ src/
   audio/           synthesized music, sound effects, weather ambience
   config/          characters, regions, weapons, gameplay constants
 e2e/               Playwright smoke tests
+test/              unit tests for the save
 capture/           optional clip recordings (outside CI)
 .github/workflows/ci.yml
 ```

@@ -60,6 +60,7 @@ async function start() {
   markScenes(game);
   mountTouchControls(game);
   attachPauseOverlay(game);
+  installExitSave(game);
 
   if (import.meta.env.DEV) {
     (window as unknown as Record<string, unknown>).__game = game;
@@ -68,6 +69,20 @@ async function start() {
 }
 
 const MARKED_SCENES = new Set(['MenuScene', 'CharacterSelectScene', 'RegionSelectScene', 'GameScene', 'GameOverScene']);
+
+/** Checkpoints the live run when the tab is hidden or the page is going away. */
+function installExitSave(game: Phaser.Game) {
+  const flush = () => {
+    const scene = game.scene.getScene('GameScene') as GameScene | undefined;
+    if (!scene) return;
+    if (scene.sys.isActive() || scene.sys.isPaused()) scene.checkpoint();
+  };
+  window.addEventListener('pagehide', flush);
+  window.addEventListener('beforeunload', flush);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flush();
+  });
+}
 
 /** Lets tests wait for a scene instead of guessing how long a transition takes. */
 function markScenes(game: Phaser.Game) {

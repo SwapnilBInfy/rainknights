@@ -20,6 +20,7 @@ import { replayHeldKeys } from '../input/keys';
 import { attackHint, beamKeyLabel } from '../input/prompts';
 import { isTouchControlsActive, onTouchControlsChange } from '../input/touchControls';
 import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
+import { clearRun, loadGame, recordRunResult, resetGameSave, saveRun } from '../save/save';
 
 interface RunBridge {
   /** Queue exactly enough XP for one level. Applied on the next scene update. */
@@ -27,6 +28,12 @@ interface RunBridge {
   isScenePaused: () => boolean;
   elapsedSeconds: () => number;
   levelUpOpen: () => boolean;
+  level: () => number;
+  x: () => number;
+  y: () => number;
+  hp: () => number;
+  characterId: () => string;
+  regionId: () => string;
 }
 
 declare global {
@@ -42,6 +49,8 @@ interface GameSceneData {
   weatherLabel?: string;
   weatherCondition?: string;
   weatherTint?: number;
+  /** Continue the run stored in the local save. */
+  resume?: boolean;
 }
 
 export class GameScene extends Phaser.Scene implements WeatherHost {
@@ -65,6 +74,12 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private ended = false;
   private xpGrant = 0;
   private detachTouch: (() => void) | null = null;
+  private runCharacterId = 'rainKnight';
+  private runRegionId = 'nyc';
+  private runWeatherLabel = 'Clear';
+  private runWeatherCondition = 'clear';
+  private runWeatherTint = 0x8fe0ff;
+  private runStartFront = 0;
 
   constructor() {
     super('GameScene');
@@ -79,13 +94,21 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.boss = null;
     this.bossSummonEvent = null;
 
-    const character = getCharacter(data.characterId);
-    const region = getRegion(data.regionId);
+    const resume = data.resume ? loadGame().run : null;
+    const character = getCharacter(resume?.characterId ?? data.characterId);
+    const region = getRegion(resume?.regionId ?? data.regionId);
+    this.runCharacterId = character.id;
+    this.runRegionId = region.id;
+    this.runWeatherLabel = resume?.weatherLabel ?? data.weatherLabel ?? 'Clear';
+    this.runWeatherCondition = resume?.weatherCondition ?? data.weatherCondition ?? 'clear';
+    this.runWeatherTint = resume?.weatherTint ?? data.weatherTint ?? 0x8fe0ff;
+    this.runStartFront = resume?.startFrontIndex ?? data.startFrontIndex ?? 0;
 
     this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
     this.terrain = buildTerrain(this, region);
 
     this.player = new Player(this, WORLD.width / 2, WORLD.height / 2, character);
+    if (resume) this.player.applySnapshot(resume.player);
     this.player.onDied = () => this.endRun(false);
     this.player.onLevelUp = () => this.pauseForLevelUp();
     this.player.on('sunbeamPulse', (radius: number, damage: number) => {
@@ -119,10 +142,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1);
 
-    this.weather = new WeatherDirector(this, data.startFrontIndex ?? 0);
+    this.weather = new WeatherDirector(this, resume ? 0 : (data.startFrontIndex ?? 0));
+    if (resume) this.weather.restoreClock(resume.elapsedSeconds, resume.bossHp != null);
 
     audio.playMusic(region.music);
-    audio.setAmbience(data.weatherCondition ?? null);
+    audio.setAmbience(resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
     this.hud = new HUD(this);
     this.levelUpSystem = new LevelUpSystem(this);
     this.detachTouch = onTouchControlsChange((touch) => this.hud.setBeamKeyLabel(beamKeyLabel(touch)));
@@ -135,6 +159,12 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       isScenePaused: () => this.sys.isPaused(),
       elapsedSeconds: () => this.weather.elapsedSeconds,
       levelUpOpen: () => this.levelUpOpen,
+      level: () => this.player.level,
+      x: () => this.player.x,
+      y: () => this.player.y,
+      hp: () => this.player.hp,
+      characterId: () => this.runCharacterId,
+      regionId: () => this.runRegionId,
     };
     window.__rk = bridge;
     this.detachPause = bindGameplayPause({
@@ -145,13 +175,27 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       pause: () => this.enterUserPause(),
       resume: () => this.resumeFromUserPause(),
       quit: () => this.quitToTitle(),
+      resetSave: () => this.resetAndQuit(),
     });
-    this.hud.setWeatherCondition(data.weatherCondition ?? 'clear', data.weatherLabel ?? 'Clear');
+    this.hud.setWeatherCondition(this.runWeatherCondition, this.runWeatherLabel);
     this.lastFrontIndex = this.weather.currentFrontIndex;
-    this.time.delayedCall(3000, () => this.showAttackHint());
-    this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
+    if (resume && resume.pendingLevelUps > 0) {
+      this.pendingLevelUps = resume.pendingLevelUps;
+      this.time.delayedCall(0, () => {
+        if (!this.ended && this.pendingLevelUps > 0 && !this.levelUpOpen) this.showLevelUpMenu();
+      });
+    } else {
+      this.time.delayedCall(3000, () => this.showAttackHint());
+    }
+    if (resume) {
+      this.hud.showMessage(`${region.name}.\nThe ${this.weather.frontName} resumes.`);
+    } else {
+      this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
+    }
+    if (resume?.bossHp != null) this.spawnBoss(resume.bossHp);
 
-    this.setupAmbientWeather(data.weatherTint ?? 0x8fe0ff);
+    this.setupAmbientWeather(this.runWeatherTint);
+    this.checkpoint();
 
     this.events.once('shutdown', () => {
       this.detachPause?.();
@@ -196,6 +240,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.lastFrontIndex = this.weather.currentFrontIndex;
       this.hud.showMessage(`The ${this.weather.frontName} is rolling in!`);
       audio.play('front');
+      this.checkpoint();
     }
   }
 
@@ -211,7 +256,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.enemyGroup.add(enemy);
   }
 
-  spawnBoss() {
+  spawnBoss(remainingHp?: number) {
     const angle = Math.random() * Math.PI * 2;
     const dist = 170;
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50);
@@ -222,6 +267,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     boss.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(boss);
     this.boss = boss;
+    if (remainingHp != null) boss.hp = Math.min(boss.maxHp, remainingHp);
 
     this.bossSummonEvent = this.time.addEvent({
       delay: 6000,
@@ -473,8 +519,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.setMuffled(true);
     // If several levels were gained at once, show each level's menu in turn.
     const level = this.player.level - (this.pendingLevelUps - 1);
+    this.checkpoint();
     this.levelUpSystem.presentChoices(this.player, level, () => {
       this.pendingLevelUps -= 1;
+      this.checkpoint();
       if (this.pendingLevelUps > 0) return this.showLevelUpMenu();
       this.levelUpOpen = false;
       if (this.sys.isPaused()) this.sys.resume();
@@ -500,6 +548,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     // Pause the whole scene, not just physics: enemy AI and auras live in
     // preUpdate, and the storm clock would keep running otherwise.
     this.sys.pause();
+    this.checkpoint();
     openPauseMenu();
   }
 
@@ -520,15 +569,51 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   private quitToTitle() {
+    this.ended = true;
+    clearRun();
     this.userPaused = false;
     this.levelUpOpen = false;
     closePauseMenu();
     audio.setMuffled(false);
     if (this.sys.isPaused()) this.sys.resume();
-    this.ended = true;
     this.paused = true;
     this.levelUpSystem.close();
     this.scene.start('MenuScene');
+  }
+
+  private resetAndQuit() {
+    this.ended = true;
+    resetGameSave();
+    audio.applyMuted(false);
+    this.userPaused = false;
+    this.levelUpOpen = false;
+    closePauseMenu();
+    audio.setMuffled(false);
+    if (this.sys.isPaused()) this.sys.resume();
+    this.paused = true;
+    this.levelUpSystem.close();
+    this.scene.start('MenuScene');
+  }
+
+  /** Write the in-progress run. No-op once the run has ended or been abandoned. */
+  checkpoint() {
+    if (this.ended || !this.player?.active || !this.weather) return;
+    saveRun(this.captureRun());
+  }
+
+  private captureRun() {
+    return {
+      characterId: this.runCharacterId,
+      regionId: this.runRegionId,
+      weatherLabel: this.runWeatherLabel,
+      weatherCondition: this.runWeatherCondition,
+      weatherTint: this.runWeatherTint,
+      startFrontIndex: this.runStartFront,
+      elapsedSeconds: this.weather.elapsedSeconds,
+      bossHp: this.boss?.active ? this.boss.hp : null,
+      pendingLevelUps: this.pendingLevelUps,
+      player: this.player.toSnapshot(),
+    };
   }
 
   private endRun(won: boolean) {
@@ -549,6 +634,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       kills: this.player.kills,
       level: this.player.level,
     };
+    recordRunResult(data);
     this.time.delayedCall(400, () => this.scene.start('GameOverScene', data));
   }
 

@@ -4,6 +4,7 @@ import type { CharacterDef } from '../config/characters';
 import { chibiKey, type Facing, type WeaponType } from '../gfx/chibi';
 import { weaponKey, SLASH_KEY } from '../gfx/weapons';
 import { audio } from '../audio/engine';
+import type { PlayerSnapshot } from '../save/save';
 
 export interface PowerupLevels {
   sunbeam: number;
@@ -285,5 +286,55 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.xpToNext = XP_BASE + this.level * XP_GROWTH;
       this.onLevelUp?.();
     }
+  }
+
+  toSnapshot(): PlayerSnapshot {
+    return {
+      x: this.x,
+      y: this.y,
+      hp: this.hp,
+      maxHp: this.maxHp,
+      baseMoveSpeed: this.baseMoveSpeed,
+      attackDamage: this.attackDamage,
+      attackRange: this.attackRange,
+      attackCooldown: this.attackCooldown,
+      magnetRadius: this.magnetRadius,
+      pierce: this.pierce,
+      xp: this.xp,
+      level: this.level,
+      xpToNext: this.xpToNext,
+      kills: this.kills,
+      powerups: { ...this.powerups },
+      facing: this.facing,
+      flipX: this.flipX,
+      aimX: this.aim.x,
+      aimY: this.aim.y,
+    };
+  }
+
+  /** Restore a checkpoint over the fresh character defaults. */
+  applySnapshot(snap: PlayerSnapshot) {
+    this.maxHp = snap.maxHp;
+    this.hp = snap.hp;
+    this.baseMoveSpeed = snap.baseMoveSpeed;
+    this.attackDamage = snap.attackDamage;
+    this.attackRange = snap.attackRange;
+    this.attackCooldown = snap.attackCooldown;
+    this.magnetRadius = snap.magnetRadius;
+    this.pierce = snap.pierce;
+    this.xp = snap.xp;
+    this.level = snap.level;
+    this.xpToNext = snap.xpToNext;
+    this.kills = snap.kills;
+    this.powerups = { ...snap.powerups };
+    this.setPosition(snap.x, snap.y);
+    if (Math.hypot(snap.aimX, snap.aimY) < 0.1) this.aim.set(0, 1);
+    else this.aim.set(snap.aimX, snap.aimY).normalize();
+    this.facing = snap.facing;
+    this.setFlipX(snap.flipX);
+    this.setTexture(chibiKey(this.characterId, this.facing, 'stand'));
+    const now = this.scene.time.now;
+    if (this.powerups.sunbeam > 0) this.nextSunbeamTickAt = now + 2000;
+    if (this.powerups.rainbowShield > 0) this.nextShieldTriggerAt = now + 8000;
   }
 }
