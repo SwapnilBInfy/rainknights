@@ -134,11 +134,12 @@ npm run test:smoke  # Playwright smoke tests against a vite preview of dist/
 `npm run test:smoke` serves the production build, so run `npm run build`
 first. Install Chromium once with `npx playwright install chromium`. The
 smoke config (`playwright.smoke.config.ts`) starts `vite preview` on
-`127.0.0.1:4173` and runs `e2e/smoke.spec.ts`: page title, the 240×160 Phaser
-canvas, region emblems, a clean console, the pause menu, touch controls under
-phone emulation, the quit confirmation, and the level-up freeze. It skips
-`e2e/feel-demo.spec.ts`. Passing runs also write screenshots under
-`e2e-artifacts/` (gitignored).
+`127.0.0.1:4173` and runs `e2e/smoke.spec.ts`: page title, the meta description,
+canonical URL, Open Graph and Twitter tags, favicon, web manifest, robots.txt,
+the 240×160 Phaser canvas, region emblems, a clean console, the pause menu,
+touch controls under phone emulation, the quit confirmation, and the level-up
+freeze. It skips `e2e/feel-demo.spec.ts`. Passing runs also write screenshots
+under `e2e-artifacts/` (gitignored).
 
 `npm run capture` is a separate Playwright command (`playwright.config.ts`).
 It records the clips in `capture/` against `CAPTURE_URL`, which defaults to

@@ -32,7 +32,41 @@ test('page title loads and a Phaser canvas renders without console errors', asyn
 
   await page.goto('/');
 
-  await expect(page).toHaveTitle('Rainknights');
+  await expect(page).toHaveTitle('RainKnights — pixel-art storm survival');
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute('content', /lone knight fights weather-born enemies/);
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', 'https://rainknights.vercel.app/');
+  await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /RainKnights/);
+  await expect(page.locator('meta[property="og:description"]')).toHaveAttribute('content', /weather-born enemies/);
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', 'https://rainknights.vercel.app/og.png');
+  await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute('content', '1200');
+  await expect(page.locator('meta[property="og:image:height"]')).toHaveAttribute('content', '630');
+  await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
+  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute('content', 'https://rainknights.vercel.app/og.png');
+  await expect(page.locator('link[rel="icon"][href*="favicon.ico"]')).toHaveAttribute('href', /favicon\.ico/);
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', /site\.webmanifest/);
+
+  const og = await page.request.get('/og.png');
+  expect(og.ok(), `og.png returned ${og.status()}`).toBe(true);
+  const ogBytes = await og.body();
+  // PNG IHDR width/height sit at bytes 16 and 20.
+  expect(ogBytes.readUInt32BE(16), 'social image width').toBe(1200);
+  expect(ogBytes.readUInt32BE(20), 'social image height').toBe(630);
+
+  const favicon = await page.request.get('/favicon.ico');
+  expect(favicon.ok(), `favicon.ico returned ${favicon.status()}`).toBe(true);
+  expect((await favicon.body()).byteLength).toBeGreaterThan(100);
+
+  const manifest = await page.request.get('/site.webmanifest');
+  expect(manifest.ok(), `manifest returned ${manifest.status()}`).toBe(true);
+  const manifestJson = await manifest.json();
+  expect(manifestJson.name).toBe('RainKnights');
+  expect(manifestJson.icons?.length).toBeGreaterThan(0);
+
+  const robots = await page.request.get('/robots.txt');
+  expect(robots.ok()).toBe(true);
+  const robotsText = await robots.text();
+  expect(robotsText).toContain('User-agent:');
+  expect(robotsText).not.toContain('<html');
 
   const canvas = page.locator('#app canvas');
   await expect(canvas).toBeVisible();
