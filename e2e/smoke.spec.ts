@@ -8,6 +8,12 @@ declare global {
       isScenePaused: () => boolean;
       elapsedSeconds: () => number;
       levelUpOpen: () => boolean;
+      level: () => number;
+      x: () => number;
+      y: () => number;
+      hp: () => number;
+      characterId: () => string;
+      regionId: () => string;
     };
   }
 }
@@ -266,6 +272,7 @@ test.describe('feel follow-ups', () => {
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
       await expect(page.locator('#app')).toHaveAttribute('data-scene', 'MenuScene');
+      await expect(page.locator('#app')).toHaveAttribute('data-title-menu', 'start');
 
       expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
     });
@@ -303,6 +310,194 @@ test.describe('feel follow-ups', () => {
     expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
   });
 });
+
+test('a run and the mute setting survive reload and Continue', async ({ page }) => {
+  const errors = collectErrors(page);
+  await beginRun(page);
+  await page.waitForTimeout(1200);
+  await page.keyboard.press('KeyM');
+
+  await page.evaluate(() => window.__rk?.grantLevel());
+  const app = page.locator('#app');
+  await expect(app).toHaveAttribute('data-level-up', 'open');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Digit1');
+  await expect(app).not.toHaveAttribute('data-level-up', 'open');
+
+  const before = await page.evaluate(() => {
+    const raw = localStorage.getItem('rainknights:save');
+    const save = raw ? JSON.parse(raw) : null;
+    return {
+      save,
+      level: window.__rk?.level() ?? 0,
+      time: window.__rk?.elapsedSeconds() ?? 0,
+    };
+  });
+  expect(before.level).toBe(2);
+  expect(before.save.version).toBe(1);
+  expect(before.save.settings.muted).toBe(true);
+  expect(before.save.run.player.level).toBe(2);
+  expect(before.save.run.characterId).toBe('rainKnight');
+  expect(before.save.run.regionId).toBe('nyc');
+  expect(before.save.run.elapsedSeconds).toBeGreaterThan(0);
+
+  await page.reload();
+  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
+  await expect(app).toHaveAttribute('data-title-menu', 'continue');
+  await expect(app).toHaveAttribute('data-title-choice', 'continue');
+  await expect(app).toHaveAttribute('data-run-level', '2');
+  await page.screenshot({ path: `${SHOTS}/desktop-continue-menu.png` });
+
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  await expect(app).toHaveAttribute('data-erase-confirm', 'open');
+  await expect(app).toHaveAttribute('data-title-choice', 'no');
+  await page.screenshot({ path: `${SHOTS}/desktop-erase-confirm.png` });
+  await page.keyboard.press('Enter');
+  await expect(app).not.toHaveAttribute('data-erase-confirm', 'open');
+  await expect(app).toHaveAttribute('data-title-choice', 'reset');
+
+  await page.keyboard.press('Digit1');
+  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  const after = await page.evaluate(() => ({
+    level: window.__rk?.level() ?? 0,
+    time: window.__rk?.elapsedSeconds() ?? 0,
+    characterId: window.__rk?.characterId() ?? '',
+    regionId: window.__rk?.regionId() ?? '',
+  }));
+  expect(after.level).toBe(2);
+  expect(after.characterId).toBe('rainKnight');
+  expect(after.regionId).toBe('nyc');
+  expect(after.time).toBeGreaterThanOrEqual(before.save.run.elapsedSeconds - 0.05);
+
+  await page.keyboard.press('Escape');
+  const pause = page.getByRole('dialog', { name: 'Paused' });
+  await expect(pause).toBeVisible();
+  await expect(pause.getByRole('button', { name: 'SOUND OFF' })).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+  const erase = page.getByRole('dialog', { name: 'Erase save?' });
+  await expect(erase).toBeVisible();
+  await expect(erase.getByRole('button', { name: 'NO' })).toHaveAttribute('aria-current', 'true');
+  await page.keyboard.press('Enter');
+  await expect(pause).toBeVisible();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
+
+  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
+  await expect(app).toHaveAttribute('data-title-menu', 'start');
+  const wiped = await page.evaluate(() => ({
+    save: localStorage.getItem('rainknights:save'),
+    legacy: localStorage.getItem('rainknights:muted'),
+  }));
+  expect(wiped.save).toBeNull();
+  expect(wiped.legacy).toBeNull();
+
+  expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
+});
+
+test('a corrupt save still boots the title', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.addInitScript(() => {
+    localStorage.setItem('rainknights:save', '{not json');
+  });
+  await page.goto('/');
+  const app = page.locator('#app');
+  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
+  await expect(app).toHaveAttribute('data-title-menu', 'start');
+  expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
+});
+
+test.describe('saved run on a phone', () => {
+  const pixel = devices['Pixel 7'];
+  test.use({
+    viewport: pixel.viewport,
+    userAgent: pixel.userAgent,
+    deviceScaleFactor: pixel.deviceScaleFactor,
+    isMobile: pixel.isMobile,
+    hasTouch: pixel.hasTouch,
+  });
+
+  test('Continue and Erase save render, and Continue restores the run', async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.addInitScript((save) => {
+      localStorage.setItem('rainknights:save', JSON.stringify(save));
+    }, seededSave());
+
+    await page.goto('/');
+    const app = page.locator('#app');
+    await expect(app).toHaveAttribute('data-scene', 'MenuScene');
+    await expect(app).toHaveAttribute('data-title-menu', 'continue');
+    await expect(app).toHaveAttribute('data-run-level', '4');
+    await page.screenshot({ path: `${SHOTS}/mobile-continue-menu.png` });
+
+    await page.keyboard.press('Digit3');
+    await expect(app).toHaveAttribute('data-erase-confirm', 'open');
+    await page.screenshot({ path: `${SHOTS}/mobile-erase-confirm.png` });
+    await page.keyboard.press('Enter');
+    await expect(app).not.toHaveAttribute('data-erase-confirm', 'open');
+
+    await page.keyboard.press('Digit1');
+    await expect(app).toHaveAttribute('data-scene', 'GameScene');
+    const restored = await page.evaluate(() => ({
+      level: window.__rk?.level() ?? 0,
+      time: window.__rk?.elapsedSeconds() ?? 0,
+      regionId: window.__rk?.regionId() ?? '',
+    }));
+    expect(restored.level).toBe(4);
+    expect(restored.regionId).toBe('nyc');
+    expect(restored.time).toBeGreaterThanOrEqual(12);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('button', { name: 'SOUND OFF' })).toBeVisible();
+
+    expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+});
+
+function seededSave() {
+  return {
+    version: 1,
+    settings: { muted: true },
+    meta: { bestTime: 40, bestLevel: 3, bestKills: 10, runs: 1, wins: 0 },
+    run: {
+      characterId: 'rainKnight',
+      regionId: 'nyc',
+      weatherLabel: 'Clear',
+      weatherCondition: 'clear',
+      weatherTint: 0x8fe0ff,
+      startFrontIndex: 0,
+      elapsedSeconds: 12.5,
+      bossHp: null,
+      pendingLevelUps: 0,
+      player: {
+        x: 900,
+        y: 800,
+        hp: 80,
+        maxHp: 100,
+        baseMoveSpeed: 80,
+        attackDamage: 18,
+        attackRange: 110,
+        attackCooldown: 550,
+        magnetRadius: 34,
+        pierce: 0,
+        xp: 4,
+        level: 4,
+        xpToNext: 76,
+        kills: 6,
+        powerups: { sunbeam: 0, rainbowShield: 0, gale: 0, frost: 0, staticCharge: 0 },
+        facing: 'down' as const,
+        flipX: false,
+        aimX: 0,
+        aimY: 1,
+      },
+    },
+  };
+}
 
 function collectErrors(page: Page) {
   const errors: string[] = [];

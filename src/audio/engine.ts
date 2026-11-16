@@ -1,17 +1,9 @@
+import { loadGame, writeMuted } from '../save/save';
 import { buildSong, MusicPlayer, type SongKey } from './music';
 import { noiseBuffer } from './synth';
 import { SFX, type SfxName } from './sfx';
 
-const MUTE_KEY = 'rainknights:muted';
 const STORMY = ['thunderstorm', 'hurricane', 'tropical_downpour'];
-
-function loadMuted(): boolean {
-  try {
-    return localStorage.getItem(MUTE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Game-wide audio: music sequencer, sound effects and weather ambience, all
@@ -20,7 +12,7 @@ function loadMuted(): boolean {
  */
 class AudioEngine {
   ctx: AudioContext | null = null;
-  muted = loadMuted();
+  muted = loadGame().settings.muted;
   onMuteChange?: (muted: boolean) => void;
   private muteListeners = new Set<(muted: boolean) => void>();
 
@@ -201,12 +193,17 @@ class AudioEngine {
   // --- mute ---
 
   toggleMute() {
-    this.muted = !this.muted;
-    try {
-      localStorage.setItem(MUTE_KEY, this.muted ? '1' : '0');
-    } catch {
-      /* storage unavailable — mute just won't persist */
-    }
+    this.applyMuted(!this.muted, true);
+  }
+
+  /**
+   * Apply mute from outside the M key (a wiped save). Passing `persist`
+   * writes the setting; a reset already wrote it and should pass false.
+   */
+  applyMuted(muted: boolean, persist = false) {
+    if (this.muted === muted) return;
+    this.muted = muted;
+    if (persist) writeMuted(muted);
     if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 1, this.ctx.currentTime, 0.05);
     this.notifyMute();
   }

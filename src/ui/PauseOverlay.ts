@@ -12,11 +12,13 @@ export interface PauseHost {
   pause: () => void;
   resume: () => void;
   quit: () => void;
+  resetSave: () => void;
 }
 
-const CHOICES = ['resume', 'sound', 'quit'] as const;
+const CHOICES = ['resume', 'sound', 'quit', 'reset'] as const;
 type Choice = (typeof CHOICES)[number];
 type Mode = 'menu' | 'confirm';
+type ConfirmKind = 'quit' | 'reset';
 
 let overlay: HTMLDivElement | null = null;
 let titleEl: HTMLParagraphElement | null = null;
@@ -26,6 +28,7 @@ let menuButtons: HTMLButtonElement[] = [];
 let confirmButtons: HTMLButtonElement[] = [];
 let buttons: HTMLButtonElement[] = [];
 let mode: Mode = 'menu';
+let confirmKind: ConfirmKind = 'quit';
 let selected = 0;
 let frame: ScreenFrame | null = null;
 let repeatTimer = 0;
@@ -37,9 +40,9 @@ let repeatAt = 0;
  * actually freezes; this only draws the menu and turns Esc / P / Start /
  * blur / a gamepad Start button into that request.
  *
- * QUIT asks "Abandon run?" first. NO is the default, so a second tap on A
- * does not throw the run away. Esc / Start / P backs out of that question
- * instead of resuming.
+ * QUIT asks "Abandon run?" first. RESET SAVE asks "Erase save?". NO is the
+ * default, so a second tap on A does not throw the run or the save away.
+ * Esc / Start / P backs out of that question instead of resuming.
  */
 export function attachPauseOverlay(game: Phaser.Game) {
   ensureOverlay();
@@ -170,7 +173,8 @@ export function bindGameplayPause(host: PauseHost): () => void {
 /** Esc, Start, and P resume — unless the abandon question is up, which they cancel. */
 function requestResume(host: PauseHost) {
   if (mode === 'confirm') {
-    setMode('menu', CHOICES.indexOf('quit'));
+    const index = confirmKind === 'reset' ? CHOICES.indexOf('reset') : CHOICES.indexOf('quit');
+    setMode('menu', index);
     return;
   }
   host.resume();
@@ -200,8 +204,9 @@ function ensureOverlay() {
   const resume = menuButton('resume', 'RESUME');
   const sound = menuButton('sound', 'SOUND ON');
   const quit = menuButton('quit', 'QUIT');
-  menuButtons = [resume, sound, quit];
-  menuPanel.append(resume, sound, quit);
+  const reset = menuButton('reset', 'RESET SAVE');
+  menuButtons = [resume, sound, quit, reset];
+  menuPanel.append(resume, sound, quit, reset);
 
   confirmPanel = document.createElement('div');
   confirmPanel.dataset.panel = 'confirm';
@@ -251,14 +256,16 @@ function wireButtons(host: PauseHost) {
   wire(confirmButtons);
 }
 
-function setMode(next: Mode, index: number) {
+function setMode(next: Mode, index: number, kind: ConfirmKind = confirmKind) {
   mode = next;
+  if (next === 'confirm') confirmKind = kind;
   selected = index;
   if (menuPanel) menuPanel.hidden = next !== 'menu';
   if (confirmPanel) confirmPanel.hidden = next !== 'confirm';
   buttons = next === 'menu' ? menuButtons : confirmButtons;
-  if (titleEl) titleEl.textContent = next === 'confirm' ? 'Abandon run?' : 'PAUSED';
-  if (overlay) overlay.setAttribute('aria-label', next === 'confirm' ? 'Abandon run?' : 'Paused');
+  const question = confirmKind === 'reset' ? 'Erase save?' : 'Abandon run?';
+  if (titleEl) titleEl.textContent = next === 'confirm' ? question : 'PAUSED';
+  if (overlay) overlay.setAttribute('aria-label', next === 'confirm' ? question : 'Paused');
   render();
 }
 
@@ -275,8 +282,13 @@ function step(delta: number) {
 function activate(host: PauseHost) {
   if (mode === 'confirm') {
     audio.play('confirm');
-    if (selected === 1) host.quit();
-    else setMode('menu', CHOICES.indexOf('quit'));
+    if (selected === 1) {
+      if (confirmKind === 'reset') host.resetSave();
+      else host.quit();
+    } else {
+      const index = confirmKind === 'reset' ? CHOICES.indexOf('reset') : CHOICES.indexOf('quit');
+      setMode('menu', index);
+    }
     return;
   }
   const choice: Choice = CHOICES[selected];
@@ -287,14 +299,15 @@ function activate(host: PauseHost) {
     return;
   }
   audio.play('confirm');
-  if (choice === 'quit') setMode('confirm', 0);
+  if (choice === 'quit') setMode('confirm', 0, 'quit');
+  else if (choice === 'reset') setMode('confirm', 0, 'reset');
   else host.resume();
 }
 
 function render() {
   if (mode === 'menu') {
     const sound = audio.muted ? 'SOUND OFF' : 'SOUND ON';
-    const labels = ['RESUME', sound, 'QUIT'];
+    const labels = ['RESUME', sound, 'QUIT', 'RESET SAVE'];
     menuButtons.forEach((button, index) => {
       button.textContent = labels[index];
     });
