@@ -1,16 +1,8 @@
-import '@fontsource/press-start-2p/400.css';
-import Phaser from 'phaser';
+import '@fontsource/press-start-2p/latin-400.css';
+import type Phaser from 'phaser';
+import type { GameScene } from './scenes/GameScene';
 import { VIEW } from './config/constants';
-import { BootScene } from './scenes/BootScene';
-import { MenuScene } from './scenes/MenuScene';
-import { CharacterSelectScene } from './scenes/CharacterSelectScene';
-import { RegionSelectScene } from './scenes/RegionSelectScene';
-import { GameScene } from './scenes/GameScene';
-import { GameOverScene } from './scenes/GameOverScene';
-import { OverlayScene } from './scenes/OverlayScene';
 import { audio } from './audio/engine';
-import { renderSong } from './audio/music';
-import { SFX } from './audio/sfx';
 import { mountTouchControls } from './input/touchControls';
 import { attachPauseOverlay } from './ui/PauseOverlay';
 import './ui/controls.css';
@@ -18,6 +10,13 @@ import './ui/controls.css';
 /** Largest whole-number zoom that fits the window, like a GBA on a screen. */
 function fitZoom(): number {
   return Math.max(1, Math.floor(Math.min(window.innerWidth / VIEW.width, window.innerHeight / VIEW.height)));
+}
+
+/** Let the browser paint and take input between the heavy startup chunks. */
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 /** Browsers only allow audio after a user gesture, so unlock on the first input. */
@@ -32,28 +31,53 @@ function setupAudioInput() {
   });
 }
 
+function dismissBootSplash() {
+  document.getElementById('boot-splash')?.remove();
+}
+
 async function start() {
   setupAudioInput();
   // Scenes create text immediately, so the pixel font must be ready first.
-  await document.fonts.load('8px "Press Start 2P"');
+  // Download it in parallel with Phaser instead of blocking the import on it.
+  const fontReady = document.fonts.load('8px "Press Start 2P"');
 
-  const game = new Phaser.Game({
-    type: Phaser.AUTO,
+  // Phaser is its own chunk. Evaluating it, then the scenes, as separate
+  // turns keeps each main-thread task shorter than one combined startup.
+  const phaserMod = await import('phaser');
+  await yieldToMain();
+  const scenes = await import('./scenes/register');
+  await fontReady;
+  await yieldToMain();
+
+  const PhaserLib = phaserMod.default;
+  const game = new PhaserLib.Game({
+    type: PhaserLib.AUTO,
     parent: 'app',
     width: VIEW.width,
     height: VIEW.height,
     pixelArt: true,
     roundPixels: true,
     backgroundColor: '#0a0a12',
+    // Music and effects are synthesized by src/audio. Phaser's sound manager
+    // would open an AudioContext during boot and block the main thread.
+    audio: { noAudio: true },
     physics: {
       default: 'arcade',
       arcade: { debug: false },
     },
     scale: {
-      mode: Phaser.Scale.NONE,
+      mode: PhaserLib.Scale.NONE,
       zoom: fitZoom(),
     },
-    scene: [BootScene, MenuScene, CharacterSelectScene, RegionSelectScene, GameScene, GameOverScene, OverlayScene],
+    scene: [
+      scenes.BootScene,
+      scenes.MenuScene,
+      scenes.CharacterSelectScene,
+      scenes.RegionSelectScene,
+      scenes.GameScene,
+      scenes.GameOverScene,
+      scenes.OverlayScene,
+    ],
   });
 
   window.addEventListener('resize', () => game.scale.setZoom(fitZoom()));
@@ -63,6 +87,7 @@ async function start() {
   installExitSave(game);
 
   if (import.meta.env.DEV) {
+    const [{ renderSong }, { SFX }] = await Promise.all([import('./audio/music'), import('./audio/sfx')]);
     (window as unknown as Record<string, unknown>).__game = game;
     (window as unknown as Record<string, unknown>).__audio = { audio, renderSong, SFX };
   }
@@ -96,6 +121,7 @@ function markScenes(game: Phaser.Game) {
       const key = scene.sys.settings.key;
       if (MARKED_SCENES.has(key)) {
         app.dataset.scene = key;
+        dismissBootSplash();
         return;
       }
     }
