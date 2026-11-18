@@ -6,6 +6,7 @@ import { DasherEnemy } from './DasherEnemy';
 import { TornadoBoss } from './TornadoBoss';
 import { CabWraithEnemy } from './CabWraithEnemy';
 import { PhantomBusBoss } from './PhantomBusBoss';
+import { TrainingDummy } from './TrainingDummy';
 import type { Enemy } from './Enemy';
 
 export function createEnemy(
@@ -21,6 +22,8 @@ export function createEnemy(
       return new ErraticEnemy(scene, x, y, stats, target);
     case 'lightningWisp':
       return new DasherEnemy(scene, x, y, stats, target);
+    case 'trainingDummy':
+      return new TrainingDummy(scene, x, y, stats, target);
     case 'cabWraith':
       return new CabWraithEnemy(scene, x, y, stats, target);
     case 'phantomBus':

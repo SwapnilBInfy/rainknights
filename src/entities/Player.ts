@@ -119,6 +119,14 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     keyboard.on('keydown-K', () => (this.rollPressedAt = scene.time.now));
   }
 
+  /** Turn to face a direction without moving (the tutorial points the knight at its targets). */
+  faceToward(dx: number, dy: number) {
+    if (Math.hypot(dx, dy) < 0.001) return;
+    this.aim.set(dx, dy).normalize();
+    this.face(this.aim.x, this.aim.y);
+    this.setTexture(chibiKey(this.characterId, this.facing, 'stand'));
+  }
+
   /** True from the start of a roll until it ends: no swinging or firing meanwhile. */
   get isRolling(): boolean {
     return this.rolling;

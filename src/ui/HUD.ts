@@ -36,6 +36,8 @@ export class HUD {
   private bossFrame: Phaser.GameObjects.Container | null = null;
   private bossBarX = 106;
 
+  private prompt: Phaser.GameObjects.Container | null = null;
+  private promptKey = '';
   private message: Phaser.GameObjects.Container | null = null;
   private messageTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -119,6 +121,28 @@ export class HUD {
       this.frontName = frontName;
       this.renderBadge();
     }
+  }
+
+  /**
+   * A persistent instruction panel (the tutorial): a coloured headline over
+   * two lines of text. `null` clears it. Redraws only when the text changes.
+   */
+  setPrompt(headline: string | null, lines: string[] = []) {
+    const key = headline === null ? '' : `${headline}|${lines.join('|')}`;
+    if (key === this.promptKey) return;
+    this.promptKey = key;
+    this.prompt?.destroy();
+    this.prompt = null;
+    const app = document.getElementById('app');
+    if (headline === null) {
+      if (app) delete app.dataset.prompt;
+      return;
+    }
+    const win = drawWindow(this.scene, 4, 108, 232, 48);
+    const head = this.scene.add.text(12, 114, headline, textStyle('#3078d8'));
+    const body = this.scene.add.text(12, 126, lines.join('\n'), textStyle());
+    this.prompt = this.scene.add.container(0, 0, [win, head, body]).setScrollFactor(0).setDepth(DEPTH + 1);
+    if (app) app.dataset.prompt = `${headline} | ${lines.join(' ')}`;
   }
 
   /** Status icons for the player (wet, burning, ...), drawn under the HP panel. */
@@ -219,6 +243,7 @@ export class HUD {
     this.bossFrame?.setVisible(visible);
     this.badge?.setVisible(visible);
     this.message?.setVisible(visible);
+    this.prompt?.setVisible(visible);
   }
 
   destroy() {
@@ -227,6 +252,9 @@ export class HUD {
     this.bossFrame?.destroy();
     this.badge?.destroy();
     this.message?.destroy();
+    this.prompt?.destroy();
+    const app = document.getElementById('app');
+    if (app) delete app.dataset.prompt;
     this.messageTimer?.remove(false);
   }
 }

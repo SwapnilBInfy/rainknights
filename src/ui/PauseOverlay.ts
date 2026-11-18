@@ -13,6 +13,8 @@ export interface PauseHost {
   resume: () => void;
   quit: () => void;
   resetSave: () => void;
+  /** The question QUIT asks ("Abandon run?" unless this is the tutorial). */
+  quitQuestion?: string;
 }
 
 const CHOICES = ['resume', 'sound', 'quit', 'reset'] as const;
@@ -29,6 +31,7 @@ let confirmButtons: HTMLButtonElement[] = [];
 let buttons: HTMLButtonElement[] = [];
 let mode: Mode = 'menu';
 let confirmKind: ConfirmKind = 'quit';
+let quitQuestion = 'Abandon run?';
 let selected = 0;
 let frame: ScreenFrame | null = null;
 let repeatTimer = 0;
@@ -72,6 +75,7 @@ export function closePauseMenu() {
 
 export function bindGameplayPause(host: PauseHost): () => void {
   ensureOverlay();
+  quitQuestion = host.quitQuestion ?? 'Abandon run?';
 
   const onKey = (e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -263,7 +267,7 @@ function setMode(next: Mode, index: number, kind: ConfirmKind = confirmKind) {
   if (menuPanel) menuPanel.hidden = next !== 'menu';
   if (confirmPanel) confirmPanel.hidden = next !== 'confirm';
   buttons = next === 'menu' ? menuButtons : confirmButtons;
-  const question = confirmKind === 'reset' ? 'Erase save?' : 'Abandon run?';
+  const question = confirmKind === 'reset' ? 'Erase save?' : quitQuestion;
   if (titleEl) titleEl.textContent = next === 'confirm' ? question : 'PAUSED';
   if (overlay) overlay.setAttribute('aria-label', next === 'confirm' ? question : 'Paused');
   render();

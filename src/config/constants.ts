@@ -54,6 +54,7 @@ export const ENEMY_STATS: Record<string, EnemyStats> = {
   snowGolem: { key: 'snowGolem', name: 'Snow Golem', hp: 140, speed: 20, damage: 20, xp: 26, contactCooldown: 900, scale: 1.4, immune: ['frozen', 'chilled'] },
   cabWraith: { key: 'cabWraith', name: 'Cab Wraith', hp: 46, speed: 52, damage: 11, xp: 16, contactCooldown: 700, scale: 1 },
   tornadoBoss: { key: 'tornadoBoss', name: 'Tornado', hp: 900, speed: 28, damage: 26, xp: 300, contactCooldown: 500, scale: 1, statusResist: 0.25 },
+  trainingDummy: { key: 'trainingDummy', name: 'Training Dummy', hp: 60, speed: 0, damage: 0, xp: 5, contactCooldown: 1000, scale: 1 },
   phantomBus: { key: 'phantomBus', name: 'Phantom Bus', hp: 1100, speed: 24, damage: 22, xp: 320, contactCooldown: 600, scale: 1, statusResist: 0.25 },
 };
 
