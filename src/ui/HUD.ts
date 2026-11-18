@@ -3,6 +3,8 @@ import type { Player } from '../entities/Player';
 import { UI } from '../gfx/palette';
 import { drawWindow, textStyle } from './Window';
 import { drawWeatherIcon, WEATHER_SHORT } from './weatherIcons';
+import { drawStatusIcon } from './statusIcons';
+import type { StatusId } from '../systems/status';
 
 const DEPTH = 100;
 
@@ -26,6 +28,9 @@ export class HUD {
   private conditionLabel = '';
   private frontName = '';
 
+  private statusGfx: Phaser.GameObjects.Graphics;
+  private statusKey = '';
+
   private bossGfx: Phaser.GameObjects.Graphics;
   private bossFrame: Phaser.GameObjects.Container | null = null;
 
@@ -44,6 +49,7 @@ export class HUD {
     this.hpText = this.text(97, 26, '', '#383838').setOrigin(1, 0);
     this.beamKeyText = this.text(7, 45, 'J', '#3078d8');
     this.bars = this.add(scene.add.graphics());
+    this.statusGfx = this.add(scene.add.graphics());
 
     this.bossGfx = scene.add.graphics().setScrollFactor(0).setDepth(DEPTH + 1);
   }
@@ -104,6 +110,17 @@ export class HUD {
     }
   }
 
+  /** Status icons for the player (wet, burning, ...), drawn under the HP panel. */
+  setStatuses(ids: StatusId[]) {
+    const key = ids.join(',');
+    if (key === this.statusKey) return;
+    this.statusKey = key;
+    this.statusGfx.clear();
+    ids.forEach((id, i) => drawStatusIcon(this.statusGfx, 4 + i * 11, 59, id));
+    const app = document.getElementById('app');
+    if (app) app.dataset.statuses = key;
+  }
+
   /** The glyph beside the beam gauge: J on a keyboard, B when touch is active. */
   setBeamKeyLabel(label: string) {
     this.beamKeyText.setText(label);
@@ -140,17 +157,17 @@ export class HUD {
       return;
     }
     if (!this.bossFrame) {
-      const win = drawWindow(this.scene, 40, 60, 160, 14);
-      const label = this.scene.add.text(45, 63, 'TORNADO', textStyle('#6c5b8f'));
+      const win = drawWindow(this.scene, 40, 70, 160, 14);
+      const label = this.scene.add.text(45, 73, 'TORNADO', textStyle('#6c5b8f'));
       this.bossFrame = this.scene.add.container(0, 0, [win, label]).setScrollFactor(0).setDepth(DEPTH);
     }
     const pct = Phaser.Math.Clamp(hp / maxHp, 0, 1);
     g.fillStyle(UI.ink, 1);
-    g.fillRect(106, 64, 90, 6);
+    g.fillRect(106, 74, 90, 6);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(107, 65, 88, 4);
+    g.fillRect(107, 75, 88, 4);
     g.fillStyle(0xa080d0, 1);
-    g.fillRect(107, 65, Math.round(88 * pct), 4);
+    g.fillRect(107, 75, Math.round(88 * pct), 4);
   }
 
   /** Pokémon-style bottom message box; replaces any message currently showing. */

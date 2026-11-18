@@ -1,5 +1,13 @@
 import Phaser from 'phaser';
 import type { EnemyStats } from '../../config/constants';
+import { StatusSet, type ApplyResult, type StatusId } from '../../systems/status';
+
+const STATUS_TINT: Partial<Record<StatusId, number>> = {
+  frozen: 0xa0e8ff,
+  shocked: 0xffff80,
+  chilled: 0xc8ecff,
+  wet: 0x8ab8ff,
+};
 
 export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   stats: EnemyStats;
@@ -8,6 +16,11 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   target: Phaser.Physics.Arcade.Sprite;
   wobbleSeed = Math.random() * 1000;
   nextStateChangeAt = 0;
+  readonly statuses: StatusSet;
+  /** Set by enemies that flash white to telegraph an attack (see DasherEnemy). */
+  protected telegraphing = false;
+  private flashMs = 0;
+  private tintKey = '';
 
   constructor(
     scene: Phaser.Scene,
@@ -21,6 +34,11 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.hp = stats.hp;
     this.maxHp = stats.hp;
     this.target = target;
+    this.statuses = new StatusSet({
+      immune: stats.immune,
+      durationMult: stats.statusResist ?? 1,
+      shockStuns: true,
+    });
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(5);
@@ -32,15 +50,16 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   takeDamage(amount: number): boolean {
     this.hp -= amount;
-    this.setTintFill(0xffffff);
-    this.scene.time.delayedCall(70, () => {
-      if (this.active) this.clearTint();
-    });
+    this.flashMs = 70;
     if (this.hp <= 0) {
       this.die();
       return true;
     }
     return false;
+  }
+
+  applyStatus(id: StatusId, ms: number): ApplyResult {
+    return this.statuses.apply(id, ms);
   }
 
   die() {
@@ -51,9 +70,65 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   preUpdate(time: number, delta: number) {
     super.preUpdate(time, delta);
     if (!this.active || !this.target.active) return;
-    // Two-frame idle bob: mirror the sprite every ~280ms, like a GBA critter.
-    this.setFlipX(Math.floor((time + this.wobbleSeed) / 280) % 2 === 0);
-    this.behavior(time, delta);
+
+    const { burnTicks } = this.statuses.update(delta);
+    for (let i = 0; i < burnTicks && this.active; i++) {
+      this.takeDamage(Math.max(2, Math.round(this.maxHp * 0.04)));
+    }
+    if (!this.active) return;
+    this.flashMs = Math.max(0, this.flashMs - delta);
+
+    if (this.statuses.stunned) {
+      // Frozen or shocked: stops dead, mid-stride, until it wears off.
+      this.setVelocity(0, 0);
+    } else {
+      // Two-frame idle bob: mirror the sprite every ~280ms, like a GBA critter.
+      this.setFlipX(Math.floor((time + this.wobbleSeed) / 280) % 2 === 0);
+      this.behavior(time, delta);
+      const slow = this.statuses.speedMult;
+      if (slow !== 1) (this.body as Phaser.Physics.Arcade.Body).velocity.scale(slow);
+    }
+    this.refreshTint(time);
+  }
+
+  /** One place decides the tint, so statuses never fight the hit flash or attack telegraphs. */
+  private refreshTint(time: number) {
+    let key = '';
+    if (this.flashMs > 0) key = 'flash';
+    else if (this.telegraphing) key = 'telegraph';
+    else if (this.statuses.has('frozen')) key = 'frozen';
+    else if (this.statuses.has('shocked')) key = Math.floor(time / 90) % 2 === 0 ? 'shock-a' : 'shock-b';
+    else if (this.statuses.has('burning')) key = Math.floor(time / 120) % 2 === 0 ? 'burn-a' : 'burn-b';
+    else if (this.statuses.has('chilled')) key = 'chilled';
+    else if (this.statuses.has('wet')) key = 'wet';
+
+    if (key === this.tintKey) return;
+    this.tintKey = key;
+    switch (key) {
+      case '':
+        this.clearTint();
+        break;
+      case 'flash':
+        this.setTintFill(0xffffff);
+        break;
+      case 'telegraph':
+        this.setTint(0xffffff);
+        break;
+      case 'shock-a':
+        this.setTint(STATUS_TINT.shocked!);
+        break;
+      case 'shock-b':
+        this.setTint(0xffffff);
+        break;
+      case 'burn-a':
+        this.setTint(0xff9040);
+        break;
+      case 'burn-b':
+        this.setTint(0xffd070);
+        break;
+      default:
+        this.setTint(STATUS_TINT[key as StatusId]!);
+    }
   }
 
   abstract behavior(time: number, delta: number): void;

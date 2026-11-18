@@ -29,6 +29,8 @@ export const AUTO_ATTACK = {
   cooldownMult: 1.5,
 };
 
+import type { StatusId } from '../systems/status';
+
 export interface EnemyStats {
   key: string;
   name: string;
@@ -38,15 +40,19 @@ export interface EnemyStats {
   xp: number;
   contactCooldown: number;
   scale: number;
+  /** Statuses this enemy can never receive (ice creatures ignore frost, wisps ignore shock). */
+  immune?: StatusId[];
+  /** Scales status durations; the boss uses a small value so it cannot be locked down. */
+  statusResist?: number;
 }
 
 export const ENEMY_STATS: Record<string, EnemyStats> = {
   rainImp: { key: 'rainImp', name: 'Rain Imp', hp: 14, speed: 45, damage: 6, xp: 4, contactCooldown: 700, scale: 1 },
   windWraith: { key: 'windWraith', name: 'Wind Wraith', hp: 20, speed: 75, damage: 8, xp: 7, contactCooldown: 650, scale: 1 },
-  hailBrute: { key: 'hailBrute', name: 'Hail Brute', hp: 60, speed: 28, damage: 14, xp: 14, contactCooldown: 800, scale: 1.2 },
-  lightningWisp: { key: 'lightningWisp', name: 'Lightning Wisp', hp: 24, speed: 65, damage: 12, xp: 10, contactCooldown: 500, scale: 0.9 },
-  snowGolem: { key: 'snowGolem', name: 'Snow Golem', hp: 140, speed: 20, damage: 20, xp: 26, contactCooldown: 900, scale: 1.4 },
-  tornadoBoss: { key: 'tornadoBoss', name: 'Tornado', hp: 900, speed: 28, damage: 26, xp: 300, contactCooldown: 500, scale: 1 },
+  hailBrute: { key: 'hailBrute', name: 'Hail Brute', hp: 60, speed: 28, damage: 14, xp: 14, contactCooldown: 800, scale: 1.2, immune: ['frozen', 'chilled'] },
+  lightningWisp: { key: 'lightningWisp', name: 'Lightning Wisp', hp: 24, speed: 65, damage: 12, xp: 10, contactCooldown: 500, scale: 0.9, immune: ['shocked'] },
+  snowGolem: { key: 'snowGolem', name: 'Snow Golem', hp: 140, speed: 20, damage: 20, xp: 26, contactCooldown: 900, scale: 1.4, immune: ['frozen', 'chilled'] },
+  tornadoBoss: { key: 'tornadoBoss', name: 'Tornado', hp: 900, speed: 28, damage: 26, xp: 300, contactCooldown: 500, scale: 1, statusResist: 0.25 },
 };
 
 export interface WeatherFront {

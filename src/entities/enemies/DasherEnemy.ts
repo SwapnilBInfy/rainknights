@@ -16,16 +16,16 @@ export class DasherEnemy extends Enemy {
         this.scene.physics.moveToObject(this, this.target, this.stats.speed * 0.55);
         if (time >= this.nextStateChangeAt) {
           this.dashState = 'telegraph';
+          this.telegraphing = true;
           this.nextStateChangeAt = time + 350;
           this.setVelocity(0, 0);
         }
         break;
       case 'telegraph':
-        this.setTint(0xffffff);
         if (time >= this.nextStateChangeAt) {
           const angle = Phaser.Math.Angle.Between(this.x, this.y, this.target.x, this.target.y);
           this.dashVector.setToPolar(angle, this.stats.speed * 3.2);
-          this.clearTint();
+          this.telegraphing = false;
           this.dashState = 'dash';
           this.nextStateChangeAt = time + 260;
         }

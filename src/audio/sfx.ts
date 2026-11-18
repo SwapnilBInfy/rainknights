@@ -78,6 +78,56 @@ export const SFX = {
     );
   },
 
+  /** Hazard about to land: two quick rising blips (telegraph). */
+  warn(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    tone(ctx, out, { t, dur: 0.06, freq: 880, voice: 'square50', vol: 0.09, release: 0.02 });
+    tone(ctx, out, { t: t + 0.09, dur: 0.06, freq: 1175, voice: 'square50', vol: 0.09, release: 0.02 });
+  },
+
+  /** Lightning lands: a bright crack over a short boom. */
+  strike(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.1, vol: 0.3, filter: 'highpass', freq: 2200, q: 0.4 });
+    noiseHit(ctx, out, { t: t + 0.02, dur: 0.6, vol: 0.34, filter: 'lowpass', freq: 520, sweepTo: 60, attack: 0.01 });
+    tone(ctx, out, { t, dur: 0.25, freq: 120, slideTo: 40, voice: 'sine', vol: 0.2, release: 0.1 });
+  },
+
+  /** A shock stuns something: quick electric zip. */
+  zap(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    tone(ctx, out, { t, dur: 0.1, freq: 2400, slideTo: 600, voice: 'saw', vol: 0.07, release: 0.02 });
+    tone(ctx, out, { t: t + 0.04, dur: 0.06, freq: 1800, slideTo: 900, voice: 'square12', vol: 0.05, release: 0.02 });
+  },
+
+  /** One burn tick: a small crackle. */
+  burn(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.07, vol: 0.12, filter: 'bandpass', freq: 3200, q: 1.2 });
+    noiseHit(ctx, out, { t: t + 0.03, dur: 0.05, vol: 0.08, filter: 'highpass', freq: 5000, q: 0.5 });
+  },
+
+  /** Frozen solid: icy falling chime. */
+  freeze(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    [88, 84, 79, 76].forEach((note, i) =>
+      tone(ctx, out, { t: t + i * 0.05, dur: 0.07, freq: midiToHz(note), voice: 'sine', vol: 0.09, release: 0.08 })
+    );
+  },
+
+  /** Ice shatters: glass crash. */
+  shatter(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.22, vol: 0.2, filter: 'highpass', freq: 4500, q: 0.4 });
+    [96, 91, 88, 84].forEach((note, i) =>
+      tone(ctx, out, { t: t + i * 0.025, dur: 0.05, freq: midiToHz(note), voice: 'square12', vol: 0.06, release: 0.05 })
+    );
+  },
+
+  /** Fire meets water: a hiss. */
+  steam(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.45, vol: 0.14, filter: 'highpass', freq: 3000, sweepTo: 7000, q: 0.5, attack: 0.04 });
+  },
+
+  /** A gust arrives: swoosh. */
+  gust(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 1.2, vol: 0.2, filter: 'bandpass', freq: 500, sweepTo: 1800, q: 0.8, attack: 0.3 });
+  },
+
   /** Big thunder rolls: a sharp crack then a long rumble. */
   thunder(ctx: BaseAudioContext, out: AudioNode, t: number) {
     noiseHit(ctx, out, { t, dur: 0.14, vol: 0.2, filter: 'highpass', freq: 2500, q: 0.4 });

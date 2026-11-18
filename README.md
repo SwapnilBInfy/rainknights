@@ -157,6 +157,39 @@ fails, the run starts on the calm fallback.
 | 4:40    | Tornado Warning  | —                            |
 | 5:00    | —                | **Tornado** (boss)             |
 
+### Status effects and weather hazards
+
+The live weather also changes how the run plays. Rules start a few seconds in
+(a short hint explains them), and every hazard is drawn on the ground *before*
+it hits, so nothing is a surprise.
+
+| Weather            | Everyone is | Hazard                                              |
+| ------------------ | ----------- | --------------------------------------------------- |
+| Rain               | Wet         | —                                                   |
+| Thunderstorm       | Wet         | Lightning strikes a blinking circle                  |
+| Tropical downpour  | Wet         | Rare lightning                                       |
+| Hurricane risk     | Wet         | Frequent lightning + wind gusts                      |
+| Cold front         | —           | Frost patches that freeze whoever stands in them     |
+| Urban wind         | —           | Gusts shove you and enemies (watch the arrows)       |
+| Heat               | —           | Scorch patches that set you and enemies on fire      |
+
+Statuses (shown as icons under your HP): **Wet**, **Burning**, **Chilled**,
+**Frozen** and **Shocked**. They interact:
+
+- Beams, bolts and lightning deal **+50%** to a Wet target and shock it.
+- A melee hit on a Frozen target **shatters** the ice for bonus damage
+  (hammer x3, sword x2, daggers x1.8).
+- Water puts out fire (steam); fire thaws ice. You thaw with a short
+  immunity, so you can never be frozen twice in a row.
+- Hail Brutes and Snow Golems cannot be chilled or frozen, Lightning Wisps
+  cannot be shocked, and the Tornado resists all of it.
+
+Hazards are switched off under browser automation so tests stay deterministic.
+`?weather=thunderstorm` (or `rain`, `heat`, `cold_front`, `windy`,
+`hurricane`, `tropical_downpour`, `clear`) forces a condition and turns them
+back on — handy for demos and capture scripts. Status and hazard state is not
+saved; a continued run starts clean.
+
 ### Weather powerups (picked at level-up)
 
 - **Sunbeam** — periodic heal + damage pulse around you
