@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
-import { test, expect, devices, type Page } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { devices, type Page } from '@playwright/test';
 
 declare global {
   interface Window {

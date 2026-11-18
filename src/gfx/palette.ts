@@ -39,6 +39,74 @@ export const MIAMI_TERRAIN: TerrainTheme = {
   roofVent: 0x78d0c8,
 };
 
+/** Colours for the decor layer (shorelines, curbs, buildings, props), by city. */
+export type DecorPalette = Record<import('../systems/decorRules').Role, number>;
+
+const DECOR_COMMON = {
+  foam: 0xeaf8ff,
+  foamSoft: 0xcfeefa,
+  deepEdge: 0x2c5488,
+  deckShadow: 0x10243c,
+  iceEdge: 0xffffff,
+  iceCrack: 0x86b4d2,
+  shadow: 0x101828,
+  leaf: 0x3aa84c,
+  leafLight: 0x7ee07a,
+  leafDark: 0x1e6a34,
+  trunk: 0x7a4a2c,
+  frond: 0x2f9a48,
+  frondLight: 0x74d878,
+  carGlass: 0x8fd8f0,
+  carTire: 0x1a1a24,
+  lampPole: 0x30343c,
+  lampLight: 0xfff4a8,
+  hydrant: 0xd8382c,
+  hydrantCap: 0xf0f0f0,
+  railDark: 0x2a2c38,
+  railLight: 0xa8acb8,
+  vent: 0x474b5c,
+  ventLight: 0x8e94a8,
+} as const;
+
+export const DECOR_NYC: DecorPalette = {
+  ...DECOR_COMMON,
+  curb: 0xc0c4d0,
+  curbShade: 0x2a2c38,
+  lane: 0xe8d050,
+  parapetLight: 0x9ea4b8,
+  parapetDark: 0x2c3040,
+  wallFace: 0x9a5a50,
+  wallShade: 0x4a2c30,
+  window: 0x3a4660,
+  windowLit: 0xf8e078,
+  carBody: 0xd04038,
+  carBody2: 0xe8c838,
+  carBody3: 0x4880d8,
+  umbrellaA: 0xffffff,
+  umbrellaB: 0xff5050,
+};
+
+export const DECOR_MIAMI: DecorPalette = {
+  ...DECOR_COMMON,
+  curb: 0xf8e8b8,
+  curbShade: 0x8c6238,
+  lane: 0xffffff,
+  parapetLight: 0xffe0ea,
+  parapetDark: 0xa05878,
+  wallFace: 0xf6b8c8,
+  wallShade: 0xc87898,
+  window: 0x58b8c0,
+  windowLit: 0xfff0a0,
+  carBody: 0xffffff,
+  carBody2: 0xffffff,
+  carBody3: 0xffffff,
+  umbrellaA: 0xff6a8a,
+  umbrellaB: 0xfff4c8,
+  railDark: 0x6a4222,
+  railLight: 0xe8c890,
+  leaf: 0x3aa84c,
+};
+
 export const RAIN_IMP = { main: 0x3aa0e0, highlight: 0x9fd8ff, shadow: 0x1c5f8f };
 export const WIND_WRAITH = { main: 0xbfe9e6, highlight: 0xffffff, shadow: 0x6fb6b0 };
 export const HAIL_BRUTE = { main: 0xc9d3da, highlight: 0xffffff, shadow: 0x7c8894 };

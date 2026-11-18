@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { type Page } from '@playwright/test';
 
 // The dodge roll: Shift / K on a keyboard, the R button on the touch cluster.
 // The debug bridge (window.__rk) exposes just enough state to assert on it.

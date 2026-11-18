@@ -253,6 +253,13 @@ returns to the same one. (`?seed=123` pins a map for demos and tests.)
   clear plaza. Enemies are placed on open ground, and slide along walls when
   something is in their way.
 
+The city is dressed, too: **curbs and lane markings** on the streets, **shorelines**
+with foam where water meets land, buildings with **wall faces and windows**,
+bridges with **rails** over their water, **trees, parked cars and street lamps or
+hydrants** in New York, **palms and beach umbrellas** in Miami. Trees, cars and
+lamps are solid, so they are cover and obstacles. The world's edge is a skyline
+of buildings in New York and a palm-lined sea wall in Miami.
+
 Tiles do things to whoever stands on them:
 
 | Tile | Effect |
@@ -294,6 +301,16 @@ loop, always telegraphed:
    (x1.6 for the cab, x1.5 for the bus). Hitting a wall cuts it short.
 4. **Stall**: the engine cuts out. It skids to a stop, flickers, and takes
    **+50% damage**: the moment to strike. Then it cruises again.
+
+The streets matter to them. Their lanes follow the **street directions** (north,
+south, east or west, never a diagonal), so a charge runs down the road, and the
+lane shown on the ground stops where it meets a wall or a parked car, with a
+burst marking the spot. A cab or the bus keeps a car-length from you to line up
+a charge, only winds up when you are actually in its lane, and is quick on roads
+but sluggish across grass. If a charge ends by **crashing** into a building, a
+parked car or the world's edge, it is dazed for longer, takes **even more
+damage** (x1.75 for a cab, x2 for the bus), and the crash shakes the screen and
+throws sparks.
 
 Roll sideways across the lane (see Dodge roll above). The **Phantom Bus** has
 1100 HP and a wider, longer lane. Below half health it **enrages**: shorter

@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { type Page } from '@playwright/test';
 
 // The optional tutorial: reachable from the title, teaches each mechanic in the
 // real game, and never touches the saved run.
@@ -112,7 +113,10 @@ test('walks through every step with real input, then returns to the title', asyn
       },
       undefined,
       frame
-    );
+    ).catch(async (e) => {
+      const state = await page.evaluate(`JSON.stringify({ step: window.__rk.tutorialStep(), hp: window.__rk.hp(), x: Math.round(window.__rk.x()), y: Math.round(window.__rk.y()), types: window.__rk.enemyTypes(), phases: window.__rk.enemyPhases(), offsets: window.__rk.enemyOffsets().map(o => o.map(Math.round)), under: window.__rk.terrain().under })`).catch(() => 'unavailable');
+      throw new Error(`the dodge step stalled: ${state}\n${e.message}`);
+    });
     if ((await step(page)) === 'dodge') await page.keyboard.press('KeyK');
     await page.waitForTimeout(1600); // let the charge finish and the cab stall
   }

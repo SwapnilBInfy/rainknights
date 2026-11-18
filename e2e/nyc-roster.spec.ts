@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { type Page } from '@playwright/test';
 
 // New York's own roster: the Cab Wraith and the Phantom Bus. Miami keeps the Tornado.
 
@@ -54,6 +55,8 @@ test('a Cab Wraith winds up with a warning, charges, stalls, then cruises again'
 
 test('NYC spawns Cab Wraiths as the storm builds, and the first one announces itself', async ({ page }) => {
   const errors = await beginRun(page, 'nyc', 'thunderstorm'); // starts on the Thunderstorm front
+  // This test is about the hint, not survival: an idle knight in a storm would otherwise be overrun.
+  await page.evaluate(`setInterval(() => window.__rk && window.__rk.heal(), 150)`);
   await page.waitForFunction(() => (window as any).__rk.enemyTypes().includes('cabWraith'), undefined, frame);
   await expect(page.locator('#app')).toHaveAttribute('data-signature-hint', /Cab Wraiths charge/, { timeout: 20_000 });
   expect(errors, errors.join('\n')).toEqual([]);

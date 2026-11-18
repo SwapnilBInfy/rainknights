@@ -17,6 +17,8 @@ export interface ChargeTuning {
   telegraphMs: number;
   chargeMs: number;
   stallMs: number;
+  /** Extra stall time when a charge ends by crashing into something (default 0). */
+  crashStallMs?: number;
 }
 
 /** Frame deltas above this are treated as a hiccup (tab switch, resume). */
@@ -26,6 +28,8 @@ const MIN_CHARGE_MS = 120;
 
 export class ChargeCycle {
   phase: ChargePhase = 'cruise';
+  /** True if the last charge ended by hitting something rather than running its course. */
+  crashed = false;
   private left: number;
   private inPhaseMs = 0;
 
@@ -73,10 +77,21 @@ export class ChargeCycle {
         if (this.left <= 0) this.left = 0; // wait for the target to come into range
         return null;
       case 'telegraph':
-        if (this.left <= 0) return this.go('charge', this.tuning.chargeMs);
+        if (this.left <= 0) {
+          this.crashed = false;
+          return this.go('charge', this.tuning.chargeMs);
+        }
         return null;
       case 'charge':
-        if (this.left <= 0 || (opts.blocked && this.inPhaseMs >= MIN_CHARGE_MS)) return this.go('stall', this.tuning.stallMs);
+        if (opts.blocked && this.inPhaseMs >= MIN_CHARGE_MS) {
+          this.crashed = true;
+          return this.go('stall', this.tuning.stallMs + (this.tuning.crashStallMs ?? 0));
+        }
+        if (this.left <= 0) {
+          this.crashed = false;
+          return this.go('stall', this.tuning.stallMs);
+        }
+        return null;
         return null;
       case 'stall':
         if (this.left <= 0) return this.go('cruise', this.rollCruise());
