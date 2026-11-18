@@ -152,6 +152,18 @@ export const SFX = {
     tone(ctx, out, { t, dur: 0.3, freq: 130, slideTo: 90, voice: 'saw', vol: 0.06, release: 0.1 });
   },
 
+  /** Stepping into water: a short splash. */
+  splash(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.16, vol: 0.13, filter: 'bandpass', freq: 1400, sweepTo: 500, q: 0.8, attack: 0.01 });
+    tone(ctx, out, { t: t + 0.02, dur: 0.08, freq: 520, slideTo: 260, voice: 'sine', vol: 0.05, release: 0.04 });
+  },
+
+  /** The streets flood: a long, rising rush. */
+  flood(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 1.4, vol: 0.2, filter: 'lowpass', freq: 300, sweepTo: 1600, attack: 0.4 });
+    tone(ctx, out, { t, dur: 1.1, freq: 80, slideTo: 130, voice: 'sine', vol: 0.1, attack: 0.2, release: 0.4 });
+  },
+
   /** Big thunder rolls: a sharp crack then a long rumble. */
   thunder(ctx: BaseAudioContext, out: AudioNode, t: number) {
     noiseHit(ctx, out, { t, dur: 0.14, vol: 0.2, filter: 'highpass', freq: 2500, q: 0.4 });

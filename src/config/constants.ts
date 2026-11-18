@@ -84,6 +84,12 @@ export const WEATHER_FRONTS: WeatherFront[] = [
   { name: 'Tornado Warning', start: 280, enemies: ['lightningWisp', 'snowGolem'], spawnIntervalMs: 550, spawnCount: 3 },
 ];
 
+/** Index into WEATHER_FRONTS for a given time into the run. */
+export function frontIndexAt(seconds: number): number {
+  for (let i = WEATHER_FRONTS.length - 1; i >= 0; i--) if (seconds >= WEATHER_FRONTS[i].start) return i;
+  return 0;
+}
+
 export const TORNADO_SPAWN_TIME = 300;
 
 export const XP_BASE = 20;

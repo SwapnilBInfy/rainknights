@@ -76,6 +76,8 @@ export interface RunSnapshot {
   bossHp: number | null;
   /** Level-up menus still owed, including one that was open at the checkpoint. */
   pendingLevelUps: number;
+  /** Seed of the world map, so Continue returns to the same map. Absent in older saves. */
+  mapSeed?: number;
   player: PlayerSnapshot;
 }
 
@@ -388,6 +390,7 @@ function readRun(value: unknown): RunSnapshot | null {
     bossHp = hp;
   }
   const player = readPlayer(value.player);
+  const mapSeed = readInt(value.mapSeed, 0, 0x7fffffff);
   if (
     !weatherLabel ||
     !weatherCondition ||
@@ -410,6 +413,8 @@ function readRun(value: unknown): RunSnapshot | null {
     bossHp,
     pendingLevelUps,
     player,
+    // Optional and additive (no version bump): a missing or invalid seed just means a fresh map.
+    ...(mapSeed !== null ? { mapSeed } : {}),
   };
 }
 

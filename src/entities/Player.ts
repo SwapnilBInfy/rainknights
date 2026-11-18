@@ -60,6 +60,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private lastDodgeAt = -Infinity;
   /** Hits avoided by rolling (for the debug bridge and tests). */
   dodgeCount = 0;
+  /** Set by the scene from the tile underfoot: wading slows (< 1), ice makes you slide (grip < 1). */
+  terrainSpeed = 1;
+  grip = 1;
+  private frameDelta = 16;
 
   readonly weaponType: WeaponType;
   /** Direction of the last movement (8-way); melee and beam go this way. */
@@ -158,11 +162,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   get effectiveMoveSpeed(): number {
-    return this.baseMoveSpeed * (1 + 0.2 * this.powerups.gale) * this.statuses.speedMult;
+    return this.baseMoveSpeed * (1 + 0.2 * this.powerups.gale) * this.statuses.speedMult * this.terrainSpeed;
   }
 
   preUpdate(time: number, delta: number) {
     super.preUpdate(time, delta);
+    this.frameDelta = delta;
     const { burnTicks } = this.statuses.update(delta);
     for (let i = 0; i < burnTicks; i++) this.takeStatusDamage(1, time);
     this.hurtFlashMs = Math.max(0, this.hurtFlashMs - delta);
@@ -354,7 +359,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       this.aim.copy(dir);
       if (time >= this.attackSwingUntil) this.face(dir.x, dir.y);
     }
-    this.setVelocity(dir.x * this.effectiveMoveSpeed, dir.y * this.effectiveMoveSpeed);
+    const speed = this.effectiveMoveSpeed;
+    if (this.grip >= 1) {
+      this.setVelocity(dir.x * speed, dir.y * speed);
+    } else {
+      // On ice the knight steers toward the wanted velocity slowly, so they slide.
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      const k = 1 - Math.exp(-(this.frameDelta / 1000) * this.grip * 14);
+      this.setVelocity(body.velocity.x + (dir.x * speed - body.velocity.x) * k, body.velocity.y + (dir.y * speed - body.velocity.y) * k);
+    }
     this.updateWalkAnimation(moving, time);
   }
 

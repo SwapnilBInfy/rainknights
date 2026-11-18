@@ -33,6 +33,7 @@ export class PhantomBusBoss extends Enemy {
   constructor(scene: Phaser.Scene, x: number, y: number, stats: EnemyStats, target: Phaser.Physics.Arcade.Sprite) {
     super(scene, x, y, stats, target);
     this.bobs = false;
+    this.chasesAround = false;
     this.heading = Phaser.Math.Angle.Between(x, y, target.x, target.y);
     this.setRotation(this.heading);
     const body = this.body as Phaser.Physics.Arcade.Body;

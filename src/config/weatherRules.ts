@@ -22,6 +22,8 @@ export interface WeatherRule {
   hazards: HazardSpec[];
   /** Two short lines (27 chars each) for the message box. */
   hint?: string;
+  /** A second hint about what the weather does to the map (27 chars per line). */
+  terrainHint?: string;
 }
 
 export const WEATHER_RULES: Record<string, WeatherRule> = {
@@ -31,16 +33,19 @@ export const WEATHER_RULES: Record<string, WeatherRule> = {
     wet: true,
     hazards: [],
     hint: 'Rain: everyone is WET.\nBeams shock wet foes!',
+    terrainHint: 'Puddles soak and slow you.\nWet foes take more shock!',
   },
   thunderstorm: {
     wet: true,
     hazards: [{ kind: 'lightning', minMs: 6000, maxMs: 10000, count: 1, extraFromFront: 4 }],
     hint: 'Lightning hits where it\nflashes. Move away!',
+    terrainHint: 'Lightning runs through\nwater. Stay out of it!',
   },
   tropical_downpour: {
     wet: true,
     hazards: [{ kind: 'lightning', minMs: 14000, maxMs: 20000, count: 1 }],
     hint: 'Downpour: all WET. Rare\nlightning - watch circles!',
+    terrainHint: 'The streets will flood.\nWater carries lightning!',
   },
   hurricane: {
     wet: true,
@@ -49,11 +54,13 @@ export const WEATHER_RULES: Record<string, WeatherRule> = {
       { kind: 'gust', minMs: 12000, maxMs: 18000 },
     ],
     hint: 'Hurricane! Gusts shove you\nand lightning strikes!',
+    terrainHint: 'Floods spread inland.\nWater carries lightning!',
   },
   cold_front: {
     wet: false,
     hazards: [{ kind: 'frost', minMs: 7000, maxMs: 11000, count: 1, extraFromFront: 4 }],
     hint: 'Frost patches freeze you.\nMelee shatters ice!',
+    terrainHint: 'The water froze: walk the\nice, but you will slide!',
   },
   windy: {
     wet: false,
@@ -64,6 +71,7 @@ export const WEATHER_RULES: Record<string, WeatherRule> = {
     wet: false,
     hazards: [{ kind: 'scorch', minMs: 6000, maxMs: 9000, count: 1, extraFromFront: 3 }],
     hint: 'Scorched ground burns\nyou and enemies!',
+    terrainHint: 'Heat dried the shallows.\nDeep water still blocks.',
   },
 };
 

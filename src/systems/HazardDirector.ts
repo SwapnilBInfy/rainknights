@@ -23,6 +23,12 @@ export interface HazardHost {
   frontIndex(): number;
   hurtEnemy(enemy: Enemy, damage: number, kind: 'lightning'): void;
   popup(x: number, y: number, text: string, color: string): void;
+  /** Id of the water body at a point (0 = not standing in water). */
+  waterBodyAt(x: number, y: number): number;
+  /** Tile centres of a water body within a radius (what a strike runs through). */
+  waterTilesNear(x: number, y: number, radius: number, bodyId: number): { x: number; y: number }[];
+  /** A shallow-water spot near a point, or null. */
+  wetSpotNear(x: number, y: number, radius: number): { x: number; y: number } | null;
 }
 
 type ZoneKind = Exclude<HazardKind, 'gust'>;
@@ -43,6 +49,12 @@ const ZONES: Record<ZoneKind, ZoneDef> = {
 
 const LIGHTNING_DAMAGE = 10;
 const LIGHTNING_ENEMY_DAMAGE = 35;
+/** Water carries a strike this far from where it lands, to everyone standing in the same water. */
+const CONDUCT_RADIUS = 96;
+const CONDUCT_DAMAGE = 8;
+const CONDUCT_ENEMY_DAMAGE = 22;
+/** How often a lightning strike is aimed at nearby water instead of dry ground. */
+const WATER_SEEKING = 0.4;
 
 interface Zone {
   kind: ZoneKind;
@@ -52,6 +64,9 @@ interface Zone {
   struck: boolean;
   tick: number;
   seed: number;
+  /** Water body a strike here runs through (0 = dry ground) and the tiles that will light up. */
+  bodyId: number;
+  tiles: { x: number; y: number }[];
 }
 
 const GUST = { warnMs: 1200, liveMs: 2500, force: 34 };
@@ -165,13 +180,20 @@ export class HazardDirector {
   }
 
   private addZone(kind: ZoneKind, x: number, y: number) {
-    this.zones.push({ kind, x, y, age: 0, struck: false, tick: 0, seed: Math.floor(Math.random() * 1e6) });
+    const bodyId = kind === 'lightning' ? this.host.waterBodyAt(x, y) : 0;
+    const tiles = bodyId ? this.host.waterTilesNear(x, y, CONDUCT_RADIUS, bodyId) : [];
+    this.zones.push({ kind, x, y, age: 0, struck: false, tick: 0, seed: Math.floor(Math.random() * 1e6), bodyId, tiles });
     audio.play('warn');
   }
 
   /** A walkable spot near the player; lightning also likes to land near enemies. */
   private pickSpot(allowEnemy: boolean): { x: number; y: number } | null {
     const p = this.host.player;
+    // Lightning likes water: often aim at a nearby puddle, pond or river so players learn to stay out of it.
+    if (allowEnemy && Math.random() < WATER_SEEKING) {
+      const wet = this.host.wetSpotNear(p.x, p.y, 110);
+      if (wet) return wet;
+    }
     const near = allowEnemy && Math.random() < 0.4 ? this.host.enemies().filter((e) => Phaser.Math.Distance.Between(e.x, e.y, p.x, p.y) < 120) : [];
     for (let attempt = 0; attempt < 10; attempt++) {
       let x: number;
@@ -235,6 +257,25 @@ export class HazardDirector {
       if (Phaser.Math.Distance.Between(enemy.x, enemy.y, zone.x, zone.y) <= reach) {
         this.host.hurtEnemy(enemy, LIGHTNING_ENEMY_DAMAGE, 'lightning');
       }
+    }
+    if (zone.bodyId) this.conduct(zone);
+  }
+
+  /** The strike ran into water: everyone standing in that same water, nearby, is shocked. */
+  private conduct(zone: Zone) {
+    const { player } = this.host;
+    const direct = ZONES.lightning.r + 4;
+    const inWater = (x: number, y: number) => this.host.waterBodyAt(x, y) === zone.bodyId && Phaser.Math.Distance.Between(x, y, zone.x, zone.y) <= CONDUCT_RADIUS;
+    if (inWater(player.x, player.y) && Phaser.Math.Distance.Between(player.x, player.y, zone.x, zone.y) > direct) {
+      const now = this.host.scene.time.now;
+      const dmg = Math.round(CONDUCT_DAMAGE * (player.statuses.has('wet') ? STATUS_TUNING.wetShockBonus : 1));
+      if (!player.isInvulnerable(now)) this.host.popup(player.x, player.y - 10, 'SHOCK', '#d8a800');
+      player.takeDamage(dmg, now);
+      player.applyStatus('shocked', STATUS_TUNING.shockedPlayerMs);
+    }
+    for (const enemy of this.host.enemies()) {
+      if (Phaser.Math.Distance.Between(enemy.x, enemy.y, zone.x, zone.y) <= direct + (enemy.body as Phaser.Physics.Arcade.Body).halfWidth) continue;
+      if (inWater(enemy.x, enemy.y)) this.host.hurtEnemy(enemy, CONDUCT_ENEMY_DAMAGE, 'lightning');
     }
   }
 
@@ -301,6 +342,8 @@ export class HazardDirector {
     const warn = zone.age < def.warnMs;
     const progress = Math.min(1, zone.age / def.warnMs);
 
+    if (zone.tiles.length > 0) this.drawConduction(g, zone, warn, progress);
+
     if (warn) {
       // Blinks faster as it gets close, with a ring closing in on the target.
       const blink = Math.sin(zone.age / (95 - 65 * progress)) > -0.2;
@@ -348,6 +391,16 @@ export class HazardDirector {
         g.fillRect(px, py, 2, 2);
       }
     }
+  }
+
+  /** The water a strike will run through: a faint pulse while it is coming, a bright flash when it lands. */
+  private drawConduction(g: Phaser.GameObjects.Graphics, zone: Zone, warn: boolean, progress: number) {
+    const def = ZONES[zone.kind];
+    let alpha: number;
+    if (warn) alpha = (Math.sin(zone.age / 120) > 0 ? 0.22 : 0.1) + 0.12 * progress;
+    else alpha = 0.7 * (1 - (zone.age - def.warnMs) / def.liveMs);
+    g.fillStyle(warn ? 0xfff8a0 : 0xffffff, Math.max(0, alpha));
+    for (const t of zone.tiles) g.fillRect(Math.round(t.x) - 7, Math.round(t.y) - 7, 14, 14);
   }
 
   private drawGust() {

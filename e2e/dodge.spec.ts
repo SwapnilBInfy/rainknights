@@ -81,8 +81,19 @@ test('rolling through an enemy avoids the hit and counts as a dodge', async ({ p
   const hp = await rk<number>(page, 'hp()');
   // Rolling with no direction held goes the way you face (down at the start).
   // An enemy waits just ahead, so the knight tumbles straight through it.
-  await page.evaluate(`window.__rk.spawnEnemy('rainImp', 0, 30)`);
-  await page.keyboard.press('KeyK');
+  // Spawn the enemy and press the roll key in the same in-page step, so a slow runner cannot put a gap
+  // of whole frames between them (the keydown is dispatched the way the touch buttons dispatch theirs).
+  await page.evaluate(`(() => {
+    window.__rk.spawnEnemy('rainImp', 0, 30);
+    const down = new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', bubbles: true, cancelable: true });
+    Object.defineProperty(down, 'keyCode', { get: () => 75 });
+    Object.defineProperty(down, 'which', { get: () => 75 });
+    window.dispatchEvent(down);
+    const up = new KeyboardEvent('keyup', { code: 'KeyK', key: 'k', bubbles: true, cancelable: true });
+    Object.defineProperty(up, 'keyCode', { get: () => 75 });
+    Object.defineProperty(up, 'which', { get: () => 75 });
+    window.dispatchEvent(up);
+  })()`);
   // Read hp at the very moment the dodge registers (the enemy may rightly hurt once the roll is over).
   const hpAtDodge = await page
     .waitForFunction(() => ((window as any).__rk.dodges() >= 1 ? (window as any).__rk.hp() : false), undefined, { polling: 'raf', timeout: 3000 })
