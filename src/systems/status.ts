@@ -156,6 +156,14 @@ export class StatusSet {
     return this.apply('frozen', frozenMs).applied;
   }
 
+  /** Put out a fire (a roll on the ground). Returns true if it was burning. */
+  extinguish(): boolean {
+    if (!this.has('burning')) return false;
+    this.remaining.burning = 0;
+    this.burnClock = 0;
+    return true;
+  }
+
   /** A heavy hit on a frozen target: consumes the ice. Returns true if it shattered. */
   shatter(): boolean {
     if (!this.has('frozen')) return false;

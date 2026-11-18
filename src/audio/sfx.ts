@@ -128,6 +128,18 @@ export const SFX = {
     noiseHit(ctx, out, { t, dur: 1.2, vol: 0.2, filter: 'bandpass', freq: 500, sweepTo: 1800, q: 0.8, attack: 0.3 });
   },
 
+  /** Dodge roll: a short whoosh with a low thump. */
+  roll(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.17, vol: 0.14, filter: 'bandpass', freq: 900, sweepTo: 2600, q: 0.9, attack: 0.02 });
+    tone(ctx, out, { t, dur: 0.12, freq: 300, slideTo: 140, voice: 'sine', vol: 0.09, release: 0.03 });
+  },
+
+  /** A hit avoided by rolling: a bright ping. */
+  dodge(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    tone(ctx, out, { t, dur: 0.06, freq: 1568, voice: 'square12', vol: 0.07, release: 0.02 });
+    tone(ctx, out, { t: t + 0.06, dur: 0.1, freq: 2093, voice: 'square12', vol: 0.07, release: 0.05 });
+  },
+
   /** Big thunder rolls: a sharp crack then a long rumble. */
   thunder(ctx: BaseAudioContext, out: AudioNode, t: number) {
     noiseHit(ctx, out, { t, dur: 0.14, vol: 0.2, filter: 'highpass', freq: 2500, q: 0.4 });

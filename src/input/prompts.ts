@@ -18,3 +18,14 @@ export function menuHint(touch: boolean): string {
 export function beamKeyLabel(touch: boolean): string {
   return touch ? 'B' : 'J';
 }
+
+/** Second tutorial message, a few seconds after the attack hint. */
+export function rollHint(touch: boolean): string {
+  if (touch) return 'R: dodge roll\nYou cannot be hit mid-roll!';
+  return 'SHIFT or K: dodge roll\nYou cannot be hit mid-roll!';
+}
+
+/** Single letter beside the roll gauge. */
+export function rollKeyLabel(touch: boolean): string {
+  return touch ? 'R' : 'K';
+}

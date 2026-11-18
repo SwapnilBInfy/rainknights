@@ -7,6 +7,7 @@
  * - D-pad / stick → Arrow keys (movement and menu cursors; 8-way)
  * - A            → Space (swing a weapon, confirm menus, start a run)
  * - B            → J (energy beam; X remains the keyboard alias)
+ * - R            → K (dodge roll; Shift is the other keyboard key)
  * - Start        → pause while a run is live, otherwise Enter
  *                  (title, menus, and the game-over "PRESS START")
  */
@@ -24,6 +25,7 @@ export const KEYS = {
   right: { code: 'ArrowRight', key: 'ArrowRight', keyCode: 39 },
   swing: { code: 'Space', key: ' ', keyCode: 32 },
   beam: { code: 'KeyJ', key: 'j', keyCode: 74 },
+  roll: { code: 'KeyK', key: 'k', keyCode: 75 },
   confirm: { code: 'Enter', key: 'Enter', keyCode: 13 },
 } as const satisfies Record<string, VirtualKey>;
 

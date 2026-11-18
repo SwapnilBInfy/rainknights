@@ -37,6 +37,7 @@ Keyboard, the on-screen buttons on a touch screen, and a gamepad Start button.
 | Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. On the city screen, Left/A selects New York and Right/D selects Miami. |
 | Space | Swing (hold). Also confirms menus, starts a run, and continues from game over. |
 | J or X | Energy beam (hold). |
+| Shift or K | Dodge roll: a quick tumble in the direction you are moving (or facing). You cannot be hit mid-roll. |
 | Enter | Confirm a menu, start a run, or continue from game over. On the title menu, confirms Continue, New game, or Reset save. |
 | Esc or P | Pause or resume a live run. On the title's "Erase save?" question, backs out without erasing. |
 | M | Mute or unmute. The choice is remembered between visits, and M still works while paused. |
@@ -52,6 +53,7 @@ canvas fills the window.
 | D-pad | Arrow keys, including diagonals |
 | A | Space (swing, confirm, start) |
 | B | J (energy beam). X remains the keyboard alias |
+| R | K (dodge roll). Shift is the other keyboard key |
 | Start | Pause while a run is live. Otherwise Enter, which covers the title (PRESS START, Continue, New game) and the game-over "PRESS START" |
 
 With touch in use, the hints lead with those labels (`STICK MOVE  A SWING  B BEAM`
@@ -189,6 +191,25 @@ Hazards are switched off under browser automation so tests stay deterministic.
 `hurricane`, `tropical_downpour`, `clear`) forces a condition and turns them
 back on — handy for demos and capture scripts. Status and hazard state is not
 saved; a continued run starts clean.
+
+### Dodge roll and combat feel
+
+**Shift** or **K** (the **R** button on a touch screen) rolls the knight about
+two tiles in the direction they are moving, or the way they face when standing
+still. The roll is a dodge, not an attack: no swinging or firing while it lasts.
+
+- **Untouchable** for ~0.26s, a touch longer than the roll itself. A hit it
+  avoids pops up **DODGE**. The cooldown is 0.85s (the green **K** gauge under
+  your HP), so it cannot be chained.
+- A roll **puts out Burning**. A frozen knight cannot roll, and a roll does not
+  shrug off a gust.
+- Rolling out of a lightning circle only works if you are not still inside it
+  when it lands, so roll *through* the telegraph and out the far side.
+- **Damage numbers** float off enemies (yellow for a Wet shock, blue for a
+  shatter) and red numbers show what hurt you.
+- **Hit-stop**: a brief freeze-frame on kills and on hits you take (longer for
+  the Tornado), rate limited so crowds do not stutter.
+- A yellow **"!"** appears over an enemy while it winds up a dash.
 
 ### Weather powerups (picked at level-up)
 
