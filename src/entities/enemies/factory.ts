@@ -4,6 +4,8 @@ import { ChaserEnemy } from './ChaserEnemy';
 import { ErraticEnemy } from './ErraticEnemy';
 import { DasherEnemy } from './DasherEnemy';
 import { TornadoBoss } from './TornadoBoss';
+import { CabWraithEnemy } from './CabWraithEnemy';
+import { PhantomBusBoss } from './PhantomBusBoss';
 import type { Enemy } from './Enemy';
 
 export function createEnemy(
@@ -19,6 +21,10 @@ export function createEnemy(
       return new ErraticEnemy(scene, x, y, stats, target);
     case 'lightningWisp':
       return new DasherEnemy(scene, x, y, stats, target);
+    case 'cabWraith':
+      return new CabWraithEnemy(scene, x, y, stats, target);
+    case 'phantomBus':
+      return new PhantomBusBoss(scene, x, y, stats, target);
     case 'tornadoBoss':
       return new TornadoBoss(scene, x, y, stats, target);
     default:

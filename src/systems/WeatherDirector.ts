@@ -1,5 +1,5 @@
-import Phaser from 'phaser';
 import { WEATHER_FRONTS, TORNADO_SPAWN_TIME } from '../config/constants';
+import { pickEnemyType } from './spawnTable';
 
 export interface WeatherHost {
   spawnEnemyAroundPlayer(typeKey: string): void;
@@ -13,7 +13,8 @@ export class WeatherDirector {
   private tornadoSpawned = false;
   currentFrontIndex: number;
 
-  constructor(host: WeatherHost, startFrontIndex = 0) {
+  /** `signature` is the region's own enemy, mixed into the front's roster. */
+  constructor(host: WeatherHost, startFrontIndex = 0, private readonly signature?: string) {
     this.host = host;
     const clamped = Math.max(0, Math.min(WEATHER_FRONTS.length - 1, startFrontIndex));
     this.currentFrontIndex = clamped;
@@ -35,7 +36,7 @@ export class WeatherDirector {
     if (this.spawnTimer <= 0) {
       this.spawnTimer = front.spawnIntervalMs;
       for (let i = 0; i < front.spawnCount; i++) {
-        const type = Phaser.Utils.Array.GetRandom(front.enemies);
+        const type = pickEnemyType(front.enemies, this.currentFrontIndex, this.signature, Math.random);
         this.host.spawnEnemyAroundPlayer(type);
       }
     }

@@ -140,6 +140,18 @@ export const SFX = {
     tone(ctx, out, { t: t + 0.06, dur: 0.1, freq: 2093, voice: 'square12', vol: 0.07, release: 0.05 });
   },
 
+  /** A ghost cab leans on the horn: a sour two-note honk (the charge is coming). */
+  honk(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    tone(ctx, out, { t, dur: 0.34, freq: 349, voice: 'square25', vol: 0.09, attack: 0.01, release: 0.06 });
+    tone(ctx, out, { t, dur: 0.34, freq: 440, voice: 'square25', vol: 0.08, attack: 0.01, release: 0.06 });
+  },
+
+  /** Tyres howl as a cab or bus launches: a falling noise sweep. */
+  skid(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.4, vol: 0.16, filter: 'bandpass', freq: 3200, sweepTo: 900, q: 1.4, attack: 0.02 });
+    tone(ctx, out, { t, dur: 0.3, freq: 130, slideTo: 90, voice: 'saw', vol: 0.06, release: 0.1 });
+  },
+
   /** Big thunder rolls: a sharp crack then a long rumble. */
   thunder(ctx: BaseAudioContext, out: AudioNode, t: number) {
     noiseHit(ctx, out, { t, dur: 0.14, vol: 0.2, filter: 'highpass', freq: 2500, q: 0.4 });
