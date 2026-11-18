@@ -184,3 +184,20 @@ describe('resolveHit', () => {
     expect(t.has('frozen')).toBe(true);
   });
 });
+
+describe('extinguish', () => {
+  it('puts out a fire and reports it', () => {
+    const t = new StatusSet();
+    t.apply('burning', 4000);
+    expect(t.extinguish()).toBe(true);
+    expect(t.has('burning')).toBe(false);
+    expect(t.update(1000).burnTicks).toBe(0);
+  });
+
+  it('does nothing when not burning', () => {
+    const t = new StatusSet();
+    t.apply('wet', 4000);
+    expect(t.extinguish()).toBe(false);
+    expect(t.has('wet')).toBe(true);
+  });
+});

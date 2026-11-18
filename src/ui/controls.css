@@ -123,13 +123,26 @@ body {
 #touch-controls .start {
   left: 0;
   top: 0;
-  width: 78px;
+  width: 46px;
   height: 26px;
   color: #f8f8f8;
   background: #2a2c3c;
   box-shadow:
     inset 1px 1px 0 #6a7088,
     inset -1px -1px 0 #12131c;
+}
+
+/* Dodge roll: the GBA's R shoulder, beside Start. */
+#touch-controls .r {
+  left: 50px;
+  top: 0;
+  width: 28px;
+  height: 26px;
+  color: #f8f8f8;
+  background: #28a038;
+  box-shadow:
+    inset 1px 1px 0 #90e8a0,
+    inset -1px -1px 0 #105820;
 }
 
 #touch-controls .b {

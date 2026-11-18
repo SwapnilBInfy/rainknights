@@ -5,6 +5,7 @@ import { chibiKey, type Facing, type WeaponType } from '../gfx/chibi';
 import { weaponKey, SLASH_KEY } from '../gfx/weapons';
 import { audio } from '../audio/engine';
 import { STATUS_TUNING, StatusSet, type ApplyResult, type StatusId } from '../systems/status';
+import { DodgeRoll, ROLL } from '../systems/dodgeRoll';
 import type { PlayerSnapshot } from '../save/save';
 
 export interface PowerupLevels {
@@ -50,6 +51,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   readonly statuses = new StatusSet({ frozenMs: STATUS_TUNING.frozenPlayerMs, shockStuns: false });
   private castUntil = 0;
   private castAngle = 0;
+
+  /** Dodge roll: a short, untouchable dash. Shift or K on a keyboard, R on the touch cluster. */
+  readonly roll = new DodgeRoll();
+  private rollPressedAt = -Infinity;
+  private rolling = false;
+  private nextGhostAt = 0;
+  private lastDodgeAt = -Infinity;
+  /** Hits avoided by rolling (for the debug bridge and tests). */
+  dodgeCount = 0;
 
   readonly weaponType: WeaponType;
   /** Direction of the last movement (8-way); melee and beam go this way. */
@@ -103,6 +113,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     keyboard.on('keydown-SPACE', () => (this.swingPressedAt = scene.time.now));
     keyboard.on('keydown-J', () => (this.beamPressedAt = scene.time.now));
     keyboard.on('keydown-X', () => (this.beamPressedAt = scene.time.now));
+    keyboard.addKey('SHIFT'); // registered so the browser does not act on the keys
+    keyboard.addKey('K');
+    keyboard.on('keydown-SHIFT', () => (this.rollPressedAt = scene.time.now));
+    keyboard.on('keydown-K', () => (this.rollPressedAt = scene.time.now));
+  }
+
+  /** True from the start of a roll until it ends: no swinging or firing meanwhile. */
+  get isRolling(): boolean {
+    return this.rolling;
+  }
+
+  /** 0..1 recharge of the dodge roll, for the HUD gauge. */
+  rollCharge(time: number): number {
+    return this.roll.charge(time);
   }
 
   /** Space held: swing the held weapon. */
@@ -134,9 +158,11 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const { burnTicks } = this.statuses.update(delta);
     for (let i = 0; i < burnTicks; i++) this.takeStatusDamage(1, time);
     this.hurtFlashMs = Math.max(0, this.hurtFlashMs - delta);
+    this.tryStartRoll(time);
     this.handleMovement(time);
     this.handleAuras(time, delta);
     this.updateWeaponRest(time);
+    this.weapon.setVisible(!this.rolling);
     this.refreshTint(time);
   }
 
@@ -244,7 +270,66 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.setTexture(chibiKey(this.characterId, this.facing, 'attack'));
   }
 
+  /** Start a roll on a (buffered) press. Rolls toward the held direction, or where you face. */
+  private tryStartRoll(time: number) {
+    const pressed = time - this.rollPressedAt < ROLL.bufferMs;
+    if (!pressed || this.hp <= 0 || this.statuses.stunned || !this.roll.canStart(time)) return;
+    const dir = this.heldDirection();
+    const dx = dir.lengthSq() > 0 ? dir.x : this.aim.x;
+    const dy = dir.lengthSq() > 0 ? dir.y : this.aim.y;
+    if (!this.roll.start(time, dx, dy)) return;
+    this.rollPressedAt = -Infinity; // one press, one roll
+    this.aim.set(this.roll.dir.x, this.roll.dir.y);
+    this.face(this.roll.dir.x, this.roll.dir.y);
+    this.attackSwingUntil = 0;
+    this.castUntil = 0;
+    this.scene.tweens.killTweensOf(this.weapon);
+    this.rolling = true;
+    this.nextGhostAt = time;
+    audio.play('roll');
+    if (this.statuses.extinguish()) this.emit('extinguished');
+    this.emit('rolled');
+  }
+
+  private heldDirection(): Phaser.Math.Vector2 {
+    const left = this.cursors.left?.isDown || this.wasd.left.isDown;
+    const right = this.cursors.right?.isDown || this.wasd.right.isDown;
+    const up = this.cursors.up?.isDown || this.wasd.up.isDown;
+    const down = this.cursors.down?.isDown || this.wasd.down.isDown;
+    return new Phaser.Math.Vector2((right ? 1 : 0) - (left ? 1 : 0), (down ? 1 : 0) - (up ? 1 : 0)).normalize();
+  }
+
+  /** Per-frame roll motion: a fast tumble along the roll direction, with afterimages. */
+  private updateRoll(time: number) {
+    const speed = ROLL.speed * this.statuses.speedMult;
+    this.setVelocity(this.roll.dir.x * speed, this.roll.dir.y * speed);
+    this.anims.stop();
+    this.setTexture(chibiKey(this.characterId, this.facing, 'stand'));
+    const sign = this.roll.dir.x < 0 ? -1 : 1;
+    this.setRotation(this.roll.progress(time) * Math.PI * 2 * sign);
+    if (time >= this.nextGhostAt) {
+      this.nextGhostAt = time + ROLL.ghostEveryMs;
+      const ghost = this.scene.add
+        .image(this.x, this.y, this.texture.key, this.frame.name)
+        .setFlipX(this.flipX)
+        .setRotation(this.rotation)
+        .setDepth(9)
+        .setTint(0x9ad0ff)
+        .setAlpha(0.45);
+      this.scene.tweens.add({ targets: ghost, alpha: 0, duration: 200, onComplete: () => ghost.destroy() });
+    }
+  }
+
+  private endRoll() {
+    this.rolling = false;
+    this.setRotation(0);
+  }
+
   private handleMovement(time: number) {
+    if (this.rolling) {
+      if (this.roll.isActive(time)) return this.updateRoll(time);
+      this.endRoll();
+    }
     const left = this.cursors.left?.isDown || this.wasd.left.isDown;
     const right = this.cursors.right?.isDown || this.wasd.right.isDown;
     const up = this.cursors.up?.isDown || this.wasd.up.isDown;
@@ -312,13 +397,23 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   isInvulnerable(time: number): boolean {
-    return time < this.invulnerableUntil;
+    return time < this.invulnerableUntil || this.roll.isInvulnerable(time);
   }
 
   takeDamage(amount: number, time: number) {
-    if (this.isInvulnerable(time) || this.hp <= 0) return;
+    if (this.hp <= 0) return;
+    if (this.isInvulnerable(time)) {
+      // Blocked by the roll alone (not by hit i-frames or a shield): a dodge.
+      if (time >= this.invulnerableUntil && time - this.lastDodgeAt > 350) {
+        this.lastDodgeAt = time;
+        this.dodgeCount += 1;
+        this.emit('dodged');
+      }
+      return;
+    }
     this.hp -= amount;
     audio.play('hurt');
+    this.emit('hurt', amount);
     this.invulnerableUntil = time + 500;
     this.hurtFlashMs = 120;
     if (this.hp <= 0) {

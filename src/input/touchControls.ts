@@ -78,9 +78,10 @@ export function mountTouchControls(game: Phaser.Game) {
   actions.dataset.testid = 'touch-actions';
 
   const start = button('start', 'Start', 'START');
+  const roll = button('r', 'Dodge roll', 'R');
   const beam = button('b', 'B', 'B');
   const swing = button('a', 'A', 'A');
-  actions.append(start, beam, swing);
+  actions.append(start, roll, beam, swing);
 
   root.append(wrap, actions);
   document.body.append(root);
@@ -160,6 +161,7 @@ export function mountTouchControls(game: Phaser.Game) {
 
   bindHold(swing, KEYS.swing);
   bindHold(beam, KEYS.beam);
+  bindHold(roll, KEYS.roll);
   bindTap(start, () => emitStart());
 
   // Backstop for browsers that still pan or pinch when touch-action is ignored.
@@ -173,6 +175,7 @@ export function mountTouchControls(game: Phaser.Game) {
     stickPointer = null;
     swing.classList.remove('down');
     beam.classList.remove('down');
+    roll.classList.remove('down');
     start.classList.remove('down');
     applyDirs({ ...NO_DIRS });
     moveNub(0, 0);

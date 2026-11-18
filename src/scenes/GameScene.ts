@@ -21,7 +21,7 @@ import { buildTerrain, type TerrainResult } from '../systems/Terrain';
 import { HUD } from '../ui/HUD';
 import { audio } from '../audio/engine';
 import { replayHeldKeys } from '../input/keys';
-import { attackHint, beamKeyLabel } from '../input/prompts';
+import { attackHint, beamKeyLabel, rollHint, rollKeyLabel } from '../input/prompts';
 import { isTouchControlsActive, onTouchControlsChange } from '../input/touchControls';
 import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
 import { clearRun, loadGame, recordRunResult, resetGameSave, saveRun } from '../save/save';
@@ -50,6 +50,14 @@ interface RunBridge {
   applyStatus: (target: 'player' | 'enemy', id: StatusId, ms?: number) => void;
   /** Spawn an enemy a short way from the player (debug / tests). */
   spawnEnemy: (type: string, dx?: number, dy?: number) => void;
+  /** Dodge roll state, for tests. */
+  rolling: () => boolean;
+  rollCharge: () => number;
+  invulnerable: () => boolean;
+  /** Hits avoided by rolling this run. */
+  dodges: () => number;
+  /** How many enemies are currently winding up an attack. */
+  alerts: () => number;
 }
 
 declare global {
@@ -99,6 +107,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private rule: WeatherRule = ruleFor('clear');
   private hazards: HazardDirector | null = null;
   private wetClock = 0;
+  private hitStopMs = 0;
+  private hitStopLockMs = 0;
+  private floaters = 0;
 
   constructor() {
     super('GameScene');
@@ -114,6 +125,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.bossSummonEvent = null;
     this.hazards = null;
     this.wetClock = 0;
+    this.hitStopMs = 0;
+    this.hitStopLockMs = 0;
+    this.floaters = 0;
+    this.physics.world.timeScale = 1;
 
     const resume = data.resume ? loadGame().run : null;
     const character = getCharacter(resume?.characterId ?? data.characterId);
@@ -133,6 +148,18 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (resume) this.player.applySnapshot(resume.player);
     this.player.onDied = () => this.endRun(false);
     this.player.onLevelUp = () => this.pauseForLevelUp();
+    this.player.on('hurt', (amount: number) => {
+      this.floatText(this.player.x, this.player.y - 12, `-${amount}`, '#f04040');
+      this.hitStop(55);
+    });
+    this.player.on('dodged', () => {
+      audio.play('dodge');
+      this.popup(this.player.x, this.player.y - 12, 'DODGE', '#58e078');
+    });
+    this.player.on('extinguished', () => {
+      audio.play('steam');
+      this.popup(this.player.x, this.player.y - 12, 'OUT', '#a8a8b8');
+    });
     this.player.on('sunbeamPulse', (radius: number, damage: number) => {
       audio.play('sunbeam');
       applySunbeamPulse(this, this.player, radius, damage, this.getActiveEnemies(), () => {});
@@ -171,7 +198,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.setAmbience(resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
     this.hud = new HUD(this);
     this.levelUpSystem = new LevelUpSystem(this);
-    this.detachTouch = onTouchControlsChange((touch) => this.hud.setBeamKeyLabel(beamKeyLabel(touch)));
+    this.detachTouch = onTouchControlsChange((touch) => {
+      this.hud.setBeamKeyLabel(beamKeyLabel(touch));
+      this.hud.setRollKeyLabel(rollKeyLabel(touch));
+    });
     const bridge: RunBridge = {
       grantLevel: () => {
         if (this.ended || this.levelUpOpen || this.paused || this.userPaused) return;
@@ -196,6 +226,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         else this.getActiveEnemies()[0]?.applyStatus(id, ms);
       },
       spawnEnemy: (type, dx = 50, dy = 0) => this.spawnEnemyAt(type, this.player.x + dx, this.player.y + dy),
+      rolling: () => this.player.isRolling,
+      rollCharge: () => this.player.rollCharge(this.time.now),
+      invulnerable: () => this.player.isInvulnerable(this.time.now),
+      dodges: () => this.player.dodgeCount,
+      alerts: () => this.getActiveEnemies().filter((e) => e.isTelegraphing).length,
     };
     window.__rk = bridge;
     this.detachPause = bindGameplayPause({
@@ -217,6 +252,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       });
     } else {
       this.time.delayedCall(3000, () => this.showAttackHint());
+      this.time.delayedCall(10000, () => this.showRollHint());
     }
     if (resume) {
       this.hud.showMessage(`${region.name}.\nThe ${this.weather.frontName} resumes.`);
@@ -271,6 +307,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (app) app.dataset.attackHint = text;
   }
 
+  /** Second controls reminder: the dodge roll. */
+  private showRollHint() {
+    if (this.ended || this.paused) return;
+    const text = rollHint(isTouchControlsActive());
+    this.hud.showMessage(text);
+    const app = document.getElementById('app');
+    if (app) app.dataset.rollHint = text;
+  }
+
   update(time: number, delta: number) {
     if (this.xpGrant > 0 && !this.ended && !this.paused && !this.userPaused) {
       const amount = this.xpGrant;
@@ -279,6 +324,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     }
     if (this.paused || this.userPaused) return;
 
+    this.tickHitStop(delta);
     this.weather.update(delta);
     this.updateAmbientWeather(delta);
     this.updateWeatherEffects(delta);
@@ -288,7 +334,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.handleManualAttacks(time);
     this.handleAttack(time);
 
-    this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta, this.player.beamCharge(time));
+    this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta, this.player.beamCharge(time), this.player.rollCharge(time));
     this.hud.setStatuses(this.player.statuses.list());
     this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1);
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
@@ -344,6 +390,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   private handleEnemyDeath = (enemy: Enemy) => {
     audio.play('enemyDie');
+    this.hitStop(enemy === this.boss ? 140 : 45);
     this.player.kills += 1;
     this.spawnXpGem(enemy.x, enemy.y, enemy.stats.xp);
     if (enemy === this.boss) {
@@ -365,7 +412,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.play('hit');
     const hit = resolveHit(kind, enemy.statuses, damage, shatterMult);
     damage = hit.damage;
+    const x = enemy.x;
+    const y = enemy.y;
     enemy.takeDamage(damage);
+    const color = hit.shattered ? '#58a8e0' : hit.wetShock ? '#f8d020' : '#f8f8f8';
+    this.floatText(x + Phaser.Math.Between(-6, 6), y - 8, `${damage}`, color);
     if (enemy.active && hit.shockMs > 0) {
       const result = enemy.applyStatus('shocked', hit.shockMs);
       if (result.applied) {
@@ -433,6 +484,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   private handleManualAttacks(time: number) {
     // Upgrades and character speed that shorten the auto cooldown speed these up too.
+    if (this.player.isRolling) return; // the roll is a dodge, not an attack
     const ratio = this.player.attackCooldown / PLAYER_BASE.attackCooldown;
     if (this.player.wantsSwing && time >= this.player.meleeReadyAt) this.swingWeapon(time, ratio);
     if (this.player.wantsBeam && time >= this.player.beamReadyAt) this.fireBeam(time, ratio);
@@ -725,6 +777,51 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       .setOrigin(0.5, 1)
       .setDepth(40);
     this.tweens.add({ targets: label, y: label.y - 12, alpha: 0, duration: 650, delay: 150, onComplete: () => label.destroy() });
+  }
+
+  /** Damage numbers: shorter-lived than reaction popups, and capped so a crowd cannot flood the screen. */
+  private floatText(x: number, y: number, text: string, color: string) {
+    if (this.floaters >= 18) return;
+    this.floaters += 1;
+    const label = this.add
+      .text(Math.round(x), Math.round(y), text, { fontFamily: FONT, fontSize: '8px', color, stroke: '#101018', strokeThickness: 2 })
+      .setOrigin(0.5, 1)
+      .setDepth(39);
+    this.tweens.add({
+      targets: label,
+      y: label.y - 14,
+      alpha: 0,
+      duration: 520,
+      delay: 80,
+      ease: 'Quad.easeOut',
+      onComplete: () => {
+        label.destroy();
+        this.floaters -= 1;
+      },
+    });
+  }
+
+  /**
+   * A brief freeze-frame on kills and hits taken: the physics world runs in
+   * slow motion for a few frames. Rate limited so a crowd does not stutter.
+   */
+  private hitStop(ms: number) {
+    if (this.hitStopMs > 0 || this.hitStopLockMs > 0) return;
+    this.hitStopMs = ms;
+    this.physics.world.timeScale = 6;
+  }
+
+  private tickHitStop(delta: number) {
+    if (this.hitStopMs > 0) {
+      this.hitStopMs -= Math.min(delta, 50);
+      if (this.hitStopMs <= 0) {
+        this.hitStopMs = 0;
+        this.hitStopLockMs = 120;
+        this.physics.world.timeScale = 1;
+      }
+    } else if (this.hitStopLockMs > 0) {
+      this.hitStopLockMs = Math.max(0, this.hitStopLockMs - delta);
+    }
   }
 
   private updateWeatherEffects(delta: number) {

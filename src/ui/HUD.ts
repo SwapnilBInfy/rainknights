@@ -22,6 +22,7 @@ export class HUD {
   private timeText: Phaser.GameObjects.Text;
   private hpText: Phaser.GameObjects.Text;
   private beamKeyText: Phaser.GameObjects.Text;
+  private rollKeyText: Phaser.GameObjects.Text;
 
   private badge: Phaser.GameObjects.Container | null = null;
   private condition = 'clear';
@@ -48,6 +49,7 @@ export class HUD {
     this.text(7, 18, 'HP', '#c07800');
     this.hpText = this.text(97, 26, '', '#383838').setOrigin(1, 0);
     this.beamKeyText = this.text(7, 45, 'J', '#3078d8');
+    this.rollKeyText = this.text(60, 45, 'K', '#28a038');
     this.bars = this.add(scene.add.graphics());
     this.statusGfx = this.add(scene.add.graphics());
 
@@ -65,7 +67,7 @@ export class HUD {
     return this.add(this.scene.add.text(x, y, str, textStyle(color)));
   }
 
-  update(player: Player, elapsedSeconds: number, frontName: string, delta = 16, beamCharge = 1) {
+  update(player: Player, elapsedSeconds: number, frontName: string, delta = 16, beamCharge = 1, rollCharge = 1) {
     if (this.displayHp < 0) this.displayHp = player.hp;
     // HP drains/refills smoothly like the real games.
     const step = (60 * delta) / 1000;
@@ -98,11 +100,19 @@ export class HUD {
 
     // energy beam recharge gauge (J / X on a keyboard, B on the touch cluster)
     g.fillStyle(UI.ink, 1);
-    g.fillRect(20, 45, 78, 7);
+    g.fillRect(17, 45, 40, 7);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(21, 46, 76, 5);
+    g.fillRect(18, 46, 38, 5);
     g.fillStyle(beamCharge >= 1 ? 0x60e0ff : 0x3078a8, 1);
-    g.fillRect(21, 46, Math.round(76 * beamCharge), 5);
+    g.fillRect(18, 46, Math.round(38 * beamCharge), 5);
+
+    // dodge roll recharge gauge (K / Shift on a keyboard, R on the touch cluster)
+    g.fillStyle(UI.ink, 1);
+    g.fillRect(70, 45, 28, 7);
+    g.fillStyle(UI.hpTrack, 1);
+    g.fillRect(71, 46, 26, 5);
+    g.fillStyle(rollCharge >= 1 ? 0x58e078 : 0x2a7a48, 1);
+    g.fillRect(71, 46, Math.round(26 * rollCharge), 5);
 
     if (frontName !== this.frontName) {
       this.frontName = frontName;
@@ -126,6 +136,13 @@ export class HUD {
     this.beamKeyText.setText(label);
     const app = document.getElementById('app');
     if (app) app.dataset.beamKey = label;
+  }
+
+  /** The glyph beside the roll gauge: K on a keyboard, R when touch is active. */
+  setRollKeyLabel(label: string) {
+    this.rollKeyText.setText(label);
+    const app = document.getElementById('app');
+    if (app) app.dataset.rollKey = label;
   }
 
   /** Persistent weather condition for the run, shown top-right. */

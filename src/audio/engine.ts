@@ -147,7 +147,7 @@ class AudioEngine {
     const ctx = this.ctx!;
     const now = ctx.currentTime;
     // Rapid-fire sounds (hits, pickups) are throttled so they can't pile up.
-    const minGap: Partial<Record<SfxName, number>> = { hit: 0.045, enemyDie: 0.05, gem: 0.03, move: 0.03, burn: 0.2, warn: 0.2, zap: 0.12, strike: 0.1 };
+    const minGap: Partial<Record<SfxName, number>> = { hit: 0.045, enemyDie: 0.05, gem: 0.03, move: 0.03, burn: 0.2, warn: 0.2, zap: 0.12, strike: 0.1, roll: 0.1, dodge: 0.15 };
     const gap = minGap[name] ?? 0;
     if (gap && now - (this.lastPlayed.get(name) ?? -1) < gap) return;
     this.lastPlayed.set(name, now);

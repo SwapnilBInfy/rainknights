@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { EnemyStats } from '../../config/constants';
+import { FONT } from '../../ui/Window';
 import { StatusSet, type ApplyResult, type StatusId } from '../../systems/status';
 
 const STATUS_TINT: Partial<Record<StatusId, number>> = {
@@ -21,6 +22,8 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   protected telegraphing = false;
   private flashMs = 0;
   private tintKey = '';
+  /** A yellow "!" over the head while an attack is being wound up. */
+  private alertMark: Phaser.GameObjects.Text | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -46,6 +49,10 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCircle((this.width / 2) * 0.8);
     body.setOffset(this.width / 2 - body.radius, this.height / 2 - body.radius);
+    this.on(Phaser.GameObjects.Events.DESTROY, () => {
+      this.alertMark?.destroy();
+      this.alertMark = null;
+    });
   }
 
   takeDamage(amount: number): boolean {
@@ -56,6 +63,11 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
       return true;
     }
     return false;
+  }
+
+  /** True while winding up an attack (the "!" mark is showing). */
+  get isTelegraphing(): boolean {
+    return this.telegraphing;
   }
 
   applyStatus(id: StatusId, ms: number): ApplyResult {
@@ -89,6 +101,23 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
       if (slow !== 1) (this.body as Phaser.Physics.Arcade.Body).velocity.scale(slow);
     }
     this.refreshTint(time);
+    this.updateAlertMark(time);
+  }
+
+  /** Warns the player that an attack is about to land (a wound-up dash, for example). */
+  private updateAlertMark(time: number) {
+    if (!this.telegraphing) {
+      this.alertMark?.setVisible(false);
+      return;
+    }
+    if (!this.alertMark) {
+      this.alertMark = this.scene.add
+        .text(0, 0, '!', { fontFamily: FONT, fontSize: '8px', color: '#f8d020', stroke: '#101018', strokeThickness: 2 })
+        .setOrigin(0.5, 1)
+        .setDepth(41);
+    }
+    const bounce = Math.floor(time / 90) % 2 === 0 ? 0 : 1;
+    this.alertMark.setVisible(true).setPosition(Math.round(this.x), Math.round(this.y - this.displayHeight / 2 - 2 - bounce));
   }
 
   /** One place decides the tint, so statuses never fight the hit flash or attack telegraphs. */
