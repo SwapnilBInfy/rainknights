@@ -23,7 +23,7 @@ const frame = { polling: 'raf' as const, timeout: 20_000 };
 const waitForStep = (page: Page, id: string) =>
   page.waitForFunction((s) => (window as any).__rk.tutorialStep() === s, id, frame).catch(async (e) => {
     const state = await page
-      .evaluate(`JSON.stringify({ step: window.__rk.tutorialStep(), hp: window.__rk.hp(), x: Math.round(window.__rk.x()), y: Math.round(window.__rk.y()), types: window.__rk.enemyTypes(), d: window.__rk.enemyDistances().map(Math.round) })`)
+      .evaluate(`JSON.stringify({ step: window.__rk.tutorialStep(), hp: window.__rk.hp(), x: Math.round(window.__rk.x()), y: Math.round(window.__rk.y()), types: window.__rk.enemyTypes(), d: window.__rk.enemyDistances().map(Math.round), gems: window.__rk.gems().map(g => g.map(Math.round)), under: window.__rk.terrain().under })`)
       .catch(() => 'unavailable');
     throw new Error(`still waiting for step "${id}": ${state}\n${e.message}`);
   });

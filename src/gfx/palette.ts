@@ -15,6 +15,10 @@ export const NYC_TERRAIN: TerrainTheme = {
   rock: 0x7c7f8c,
   rockLight: 0xa8acb8,
   rockDark: 0x3c3e4a,
+  roof: 0x6a6f82,
+  roofLight: 0x8e94a8,
+  roofDark: 0x383c4c,
+  roofVent: 0x4a4e60,
 };
 
 export const MIAMI_TERRAIN: TerrainTheme = {
@@ -29,6 +33,10 @@ export const MIAMI_TERRAIN: TerrainTheme = {
   rock: 0xe89080,
   rockLight: 0xf8c0b0,
   rockDark: 0x8a4a40,
+  roof: 0xf0a0b8,
+  roofLight: 0xffd0dc,
+  roofDark: 0xa05878,
+  roofVent: 0x78d0c8,
 };
 
 export const RAIN_IMP = { main: 0x3aa0e0, highlight: 0x9fd8ff, shadow: 0x1c5f8f };

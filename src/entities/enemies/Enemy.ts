@@ -23,8 +23,13 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   private flashMs = 0;
   /** Enemies that steer by rotation (cars) switch the idle flip-flop off. */
   protected bobs = true;
+  /** False for enemies that drive their own paths (vehicles, dummies). */
+  protected chasesAround = true;
   /** Extra damage taken (a stalled engine is vulnerable). */
   damageMultiplier = 1;
+  /** Set by the scene from the tile underfoot: wading slows (< 1), ice makes it slide (grip < 1). */
+  terrainSpeed = 1;
+  grip = 1;
   private tintKey = '';
   /** A yellow "!" over the head while an attack is being wound up. */
   private alertMark: Phaser.GameObjects.Text | null = null;
@@ -110,12 +115,46 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
     } else {
       // Two-frame idle bob: mirror the sprite every ~280ms, like a GBA critter.
       if (this.bobs) this.setFlipX(Math.floor((time + this.wobbleSeed) / 280) % 2 === 0);
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      const prevX = body.velocity.x;
+      const prevY = body.velocity.y;
       this.behavior(time, delta);
-      const slow = this.statuses.speedMult;
-      if (slow !== 1) (this.body as Phaser.Physics.Arcade.Body).velocity.scale(slow);
+      const slow = this.statuses.speedMult * this.terrainSpeed;
+      if (slow !== 1) body.velocity.scale(slow);
+      if (this.grip < 1) {
+        // Slide: only move part of the way from last frame's velocity to the wanted one.
+        const k = 1 - Math.exp(-(delta / 1000) * this.grip * 14);
+        body.velocity.set(prevX + (body.velocity.x - prevX) * k, prevY + (body.velocity.y - prevY) * k);
+      }
+      this.slideAroundWalls(body);
     }
     this.refreshTint(time);
     this.updateAlertMark(time);
+  }
+
+  private slideDir = 0;
+
+  /**
+   * Enemies chase in a straight line, so a wall between them and the knight would pin them
+   * against it. When blocked, they slide along the wall (toward the knight's side) instead.
+   */
+  private slideAroundWalls(body: Phaser.Physics.Arcade.Body) {
+    if (!this.chasesAround || this.statuses.stunned) return;
+    const b = body.blocked;
+    const horizontal = b.left || b.right;
+    const vertical = b.up || b.down;
+    if (!horizontal && !vertical) {
+      this.slideDir = 0;
+      return;
+    }
+    const speed = Math.max(this.stats.speed * this.terrainSpeed * this.statuses.speedMult, 1);
+    if (horizontal && Math.abs(body.velocity.y) < speed * 0.3) {
+      if (this.slideDir === 0) this.slideDir = this.target.y >= this.y ? 1 : -1;
+      body.velocity.y = this.slideDir * speed;
+    } else if (vertical && Math.abs(body.velocity.x) < speed * 0.3) {
+      if (this.slideDir === 0) this.slideDir = this.target.x >= this.x ? 1 : -1;
+      body.velocity.x = this.slideDir * speed;
+    }
   }
 
   /** Warns the player that an attack is about to land (a wound-up dash, for example). */

@@ -7,6 +7,7 @@ export class TrainingDummy extends Enemy {
   constructor(scene: Phaser.Scene, x: number, y: number, stats: EnemyStats, target: Phaser.Physics.Arcade.Sprite) {
     super(scene, x, y, stats, target);
     this.bobs = false;
+    this.chasesAround = false;
     const body = this.body as Phaser.Physics.Arcade.Body;
     body.setCircle(6, this.width / 2 - 6, this.height - 18);
     body.setImmovable(true);

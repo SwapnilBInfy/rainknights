@@ -1,3 +1,4 @@
+import type Phaser from 'phaser';
 import type { Enemy } from '../entities/enemies/Enemy';
 import type { Player } from '../entities/Player';
 import { audio } from '../audio/engine';
@@ -30,6 +31,8 @@ export interface TutorialHost {
   spawnDummy(x: number, y: number): Enemy;
   spawnCab(x: number, y: number): Enemy;
   spawnGems(count: number): void;
+  /** How many XP gems are lying on the ground. */
+  gemsOnGround(): number;
   grantLevel(): void;
   /** Drop a lightning strike on the player; `lightningActive` is true while one is blinking or landing. */
   lightning(): void;
@@ -59,6 +62,7 @@ export class TutorialDirector {
   private strikeDelay = 0;
   private wetClock = 0;
   private doneArmedMs = 0;
+  private gemCheckMs = 0;
 
   constructor(private readonly host: TutorialHost) {}
 
@@ -135,6 +139,7 @@ export class TutorialDirector {
     this.hurtThisAttempt = false;
     this.lastCabPhase = '';
     this.doneArmedMs = 0;
+    this.gemCheckMs = 0;
 
     switch (step.id) {
       case 'swing':
@@ -191,8 +196,33 @@ export class TutorialDirector {
     return distances.map((d) => this.host.spawnDummy(p.x + dx * d, p.y + dy * d));
   }
 
+  /**
+   * When the knight stands still, turn them toward the nearest target. (Held movement keys reset
+   * their facing, so a dummy placed off to one side would otherwise be swung at in the wrong direction.)
+   */
+  private faceTarget() {
+    const p = this.host.player;
+    const body = p.body as Phaser.Physics.Arcade.Body;
+    if (Math.hypot(body.velocity.x, body.velocity.y) > 6 || p.isRolling) return;
+    let best: Enemy | null = null;
+    let bestD = Infinity;
+    for (const e of this.host.enemies()) {
+      const d = Math.hypot(e.x - p.x, e.y - p.y);
+      if (d < bestD) {
+        best = e;
+        bestD = d;
+      }
+    }
+    if (!best || bestD > 120) return;
+    const dx = best.x - p.x;
+    const dy = best.y - p.y;
+    // Only turn when clearly facing the wrong way, so it never fights a deliberate aim.
+    if (p.aim.x * (dx / bestD) + p.aim.y * (dy / bestD) < 0.9) p.faceToward(dx, dy);
+  }
+
   private watchStep(dt: number) {
     const s = this.runner.state;
+    if (this.stepId === 'swing' || this.stepId === 'beam' || this.stepId === 'wet') this.faceTarget();
     switch (this.stepId) {
       case 'swing':
         if (!this.dummy?.active) this.dummy = this.placeAhead([SWING_DIST])[0];
@@ -203,6 +233,16 @@ export class TutorialDirector {
           this.placeAhead([44, 78]);
         }
         break;
+      case 'gems': {
+        // Never leave the step short of gems (one lost behind a wall, say): drop replacements.
+        this.gemCheckMs += dt;
+        if (this.gemCheckMs >= 1000) {
+          this.gemCheckMs = 0;
+          const missing = 3 - s.gems - this.host.gemsOnGround();
+          if (missing > 0) this.host.spawnGems(missing);
+        }
+        break;
+      }
       case 'dodge':
       case 'strike':
         this.watchCab(s);

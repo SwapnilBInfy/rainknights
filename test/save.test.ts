@@ -99,6 +99,25 @@ describe('parseStored', () => {
     expect(result.save).toEqual(save);
   });
 
+  it('round-trips the map seed, so Continue returns to the same map', () => {
+    const save = defaultSave();
+    save.run = { ...sampleRun(), mapSeed: 1234567 };
+    const result = parseStored(JSON.stringify(save), null);
+    expect(result.save.run?.mapSeed).toBe(1234567);
+  });
+
+  it('an older run without a map seed still loads, and a junk seed is ignored without losing the run', () => {
+    const base = sampleRun();
+    for (const seed of [undefined, 'abc', -4, 1.5, 2 ** 40]) {
+      const save = defaultSave();
+      save.run = { ...base, mapSeed: seed as unknown as number };
+      const result = parseStored(JSON.stringify(save), null);
+      expect(result.save.run, String(seed)).not.toBeNull();
+      expect(result.save.run?.mapSeed, String(seed)).toBeUndefined();
+      expect(result.save.run?.player.level).toBe(base.player.level);
+    }
+  });
+
   it('drops an invalid run and keeps settings and records', () => {
     const result = parseStored(
       JSON.stringify({

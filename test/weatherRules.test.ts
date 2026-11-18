@@ -22,6 +22,16 @@ describe('weather rules', () => {
     }
   });
 
+  it('every condition that changes the map explains it in two short lines', () => {
+    for (const id of ['rain', 'thunderstorm', 'tropical_downpour', 'hurricane', 'cold_front', 'heat']) {
+      const hint = WEATHER_RULES[id].terrainHint;
+      expect(hint, id).toBeTruthy();
+      const lines = hint!.split('\n');
+      expect(lines.length, id).toBeLessThanOrEqual(2);
+      for (const line of lines) expect(line.length, `${id}: "${line}"`).toBeLessThanOrEqual(27);
+    }
+  });
+
   it('hazards speed up as the storm front escalates', () => {
     const spec = WEATHER_RULES.thunderstorm.hazards[0];
     const mid = () => 0.5;

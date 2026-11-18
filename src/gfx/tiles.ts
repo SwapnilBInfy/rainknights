@@ -3,8 +3,8 @@ import { TILE } from '../config/constants';
 
 /**
  * GBA-style 16x16 terrain tiles, painted pixel by pixel from a per-region
- * theme. One strip texture: groundA, groundB, path, water, rock (the order
- * Terrain.ts relies on).
+ * theme. One strip texture, in the order of `TileType` (systems/mapGen.ts):
+ * groundA, groundB, path, water, rock, shallow, ice, building, bridge.
  */
 export interface TerrainTheme {
   style: 'pavement' | 'sand';
@@ -18,6 +18,11 @@ export interface TerrainTheme {
   rock: number;
   rockLight: number;
   rockDark: number;
+  /** Rooftops. */
+  roof: number;
+  roofLight: number;
+  roofDark: number;
+  roofVent: number;
 }
 
 function css(n: number): string {
@@ -45,7 +50,7 @@ function rng(seed: number) {
 
 export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: TerrainTheme) {
   if (scene.textures.exists(key)) return;
-  const tex = scene.textures.createCanvas(key, TILE * 5, TILE)!;
+  const tex = scene.textures.createCanvas(key, TILE * 9, TILE)!;
   const ctx = tex.getContext();
 
   const put = (tile: number, x: number, y: number, c: number) => {
@@ -129,11 +134,77 @@ export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: 
     for (const [x, y] of [[8, 4], [11, 6], [6, 9]]) put(tile, x, y, shade(theme.rock, -0.25));
   };
 
+  // Shallow water: the sea-floor shows through, ripples on top.
+  const shallow = (tile: number) => {
+    const rand = rng(41);
+    fill(tile, shade(theme.water, 0.28));
+    for (let i = 0; i < 14; i++) put(tile, Math.floor(rand() * TILE), Math.floor(rand() * TILE), shade(theme.groundA, -0.05));
+    [[2, 1], [9, 7], [4, 12]].forEach(([y, off]) => {
+      for (let i = 0; i < 4; i++) put(tile, (off + i) % TILE, y, theme.waterLight);
+    });
+    for (const [x, y] of [[12, 4], [3, 9], [10, 13]]) put(tile, x, y, shade(theme.water, -0.15));
+  };
+
+  // Ice: pale, glossy, with cracks.
+  const ice = (tile: number) => {
+    fill(tile, 0xcdeaf7);
+    for (let i = 0; i < TILE; i++) {
+      put(tile, i, 0, 0xa6d0e6);
+      put(tile, 0, i, 0xa6d0e6);
+    }
+    for (const [x, y] of [[2, 2], [3, 3], [4, 3], [5, 4], [6, 5], [11, 10], [12, 11], [13, 11]]) put(tile, x, y, 0x86b4d2);
+    for (const [x, y] of [[3, 1], [4, 1], [9, 6], [10, 6], [10, 7], [6, 12], [7, 12], [12, 3]]) put(tile, x, y, 0xffffff);
+    for (const [x, y] of [[8, 9], [9, 10], [9, 11], [10, 12]]) put(tile, x, y, 0x9cc6de);
+  };
+
+  // A rooftop: tar and gravel, vents, a parapet edge.
+  const building = (tile: number) => {
+    fill(tile, theme.roof);
+    for (let i = 0; i < TILE; i++) {
+      put(tile, i, 0, theme.roofLight);
+      put(tile, 0, i, theme.roofLight);
+      put(tile, i, TILE - 1, theme.roofDark);
+      put(tile, TILE - 1, i, theme.roofDark);
+    }
+    for (let i = 1; i < TILE - 1; i++) {
+      put(tile, i, TILE - 2, shade(theme.roof, -0.12));
+      put(tile, TILE - 2, i, shade(theme.roof, -0.12));
+    }
+    for (let x = 3; x < 6; x++) for (let y = 3; y < 6; y++) put(tile, x, y, theme.roofVent);
+    put(tile, 3, 3, shade(theme.roofVent, 0.25));
+    for (const [x, y] of [[10, 9], [11, 9], [10, 10], [11, 10]]) put(tile, x, y, shade(theme.roof, -0.2));
+    for (const [x, y] of [[9, 3], [12, 6], [6, 11], [13, 12]]) put(tile, x, y, shade(theme.roof, 0.12));
+  };
+
+  // A bridge deck: boards with joints, rails along both edges whichever way it runs.
+  const bridge = (tile: number) => {
+    const deck = theme.style === 'pavement' ? shade(theme.pathA, 0.1) : theme.pathA;
+    const rail = theme.style === 'pavement' ? 0x383a46 : theme.pathB;
+    fill(tile, deck);
+    for (let i = 0; i < TILE; i++) {
+      if (i % 4 === 3) {
+        for (let k = 0; k < TILE; k++) put(tile, i, k, shade(deck, -0.14));
+        for (let k = 0; k < TILE; k++) put(tile, k, i, shade(deck, -0.14));
+      }
+    }
+    for (const [x, y] of [[0, 0], [TILE - 1, 0], [0, TILE - 1], [TILE - 1, TILE - 1]]) put(tile, x, y, rail);
+    for (let i = 0; i < TILE; i += 4) {
+      put(tile, i, 0, rail);
+      put(tile, i, TILE - 1, rail);
+      put(tile, 0, i, rail);
+      put(tile, TILE - 1, i, rail);
+    }
+  };
+
   ground(0, theme.groundA, false, 11);
   ground(1, theme.groundB, true, 23);
   path(2);
   water(3);
   rock(4);
+  shallow(5);
+  ice(6);
+  building(7);
+  bridge(8);
   tex.refresh();
 }
 

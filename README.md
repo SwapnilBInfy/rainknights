@@ -238,6 +238,40 @@ still. The roll is a dodge, not an attack: no swinging or firing while it lasts.
   the Tornado), rate limited so crowds do not stutter.
 - A yellow **"!"** appears over an enemy while it winds up a dash.
 
+### The world
+
+Each run is played on a freshly generated, **seeded** map, shaped like the city
+and changed by the live weather. The map is saved with a run, so **Continue**
+returns to the same one. (`?seed=123` pins a map for demos and tests.)
+
+- **New York** is a street grid of city blocks (buildings, parks with ponds,
+  empty lots with rubble) with a river crossed by **bridges**.
+- **Miami** is a beach with an ocean edge, canals crossed by boardwalk
+  bridges, resort buildings and lagoons.
+- Every walkable tile can be reached from the start (small walled-off
+  pockets are filled in, bigger ones get a road), and you always begin in a
+  clear plaza. Enemies are placed on open ground, and slide along walls when
+  something is in their way.
+
+Tiles do things to whoever stands on them:
+
+| Tile | Effect |
+| ---- | ------ |
+| Shallow water (ponds, puddles, floods) | Makes you **Wet**, slows you 15%, and puts out a fire. |
+| Deep water, buildings, rock | Solid. |
+| Ice | Walkable but **slippery**: you slide, enemies too. |
+| Bridge | Crosses water, and you stay dry. |
+
+And the weather changes the map:
+
+| Weather | What happens to the world |
+| ------- | ------------------------- |
+| Cold front | Every pond and river **freezes** into walkable ice, so the river can be crossed anywhere. |
+| Heat | The shallows **dry up** (deep water stays). |
+| Rain, thunderstorm | **Puddles** appear on the streets. |
+| Tropical downpour, hurricane | The streets **flood** inland, one more ring of shallow water each storm front. |
+| Thunderstorm, downpour, hurricane | **Water carries lightning**: a strike on water shocks everyone standing in the same water, nearby. The water lights up while it is coming, and strikes like to land in it. Stay on dry ground or a bridge. |
+
 ### City enemies and bosses
 
 Each city can have its own signature enemy and boss on top of the shared

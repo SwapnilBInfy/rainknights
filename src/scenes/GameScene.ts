@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WORLD, PLAYER_BASE, AUTO_ATTACK, BOSS_SUMMONS, BOSS_SPAWN_DISTANCE } from '../config/constants';
+import { WORLD, PLAYER_BASE, AUTO_ATTACK, BOSS_SUMMONS, BOSS_SPAWN_DISTANCE, frontIndexAt } from '../config/constants';
 import { MELEE, BEAM } from '../config/weapons';
 import { beamKey, SPARK_KEY } from '../gfx/weapons';
 import { TEX } from '../gfx/spriteDefs';
@@ -18,7 +18,8 @@ import { hazardsEnabled, ruleFor, type HazardKind, type WeatherRule } from '../c
 import { FONT } from '../ui/Window';
 import { LevelUpSystem } from '../systems/LevelUpSystem';
 import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/PowerupSystem';
-import { buildTerrain, type TerrainResult } from '../systems/Terrain';
+import { buildTerrain, randomSeed, seedFromUrl, type TerrainResult } from '../systems/Terrain';
+import { floodRingsFor } from '../systems/terrainRules';
 import { HUD } from '../ui/HUD';
 import { audio } from '../audio/engine';
 import { replayHeldKeys } from '../input/keys';
@@ -77,6 +78,12 @@ interface RunBridge {
   gems: () => number[][];
   /** Defeat the nearest living enemy (debug / tests). */
   killNearest: () => void;
+  /** The map: its seed, tile counts, flood level and what is under the knight. */
+  terrain: () => { seed: number; floodRings: number; counts: Record<string, number>; under: number; grip: number; speed: number };
+  /** How many living enemies are standing inside a solid tile (should always be 0). */
+  enemiesInSolid: () => number;
+  /** Teleport the knight onto a tile of this type that has `run` more of it to its right (debug / tests). */
+  tpToTile: (type: number, run?: number) => boolean;
   /** Current tutorial step id, or null outside the tutorial. */
   tutorialStep: () => TutorialStepId | null;
   /** Skip the current tutorial step (debug / tests). */
@@ -139,6 +146,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private floaters = 0;
   private tutorial: TutorialDirector | null = null;
   private tutorialBadge = '';
+  private mapSeed = 0;
+  private terrainClock = 0;
+  private wasWet = false;
 
   constructor() {
     super('GameScene');
@@ -160,6 +170,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.signatureSeen = false;
     this.tutorial = null;
     this.tutorialBadge = '';
+    this.terrainClock = 0;
+    this.wasWet = false;
     this.physics.world.timeScale = 1;
 
     const resume = data.resume ? loadGame().run : null;
@@ -175,10 +187,19 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.rule = ruleFor(this.runWeatherCondition);
 
     this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
-    this.terrain = buildTerrain(this, region);
+    // The map: seeded (so Continue returns to the same one), shaped by the live weather, and flooded
+    // as far as the storm front already warrants.
+    this.mapSeed = seedFromUrl() ?? resume?.mapSeed ?? randomSeed();
+    const startFront = resume ? frontIndexAt(resume.elapsedSeconds) : (data.startFrontIndex ?? 0);
+    this.terrain = buildTerrain(this, region, { seed: this.mapSeed, condition: this.runWeatherCondition, frontIndex: startFront });
 
-    this.player = new Player(this, WORLD.width / 2, WORLD.height / 2, character);
-    if (resume) this.player.applySnapshot(resume.player);
+    this.player = new Player(this, this.terrain.spawn.x, this.terrain.spawn.y, character);
+    if (resume) {
+      this.player.applySnapshot(resume.player);
+      // An older save has no map seed, so the map is new: make sure the knight is not inside a building.
+      const spot = this.openSpot(this.player.x, this.player.y);
+      this.player.setPosition(spot.x, spot.y);
+    }
     this.player.onDied = () => this.endRun(false);
     this.player.onLevelUp = () => this.pauseForLevelUp();
     this.player.on('hurt', (amount: number) => {
@@ -280,6 +301,24 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         const target = this.findNearestEnemy(9999);
         if (target) target.takeDamage(99999);
       },
+      terrain: () => {
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        return {
+          seed: this.mapSeed,
+          floodRings: this.terrain.field.floodRings,
+          counts: this.terrain.field.counts(),
+          under: this.terrain.field.tileAt(body.center.x, body.center.y),
+          grip: this.player.grip,
+          speed: this.player.terrainSpeed,
+        };
+      },
+      enemiesInSolid: () => this.getActiveEnemies().filter((e) => this.terrain.field.isSolidAt(e.x, e.y)).length,
+      tpToTile: (type, run = 0) => {
+        const spot = this.terrain.field.findTile(type, run);
+        if (!spot) return false;
+        this.player.setPosition(spot.x, spot.y);
+        return true;
+      },
       tutorialStep: () => this.tutorial?.stepId ?? null,
       skipTutorialStep: () => this.tutorial?.skip(),
       bossRaging: () => !!(this.boss?.active && (this.boss as unknown as { raging?: boolean }).raging),
@@ -331,6 +370,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       frontIndex: () => this.weather.currentFrontIndex,
       hurtEnemy: (enemy, damage, kind) => this.damageEnemy(enemy, damage, kind),
       popup: (x, y, text, color) => this.popup(x, y, text, color),
+      waterBodyAt: (x, y) => this.terrain.field.waterBodyAt(x, y),
+      waterTilesNear: (x, y, radius, bodyId) => this.terrain.field.waterTilesNear(x, y, radius, bodyId),
+      wetSpotNear: (x, y, radius) => this.terrain.field.wetSpotNear(x, y, radius),
     };
     if (data.tutorial) {
       // No scheduled hazards: the tutorial drops its own lightning strike on cue.
@@ -338,6 +380,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.startTutorial();
     } else if (hazardsEnabled() && this.rule.hazards.length > 0) {
       this.hazards = new HazardDirector(hazardHost, this.rule);
+    }
+    if (!data.tutorial && this.rule.terrainHint && !(resume && resume.pendingLevelUps > 0)) {
+      this.time.delayedCall(14000, () => {
+        if (this.ended || this.paused || !this.rule.terrainHint) return;
+        this.hud.showMessage(this.rule.terrainHint);
+        const app = document.getElementById('app');
+        if (app) app.dataset.terrainHint = this.rule.terrainHint;
+      });
     }
     if (!data.tutorial && this.rule.hint && !(resume && resume.pendingLevelUps > 0)) {
       this.time.delayedCall(6000, () => this.showWeatherHint());
@@ -388,6 +438,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (!this.tutorial) this.weather.update(delta); // the tutorial has no storm clock
     this.updateAmbientWeather(delta);
     this.updateWeatherEffects(delta);
+    this.updateTerrainEffects(delta);
     this.updateGems();
     applyFrostAura(this.player, this.getActiveEnemies());
     this.updatePull();
@@ -400,7 +451,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1, this.boss?.stats.name.toUpperCase());
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
       this.lastFrontIndex = this.weather.currentFrontIndex;
-      this.hud.showMessage(`The ${this.weather.frontName} is rolling in!`);
+      const flooded = this.terrain.field.setFloodRings(floodRingsFor(this.runWeatherCondition, this.weather.currentFrontIndex)) > 0;
+      this.hud.showMessage(flooded ? `The ${this.weather.frontName} is rolling in!\nThe streets are flooding!` : `The ${this.weather.frontName} is rolling in!`);
+      if (flooded) audio.play('flood');
       audio.play('front');
       this.checkpoint();
     }
@@ -411,9 +464,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   spawnEnemyAroundPlayer(typeKey: string) {
     const angle = Math.random() * Math.PI * 2;
     const dist = Phaser.Math.Between(130, 180);
-    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, WORLD.width - 20);
-    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, WORLD.height - 20);
-    this.spawnEnemyAt(typeKey, x, y);
+    // On open ground: with city blocks and canals about, a random spot is often inside a building.
+    const spot = this.openSpot(this.player.x + Math.cos(angle) * dist, this.player.y + Math.sin(angle) * dist);
+    this.spawnEnemyAt(typeKey, spot.x, spot.y);
   }
 
   private spawnEnemyAt(typeKey: string, x: number, y: number): Enemy {
@@ -423,12 +476,18 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.rule.wet) enemy.applyStatus('wet', STATUS_TUNING.wetMs);
     if (!this.tutorial && !this.signatureSeen && typeKey === this.region.signature && this.region.signatureHint) {
       this.signatureSeen = true;
-      this.time.delayedCall(1500, () => {
-        if (this.ended || this.paused) return;
+      // Shown a moment after the first sighting; if a menu is open at that moment, try again rather than lose it.
+      const show = () => {
+        if (this.ended) return;
+        if (this.paused) {
+          this.time.delayedCall(1000, show);
+          return;
+        }
         this.hud.showMessage(this.region.signatureHint!);
         const app = document.getElementById('app');
         if (app) app.dataset.signatureHint = this.region.signatureHint!;
-      });
+      };
+      this.time.delayedCall(1500, show);
     }
     return enemy;
   }
@@ -436,8 +495,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   spawnBoss(remainingHp?: number) {
     const angle = Math.random() * Math.PI * 2;
     const dist = BOSS_SPAWN_DISTANCE[this.region.boss] ?? 170;
-    const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50);
-    const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50);
+    const spot = this.openSpot(Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50), Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50));
+    const x = spot.x;
+    const y = spot.y;
     audio.play('bossAppears');
     audio.playMusic('boss');
     const boss = createEnemy(this, this.region.boss, x, y, this.player);
@@ -822,6 +882,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       elapsedSeconds: this.weather.elapsedSeconds,
       bossHp: this.boss?.active ? this.boss.hp : null,
       pendingLevelUps: this.pendingLevelUps,
+      mapSeed: this.mapSeed,
       player: this.player.toSnapshot(),
     };
   }
@@ -847,6 +908,36 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     };
     recordRunResult(data);
     this.time.delayedCall(400, () => this.scene.start('GameOverScene', data));
+  }
+
+  // --- terrain under foot ---
+
+  /**
+   * Every tenth of a second, look at the tile under the knight and every enemy: wading slows and
+   * soaks (which also puts out a fire), ice makes them slide.
+   */
+  private updateTerrainEffects(delta: number) {
+    this.terrainClock += delta;
+    if (this.terrainClock < 100) return;
+    this.terrainClock = 0;
+    const field = this.terrain.field;
+    const creatures: (Player | Enemy)[] = [this.player, ...this.getActiveEnemies()];
+    for (const c of creatures) {
+      const body = c.body as Phaser.Physics.Arcade.Body;
+      const fx = field.effectsAt(body.center.x, body.center.y);
+      c.terrainSpeed = fx.slow;
+      c.grip = fx.grip;
+      if (fx.wet) {
+        const result = c.applyStatus('wet', 2400);
+        if (result.reaction === 'steam') {
+          audio.play('steam');
+          this.popup(c.x, c.y - 10, 'STEAM', '#a8a8b8');
+        }
+      }
+    }
+    const wet = field.effectsAt((this.player.body as Phaser.Physics.Arcade.Body).center.x, (this.player.body as Phaser.Physics.Arcade.Body).center.y).wet;
+    if (wet && !this.wasWet) audio.play('splash');
+    this.wasWet = wet;
   }
 
   // --- tutorial ---
@@ -895,6 +986,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
           this.spawnXpGem(p.x, p.y, 4);
         }
       },
+      gemsOnGround: () => this.gemGroup.getChildren().filter((g) => g.active).length,
       grantLevel: () => {
         const need = this.player.xpToNext - this.player.xp;
         if (need > 0) this.xpGrant += need;
