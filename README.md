@@ -211,6 +211,35 @@ still. The roll is a dodge, not an attack: no swinging or firing while it lasts.
   the Tornado), rate limited so crowds do not stutter.
 - A yellow **"!"** appears over an enemy while it winds up a dash.
 
+### City enemies and bosses
+
+Each city can have its own signature enemy and boss on top of the shared
+weather roster. **New York** has both; **Miami** still faces the Tornado.
+
+| City | Signature enemy | Boss (5:00) |
+| ---- | --------------- | ----------- |
+| New York | **Cab Wraith** | **Phantom Bus** |
+| Miami | none yet | **Tornado** |
+
+The Cab Wraith replaces a share of each front's spawns from the second front
+on (10% rising to 20% by the last front). Both New York foes drive by the same
+loop, always telegraphed:
+
+1. **Cruise**: steers toward you (the bus turns slowly).
+2. **Wind-up**: stops, honks, shows a glowing **lane** on the ground and a
+   yellow "!". The lane keeps tracking you, then locks for the last quarter
+   second.
+3. **Charge**: a fast straight run down the lane, hitting harder than a touch
+   (x1.6 for the cab, x1.5 for the bus). Hitting a wall cuts it short.
+4. **Stall**: the engine cuts out. It skids to a stop, flickers, and takes
+   **+50% damage**: the moment to strike. Then it cruises again.
+
+Roll sideways across the lane (see Dodge roll above). The **Phantom Bus** has
+1100 HP and a wider, longer lane. Below half health it **enrages**: shorter
+cruises, faster charges, a red lane, and its backup arrives sooner. Every few
+seconds it calls Cab Wraiths and Rain Imps. Defeating it wins the run, same as
+the Tornado. The Tornado alone pulls you toward it.
+
 ### Weather powerups (picked at level-up)
 
 - **Sunbeam** — periodic heal + damage pulse around you

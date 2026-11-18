@@ -21,6 +21,10 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** Set by enemies that flash white to telegraph an attack (see DasherEnemy). */
   protected telegraphing = false;
   private flashMs = 0;
+  /** Enemies that steer by rotation (cars) switch the idle flip-flop off. */
+  protected bobs = true;
+  /** Extra damage taken (a stalled engine is vulnerable). */
+  damageMultiplier = 1;
   private tintKey = '';
   /** A yellow "!" over the head while an attack is being wound up. */
   private alertMark: Phaser.GameObjects.Text | null = null;
@@ -53,6 +57,16 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.alertMark?.destroy();
       this.alertMark = null;
     });
+  }
+
+  /** Damage dealt on contact; a charging vehicle hits harder than a cruising one. */
+  get contactDamage(): number {
+    return this.stats.damage;
+  }
+
+  /** Name of the current behaviour phase, for the debug bridge and tests. */
+  get debugPhase(): string {
+    return '';
   }
 
   takeDamage(amount: number): boolean {
@@ -95,7 +109,7 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.setVelocity(0, 0);
     } else {
       // Two-frame idle bob: mirror the sprite every ~280ms, like a GBA critter.
-      this.setFlipX(Math.floor((time + this.wobbleSeed) / 280) % 2 === 0);
+      if (this.bobs) this.setFlipX(Math.floor((time + this.wobbleSeed) / 280) % 2 === 0);
       this.behavior(time, delta);
       const slow = this.statuses.speedMult;
       if (slow !== 1) (this.body as Phaser.Physics.Arcade.Body).velocity.scale(slow);

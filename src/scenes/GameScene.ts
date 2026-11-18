@@ -1,14 +1,13 @@
 import Phaser from 'phaser';
-import { WORLD, PLAYER_BASE, AUTO_ATTACK } from '../config/constants';
+import { WORLD, PLAYER_BASE, AUTO_ATTACK, BOSS_SUMMONS, BOSS_SPAWN_DISTANCE } from '../config/constants';
 import { MELEE, BEAM } from '../config/weapons';
 import { beamKey, SPARK_KEY } from '../gfx/weapons';
 import { TEX } from '../gfx/spriteDefs';
 import { getCharacter } from '../config/characters';
-import { getRegion } from '../config/regions';
+import { getRegion, type RegionDef } from '../config/regions';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import type { Enemy } from '../entities/enemies/Enemy';
-import type { TornadoBoss } from '../entities/enemies/TornadoBoss';
 import { createEnemy } from '../entities/enemies/factory';
 import { WeatherDirector, type WeatherHost } from '../systems/WeatherDirector';
 import { HazardDirector } from '../systems/HazardDirector';
@@ -58,6 +57,18 @@ interface RunBridge {
   dodges: () => number;
   /** How many enemies are currently winding up an attack. */
   alerts: () => number;
+  /** Behaviour phase of each living enemy (cab / bus: cruise, telegraph, charge, stall). */
+  enemyPhases: () => string[];
+  /** Type keys of the living enemies. */
+  enemyTypes: () => string[];
+  /** Call in the region's boss now (debug / tests). */
+  spawnBoss: () => void;
+  /** Boss hp as a fraction 0..1, or null when there is no boss. */
+  bossHpFraction: () => number | null;
+  /** Set the living boss's hp to a fraction of its max (debug / tests). */
+  setBossHp: (fraction: number) => void;
+  /** Whether the boss has entered its rage phase (the Phantom Bus below half health). */
+  bossRaging: () => boolean;
 }
 
 declare global {
@@ -85,7 +96,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private weather!: WeatherDirector;
   private hud!: HUD;
   private levelUpSystem!: LevelUpSystem;
-  private boss: TornadoBoss | null = null;
+  private boss: Enemy | null = null;
+  private region!: RegionDef;
+  private signatureSeen = false;
   private bossSummonEvent: Phaser.Time.TimerEvent | null = null;
   private paused = false;
   private levelUpOpen = false;
@@ -128,11 +141,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.hitStopMs = 0;
     this.hitStopLockMs = 0;
     this.floaters = 0;
+    this.signatureSeen = false;
     this.physics.world.timeScale = 1;
 
     const resume = data.resume ? loadGame().run : null;
     const character = getCharacter(resume?.characterId ?? data.characterId);
     const region = getRegion(resume?.regionId ?? data.regionId);
+    this.region = region;
     this.runCharacterId = character.id;
     this.runRegionId = region.id;
     this.runWeatherLabel = resume?.weatherLabel ?? data.weatherLabel ?? 'Clear';
@@ -191,7 +206,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1);
 
-    this.weather = new WeatherDirector(this, resume ? 0 : (data.startFrontIndex ?? 0));
+    this.weather = new WeatherDirector(this, resume ? 0 : (data.startFrontIndex ?? 0), region.signature);
     if (resume) this.weather.restoreClock(resume.elapsedSeconds, resume.bossHp != null);
 
     audio.playMusic(region.music);
@@ -231,6 +246,16 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       invulnerable: () => this.player.isInvulnerable(this.time.now),
       dodges: () => this.player.dodgeCount,
       alerts: () => this.getActiveEnemies().filter((e) => e.isTelegraphing).length,
+      enemyPhases: () => this.getActiveEnemies().map((e) => e.debugPhase),
+      enemyTypes: () => this.getActiveEnemies().map((e) => e.stats.key),
+      spawnBoss: () => {
+        if (!this.boss?.active) this.spawnBoss();
+      },
+      bossHpFraction: () => (this.boss?.active ? this.boss.hp / this.boss.maxHp : null),
+      bossRaging: () => !!(this.boss?.active && (this.boss as unknown as { raging?: boolean }).raging),
+      setBossHp: (fraction) => {
+        if (this.boss?.active) this.boss.hp = Math.max(1, Math.round(this.boss.maxHp * fraction));
+      },
     };
     window.__rk = bridge;
     this.detachPause = bindGameplayPause({
@@ -336,7 +361,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
     this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta, this.player.beamCharge(time), this.player.rollCharge(time));
     this.hud.setStatuses(this.player.statuses.list());
-    this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1);
+    this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1, this.boss?.stats.name.toUpperCase());
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
       this.lastFrontIndex = this.weather.currentFrontIndex;
       this.hud.showMessage(`The ${this.weather.frontName} is rolling in!`);
@@ -360,30 +385,47 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     enemy.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(enemy);
     if (this.rule.wet) enemy.applyStatus('wet', STATUS_TUNING.wetMs);
+    if (!this.signatureSeen && typeKey === this.region.signature && this.region.signatureHint) {
+      this.signatureSeen = true;
+      this.time.delayedCall(1500, () => {
+        if (this.ended || this.paused) return;
+        this.hud.showMessage(this.region.signatureHint!);
+        const app = document.getElementById('app');
+        if (app) app.dataset.signatureHint = this.region.signatureHint!;
+      });
+    }
   }
 
   spawnBoss(remainingHp?: number) {
     const angle = Math.random() * Math.PI * 2;
-    const dist = 170;
+    const dist = BOSS_SPAWN_DISTANCE[this.region.boss] ?? 170;
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50);
     const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50);
     audio.play('bossAppears');
     audio.playMusic('boss');
-    const boss = createEnemy(this, 'tornadoBoss', x, y, this.player) as TornadoBoss;
+    const boss = createEnemy(this, this.region.boss, x, y, this.player);
     boss.once('enemyDied', this.handleEnemyDeath);
+    boss.on('bossRage', () => {
+      audio.play('bossAppears');
+      this.cameras.main.shake(260, 0.004);
+      this.hud.showMessage(`The ${boss.stats.name} is enraged!\nIt calls for backup!`);
+    });
     this.enemyGroup.add(boss);
     this.boss = boss;
     if (remainingHp != null) boss.hp = Math.min(boss.maxHp, remainingHp);
+    else if (this.region.bossIntro) this.hud.showMessage(this.region.bossIntro);
 
-    this.bossSummonEvent = this.time.addEvent({
-      delay: 6000,
-      loop: true,
-      callback: () => {
-        if (!this.boss?.active) return;
-        this.spawnEnemyAroundPlayer(Phaser.Utils.Array.GetRandom(['hailBrute', 'lightningWisp']));
-        this.spawnEnemyAroundPlayer(Phaser.Utils.Array.GetRandom(['hailBrute', 'lightningWisp']));
-      },
-    });
+    const summon = BOSS_SUMMONS[boss.stats.key];
+    if (summon) {
+      this.bossSummonEvent = this.time.addEvent({
+        delay: summon.everyMs,
+        loop: true,
+        callback: () => {
+          if (!this.boss?.active) return;
+          for (let i = 0; i < summon.count; i++) this.spawnEnemyAroundPlayer(Phaser.Utils.Array.GetRandom(summon.types));
+        },
+      });
+    }
   }
 
   // --- combat ---
@@ -404,14 +446,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private onPlayerHitEnemy = (_playerObj: unknown, enemyObj: unknown) => {
     const enemy = enemyObj as Enemy;
     if (!enemy.active) return;
-    this.player.takeDamage(enemy.stats.damage, this.time.now);
+    this.player.takeDamage(enemy.contactDamage, this.time.now);
   };
 
   /** Damage from any source; also feeds Static Charge chaining. */
   private damageEnemy(enemy: Enemy, damage: number, kind: DamageKind = 'bolt', shatterMult = 1) {
     audio.play('hit');
     const hit = resolveHit(kind, enemy.statuses, damage, shatterMult);
-    damage = hit.damage;
+    damage = Math.round(hit.damage * enemy.damageMultiplier);
     const x = enemy.x;
     const y = enemy.y;
     enemy.takeDamage(damage);
@@ -585,7 +627,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   private updatePull() {
-    if (!this.boss || !this.boss.active) return;
+    if (!this.boss || !this.boss.active || this.boss.stats.key !== 'tornadoBoss') return; // only the Tornado pulls
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);
     if (dist < 140 && dist > 25) {
       const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);

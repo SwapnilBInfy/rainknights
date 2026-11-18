@@ -34,6 +34,7 @@ export class HUD {
 
   private bossGfx: Phaser.GameObjects.Graphics;
   private bossFrame: Phaser.GameObjects.Container | null = null;
+  private bossBarX = 106;
 
   private message: Phaser.GameObjects.Container | null = null;
   private messageTimer: Phaser.Time.TimerEvent | null = null;
@@ -165,26 +166,34 @@ export class HUD {
     this.badge = this.scene.add.container(0, 0, [win, icon, label, front]).setScrollFactor(0).setDepth(DEPTH);
   }
 
-  setBoss(hp: number | null, maxHp: number) {
+  setBoss(hp: number | null, maxHp: number, name = 'TORNADO') {
     const g = this.bossGfx;
     g.clear();
     if (hp === null) {
       this.bossFrame?.destroy();
       this.bossFrame = null;
+      const app = document.getElementById('app');
+      if (app) delete app.dataset.boss;
       return;
     }
     if (!this.bossFrame) {
-      const win = drawWindow(this.scene, 40, 70, 160, 14);
-      const label = this.scene.add.text(45, 73, 'TORNADO', textStyle('#6c5b8f'));
+      const win = drawWindow(this.scene, 40, 100, 160, 14);
+      const label = this.scene.add.text(45, 103, name, textStyle('#6c5b8f'));
       this.bossFrame = this.scene.add.container(0, 0, [win, label]).setScrollFactor(0).setDepth(DEPTH);
+      // The bar takes whatever room the name leaves.
+      this.bossBarX = 45 + name.length * 8 + 4;
+      const app = document.getElementById('app');
+      if (app) app.dataset.boss = name;
     }
     const pct = Phaser.Math.Clamp(hp / maxHp, 0, 1);
     g.fillStyle(UI.ink, 1);
-    g.fillRect(106, 74, 90, 6);
+    const x = this.bossBarX;
+    const w = 196 - x;
+    g.fillRect(x, 104, w, 6);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(107, 75, 88, 4);
+    g.fillRect(x + 1, 105, w - 2, 4);
     g.fillStyle(0xa080d0, 1);
-    g.fillRect(107, 75, Math.round(88 * pct), 4);
+    g.fillRect(x + 1, 105, Math.round((w - 2) * pct), 4);
   }
 
   /** Pokémon-style bottom message box; replaces any message currently showing. */

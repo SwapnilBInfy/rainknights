@@ -52,8 +52,19 @@ export const ENEMY_STATS: Record<string, EnemyStats> = {
   hailBrute: { key: 'hailBrute', name: 'Hail Brute', hp: 60, speed: 28, damage: 14, xp: 14, contactCooldown: 800, scale: 1.2, immune: ['frozen', 'chilled'] },
   lightningWisp: { key: 'lightningWisp', name: 'Lightning Wisp', hp: 24, speed: 65, damage: 12, xp: 10, contactCooldown: 500, scale: 0.9, immune: ['shocked'] },
   snowGolem: { key: 'snowGolem', name: 'Snow Golem', hp: 140, speed: 20, damage: 20, xp: 26, contactCooldown: 900, scale: 1.4, immune: ['frozen', 'chilled'] },
+  cabWraith: { key: 'cabWraith', name: 'Cab Wraith', hp: 46, speed: 52, damage: 11, xp: 16, contactCooldown: 700, scale: 1 },
   tornadoBoss: { key: 'tornadoBoss', name: 'Tornado', hp: 900, speed: 28, damage: 26, xp: 300, contactCooldown: 500, scale: 1, statusResist: 0.25 },
+  phantomBus: { key: 'phantomBus', name: 'Phantom Bus', hp: 1100, speed: 24, damage: 22, xp: 320, contactCooldown: 600, scale: 1, statusResist: 0.25 },
 };
+
+/** What each boss calls in on a timer while it is alive (Phaser time, not wall-clock). */
+export const BOSS_SUMMONS: Record<string, { everyMs: number; types: string[]; count: number }> = {
+  tornadoBoss: { everyMs: 6000, types: ['hailBrute', 'lightningWisp'], count: 2 },
+  phantomBus: { everyMs: 8000, types: ['cabWraith', 'rainImp'], count: 2 },
+};
+
+/** How far from the knight a boss arrives. The view is only 240x160, so the bus comes in near the edge to be seen. */
+export const BOSS_SPAWN_DISTANCE: Record<string, number> = { tornadoBoss: 170, phantomBus: 112 };
 
 export interface WeatherFront {
   name: string;
