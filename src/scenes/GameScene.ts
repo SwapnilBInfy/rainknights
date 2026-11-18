@@ -10,7 +10,9 @@ import { Projectile } from '../entities/Projectile';
 import type { Enemy } from '../entities/enemies/Enemy';
 import { createEnemy } from '../entities/enemies/factory';
 import { WeatherDirector, type WeatherHost } from '../systems/WeatherDirector';
-import { HazardDirector } from '../systems/HazardDirector';
+import { HazardDirector, type HazardHost } from '../systems/HazardDirector';
+import { TutorialDirector } from '../systems/TutorialDirector';
+import type { TutorialStepId } from '../systems/tutorialSteps';
 import { resolveHit, STATUS_TUNING, type DamageKind, type StatusId } from '../systems/status';
 import { hazardsEnabled, ruleFor, type HazardKind, type WeatherRule } from '../config/weatherRules';
 import { FONT } from '../ui/Window';
@@ -44,7 +46,7 @@ interface RunBridge {
   /** Live hazard zones, or null when this weather has none. */
   hazards: () => ReturnType<HazardDirector['snapshot']> | null;
   /** Drop a hazard next to the player now (debug / tests). */
-  triggerHazard: (kind: HazardKind, dx?: number, dy?: number) => void;
+  triggerHazard: (kind: HazardKind, dx?: number, dy?: number, instant?: boolean) => void;
   /** Put a status on the player or nearest enemy (debug / tests). */
   applyStatus: (target: 'player' | 'enemy', id: StatusId, ms?: number) => void;
   /** Spawn an enemy a short way from the player (debug / tests). */
@@ -69,6 +71,16 @@ interface RunBridge {
   setBossHp: (fraction: number) => void;
   /** Whether the boss has entered its rage phase (the Phantom Bus below half health). */
   bossRaging: () => boolean;
+  /** Distance from the knight to each living enemy, in the same order as enemyTypes / enemyPhases. */
+  enemyDistances: () => number[];
+  /** World positions of the XP gems on the ground (debug / tests). */
+  gems: () => number[][];
+  /** Defeat the nearest living enemy (debug / tests). */
+  killNearest: () => void;
+  /** Current tutorial step id, or null outside the tutorial. */
+  tutorialStep: () => TutorialStepId | null;
+  /** Skip the current tutorial step (debug / tests). */
+  skipTutorialStep: () => void;
 }
 
 declare global {
@@ -86,6 +98,8 @@ interface GameSceneData {
   weatherTint?: number;
   /** Continue the run stored in the local save. */
   resume?: boolean;
+  /** The optional tutorial: no waves, no clock, no boss, and nothing written to the save. */
+  tutorial?: boolean;
 }
 
 export class GameScene extends Phaser.Scene implements WeatherHost {
@@ -123,6 +137,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private hitStopMs = 0;
   private hitStopLockMs = 0;
   private floaters = 0;
+  private tutorial: TutorialDirector | null = null;
+  private tutorialBadge = '';
 
   constructor() {
     super('GameScene');
@@ -142,6 +158,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.hitStopLockMs = 0;
     this.floaters = 0;
     this.signatureSeen = false;
+    this.tutorial = null;
+    this.tutorialBadge = '';
     this.physics.world.timeScale = 1;
 
     const resume = data.resume ? loadGame().run : null;
@@ -164,6 +182,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.player.onDied = () => this.endRun(false);
     this.player.onLevelUp = () => this.pauseForLevelUp();
     this.player.on('hurt', (amount: number) => {
+      this.tutorial?.note('hurt');
       this.floatText(this.player.x, this.player.y - 12, `-${amount}`, '#f04040');
       this.hitStop(55);
     });
@@ -235,12 +254,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       statuses: () => this.player.statuses.list(),
       enemyStatuses: () => this.getActiveEnemies().map((e) => e.statuses.list()),
       hazards: () => this.hazards?.snapshot() ?? null,
-      triggerHazard: (kind, dx = 40, dy = 0) => this.hazards?.trigger(kind, dx, dy),
+      triggerHazard: (kind, dx = 40, dy = 0, instant = false) => this.hazards?.trigger(kind, dx, dy, 'left', instant),
       applyStatus: (target, id, ms = 4000) => {
         if (target === 'player') this.player.applyStatus(id, ms);
         else this.getActiveEnemies()[0]?.applyStatus(id, ms);
       },
-      spawnEnemy: (type, dx = 50, dy = 0) => this.spawnEnemyAt(type, this.player.x + dx, this.player.y + dy),
+      spawnEnemy: (type, dx = 50, dy = 0) => {
+        // (returns nothing: Playwright would try to serialize a returned Phaser sprite, which stalls the page)
+        this.spawnEnemyAt(type, this.player.x + dx, this.player.y + dy);
+      },
       rolling: () => this.player.isRolling,
       rollCharge: () => this.player.rollCharge(this.time.now),
       invulnerable: () => this.player.isInvulnerable(this.time.now),
@@ -252,6 +274,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         if (!this.boss?.active) this.spawnBoss();
       },
       bossHpFraction: () => (this.boss?.active ? this.boss.hp / this.boss.maxHp : null),
+      enemyDistances: () => this.getActiveEnemies().map((e) => Phaser.Math.Distance.Between(e.x, e.y, this.player.x, this.player.y)),
+      gems: () => this.gemGroup.getChildren().filter((g) => g.active).map((g) => [(g as Phaser.Physics.Arcade.Sprite).x, (g as Phaser.Physics.Arcade.Sprite).y]),
+      killNearest: () => {
+        const target = this.findNearestEnemy(9999);
+        if (target) target.takeDamage(99999);
+      },
+      tutorialStep: () => this.tutorial?.stepId ?? null,
+      skipTutorialStep: () => this.tutorial?.skip(),
       bossRaging: () => !!(this.boss?.active && (this.boss as unknown as { raging?: boolean }).raging),
       setBossHp: (fraction) => {
         if (this.boss?.active) this.boss.hp = Math.max(1, Math.round(this.boss.maxHp * fraction));
@@ -267,19 +297,22 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       resume: () => this.resumeFromUserPause(),
       quit: () => this.quitToTitle(),
       resetSave: () => this.resetAndQuit(),
+      quitQuestion: data.tutorial ? 'Leave tutorial?' : undefined,
     });
-    this.hud.setWeatherCondition(this.runWeatherCondition, this.runWeatherLabel);
+    this.hud.setWeatherCondition(data.tutorial ? 'tutorial' : this.runWeatherCondition, data.tutorial ? 'Tutorial' : this.runWeatherLabel);
     this.lastFrontIndex = this.weather.currentFrontIndex;
     if (resume && resume.pendingLevelUps > 0) {
       this.pendingLevelUps = resume.pendingLevelUps;
       this.time.delayedCall(0, () => {
         if (!this.ended && this.pendingLevelUps > 0 && !this.levelUpOpen) this.showLevelUpMenu();
       });
-    } else {
+    } else if (!data.tutorial) {
       this.time.delayedCall(3000, () => this.showAttackHint());
       this.time.delayedCall(10000, () => this.showRollHint());
     }
-    if (resume) {
+    if (data.tutorial) {
+      // The tutorial panel replaces the usual run intro and hints.
+    } else if (resume) {
       this.hud.showMessage(`${region.name}.\nThe ${this.weather.frontName} resumes.`);
     } else {
       this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
@@ -287,24 +320,26 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (resume?.bossHp != null) this.spawnBoss(resume.bossHp);
 
     this.setupAmbientWeather(this.runWeatherTint);
-    if (hazardsEnabled() && this.rule.hazards.length > 0) {
-      this.hazards = new HazardDirector(
-        {
-          scene: this,
-          player: this.player,
-          enemies: () => this.getActiveEnemies(),
-          isOpenGround: (x, y) => {
-            const tile = this.terrain.layer.getTileAtWorldXY(x, y);
-            return !!tile && !tile.collides;
-          },
-          frontIndex: () => this.weather.currentFrontIndex,
-          hurtEnemy: (enemy, damage, kind) => this.damageEnemy(enemy, damage, kind),
-          popup: (x, y, text, color) => this.popup(x, y, text, color),
-        },
-        this.rule
-      );
+    const hazardHost: HazardHost = {
+      scene: this,
+      player: this.player,
+      enemies: () => this.getActiveEnemies(),
+      isOpenGround: (x, y) => {
+        const tile = this.terrain.layer.getTileAtWorldXY(x, y);
+        return !!tile && !tile.collides;
+      },
+      frontIndex: () => this.weather.currentFrontIndex,
+      hurtEnemy: (enemy, damage, kind) => this.damageEnemy(enemy, damage, kind),
+      popup: (x, y, text, color) => this.popup(x, y, text, color),
+    };
+    if (data.tutorial) {
+      // No scheduled hazards: the tutorial drops its own lightning strike on cue.
+      this.hazards = new HazardDirector(hazardHost, { wet: false, hazards: [] });
+      this.startTutorial();
+    } else if (hazardsEnabled() && this.rule.hazards.length > 0) {
+      this.hazards = new HazardDirector(hazardHost, this.rule);
     }
-    if (this.rule.hint && !(resume && resume.pendingLevelUps > 0)) {
+    if (!data.tutorial && this.rule.hint && !(resume && resume.pendingLevelUps > 0)) {
       this.time.delayedCall(6000, () => this.showWeatherHint());
     }
     this.checkpoint();
@@ -350,16 +385,17 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.paused || this.userPaused) return;
 
     this.tickHitStop(delta);
-    this.weather.update(delta);
+    if (!this.tutorial) this.weather.update(delta); // the tutorial has no storm clock
     this.updateAmbientWeather(delta);
     this.updateWeatherEffects(delta);
     this.updateGems();
     applyFrostAura(this.player, this.getActiveEnemies());
     this.updatePull();
     this.handleManualAttacks(time);
-    this.handleAttack(time);
+    if (!this.tutorial) this.handleAttack(time); // the tutorial teaches the manual attacks
+    this.tutorial?.update(delta);
 
-    this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta, this.player.beamCharge(time), this.player.rollCharge(time));
+    this.hud.update(this.player, this.weather.elapsedSeconds, this.tutorial ? this.tutorialBadge : this.weather.frontName, delta, this.player.beamCharge(time), this.player.rollCharge(time));
     this.hud.setStatuses(this.player.statuses.list());
     this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1, this.boss?.stats.name.toUpperCase());
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
@@ -380,12 +416,12 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.spawnEnemyAt(typeKey, x, y);
   }
 
-  private spawnEnemyAt(typeKey: string, x: number, y: number) {
+  private spawnEnemyAt(typeKey: string, x: number, y: number): Enemy {
     const enemy = createEnemy(this, typeKey, x, y, this.player);
     enemy.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(enemy);
     if (this.rule.wet) enemy.applyStatus('wet', STATUS_TUNING.wetMs);
-    if (!this.signatureSeen && typeKey === this.region.signature && this.region.signatureHint) {
+    if (!this.tutorial && !this.signatureSeen && typeKey === this.region.signature && this.region.signatureHint) {
       this.signatureSeen = true;
       this.time.delayedCall(1500, () => {
         if (this.ended || this.paused) return;
@@ -394,6 +430,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         if (app) app.dataset.signatureHint = this.region.signatureHint!;
       });
     }
+    return enemy;
   }
 
   spawnBoss(remainingHp?: number) {
@@ -457,6 +494,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const x = enemy.x;
     const y = enemy.y;
     enemy.takeDamage(damage);
+    if (kind === 'melee') this.tutorial?.note('meleeHit');
+    if (kind === 'beam') this.tutorial?.note('beamHit');
+    if (hit.wetShock) this.tutorial?.note('wetShock');
     const color = hit.shattered ? '#58a8e0' : hit.wetShock ? '#f8d020' : '#f8f8f8';
     this.floatText(x + Phaser.Math.Between(-6, 6), y - 8, `${damage}`, color);
     if (enemy.active && hit.shockMs > 0) {
@@ -657,6 +697,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
       if (distSq < 11 * 11) {
         audio.play('gem');
+        this.tutorial?.note('gem');
         this.player.addXp(gem.getData('xp'));
         gem.destroy();
         continue;
@@ -689,6 +730,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.checkpoint();
     this.levelUpSystem.presentChoices(this.player, level, () => {
       this.pendingLevelUps -= 1;
+      this.tutorial?.note('powerup');
       this.checkpoint();
       if (this.pendingLevelUps > 0) return this.showLevelUpMenu();
       this.levelUpOpen = false;
@@ -736,6 +778,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   private quitToTitle() {
+    if (this.tutorial) return this.leaveTutorial(); // never touches the saved run
     this.ended = true;
     clearRun();
     this.userPaused = false;
@@ -764,7 +807,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   /** Write the in-progress run. No-op once the run has ended or been abandoned. */
   checkpoint() {
-    if (this.ended || !this.player?.active || !this.weather) return;
+    if (this.tutorial || this.ended || !this.player?.active || !this.weather) return;
     saveRun(this.captureRun());
   }
 
@@ -784,6 +827,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   private endRun(won: boolean) {
+    if (this.tutorial) return; // the tutorial cannot be lost, and records nothing
     if (this.ended) return; // (a level-up menu being open must not block the ending)
     this.ended = true;
     this.levelUpOpen = false;
@@ -803,6 +847,120 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     };
     recordRunResult(data);
     this.time.delayedCall(400, () => this.scene.start('GameOverScene', data));
+  }
+
+  // --- tutorial ---
+
+  private startTutorial() {
+    const touch = () => isTouchControlsActive();
+    this.tutorial = new TutorialDirector({
+      player: this.player,
+      isTouch: touch,
+      prompt: (headline, lines) => this.hud.setPrompt(headline, lines),
+      badge: (text) => (this.tutorialBadge = text),
+      popup: (x, y, text, color) => this.popup(x, y, text, color),
+      enemies: () => this.getActiveEnemies(),
+      isOpen: (x, y) => this.isOpen(x, y),
+      clearEnemies: () => {
+        for (const enemy of [...this.enemyGroup.getChildren()]) enemy.destroy();
+        for (const proj of [...this.projectileGroup.getChildren()]) proj.destroy();
+      },
+      spawnDummy: (x, y) => {
+        const p = this.openSpot(x, y);
+        return this.spawnEnemyAt('trainingDummy', p.x, p.y);
+      },
+      spawnCab: (x, y) => {
+        const p = this.openSpot(x, y);
+        return this.spawnEnemyAt('cabWraith', p.x, p.y);
+      },
+      spawnGems: (count) => {
+        // Gems go where the knight can walk straight to them: every step of the way is open ground.
+        const clear = (a: number, r: number) => {
+          for (let d = 12; d <= r; d += 12) {
+            if (!this.isOpen(this.player.x + Math.cos(a) * d, this.player.y + Math.sin(a) * d)) return false;
+          }
+          return true;
+        };
+        for (let i = 0; i < count; i++) {
+          const base = (i / count) * Math.PI * 2 + 0.6;
+          let angle = base;
+          for (let k = 0; k < 24; k++) {
+            const a = base + (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * 0.26;
+            if (clear(a, 44)) {
+              angle = a;
+              break;
+            }
+          }
+          const p = this.openSpot(this.player.x + Math.cos(angle) * 44, this.player.y + Math.sin(angle) * 44);
+          this.spawnXpGem(p.x, p.y, 4);
+        }
+      },
+      grantLevel: () => {
+        const need = this.player.xpToNext - this.player.xp;
+        if (need > 0) this.xpGrant += need;
+      },
+      lightning: () => this.hazards?.trigger('lightning', 0, 0),
+      lightningActive: () => (this.hazards?.snapshot().zones.length ?? 0) > 0,
+      healPlayer: () => {
+        this.player.hp = this.player.maxHp;
+      },
+      finish: () => this.leaveTutorial(),
+    });
+    // Enter skips the step; Space / Enter / a tap confirms the ending.
+    this.input.keyboard?.on('keydown-ENTER', () => {
+      if (this.tutorial?.stepId === 'done') this.tutorial.confirm();
+      else this.tutorial?.skip();
+    });
+    this.input.keyboard?.on('keydown-SPACE', () => this.tutorial?.confirm());
+    this.input.on('pointerdown', () => this.tutorial?.confirm());
+    this.tutorial.start();
+  }
+
+  /** Is this a spot a knight can stand on (not rock or water, with a little room around it)? */
+  private isOpen(x: number, y: number): boolean {
+    for (const [dx, dy] of [[0, 0], [8, 0], [-8, 0], [0, 8], [0, -8]]) {
+      const tile = this.terrain.layer.getTileAtWorldXY(x + dx, y + dy);
+      if (!tile || tile.collides) return false;
+    }
+    return true;
+  }
+
+  /** The requested spot if it is open ground, else the nearest open spot around it. */
+  private openSpot(x: number, y: number): { x: number; y: number } {
+    const cx = this.clampX(x);
+    const cy = this.clampY(y);
+    if (this.isOpen(cx, cy)) return { x: cx, y: cy };
+    for (let r = 12; r <= 72; r += 12) {
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        const px = this.clampX(cx + Math.cos(a) * r);
+        const py = this.clampY(cy + Math.sin(a) * r);
+        if (this.isOpen(px, py)) return { x: px, y: py };
+      }
+    }
+    return { x: cx, y: cy };
+  }
+
+  private clampX(x: number): number {
+    return Phaser.Math.Clamp(x, 24, WORLD.width - 24);
+  }
+
+  private clampY(y: number): number {
+    return Phaser.Math.Clamp(y, 24, WORLD.height - 24);
+  }
+
+  /** Back to the title. Unlike quitting a real run, this never touches the saved run. */
+  private leaveTutorial() {
+    if (this.ended) return;
+    this.ended = true;
+    this.userPaused = false;
+    this.levelUpOpen = false;
+    closePauseMenu();
+    audio.setMuffled(false);
+    if (this.sys.isPaused()) this.sys.resume();
+    this.paused = true;
+    this.levelUpSystem.close();
+    this.scene.start('MenuScene');
   }
 
   // --- status effects and weather hazards ---

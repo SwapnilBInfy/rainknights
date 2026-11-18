@@ -63,6 +63,33 @@ A gamepad's **Start** button (button 9 in the standard mapping) pauses and
 resumes a live run, the same as Esc, P, and the touch Start button. Movement
 and attacks stay on the keyboard and the touch cluster.
 
+### Tutorial
+
+New players can learn the game first. On the title screen press **T** (or tap
+**TAP: TUTORIAL** on a touch screen); it is there for fresh players and for
+anyone with a saved game.
+
+It is the real game with nothing at stake: no storm clock, no waves, no boss,
+and you cannot lose. A panel at the bottom gives one short instruction at a
+time, and each step finishes when you actually do the thing:
+
+1. **Move** around
+2. **Swing** at a training dummy
+3. **Energy beam** through two dummies in a line
+4. **XP gems**: collect them
+5. **Level up**: pick a weather powerup
+6. **Dodge roll** across a Cab Wraith's charge lane
+7. **Stall strike**: hit the cab while it is stalled (+50%)
+8. **Wet + shock**: beam a wet foe
+9. **Lightning**: leave the blinking circle before the bolt lands
+10. **All set**: Space (or **A**) returns to the title
+
+Instructions use your device's controls (WASD / SPACE / J / SHIFT or K, or
+the STICK / A / B / R on touch). **Enter** skips a step (a stuck step moves on
+by itself after about 75 seconds). Pause works as usual; quitting asks "Leave
+tutorial?". The tutorial never reads or writes your saved run, so a game in
+progress is always still there for **Continue**.
+
 ### Pause menu
 
 Pausing freezes the whole scene: enemy movement, auras, and the storm clock.

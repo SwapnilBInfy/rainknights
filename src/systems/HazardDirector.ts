@@ -151,10 +151,17 @@ export class HazardDirector {
     }
   }
 
-  /** Debug / test hook: drop a hazard right now, ignoring the schedule. */
-  trigger(kind: HazardKind, dx = 40, dy = 0, dir: Cardinal = 'left') {
-    if (kind === 'gust') this.startGust(dir);
-    else this.addZone(kind, this.host.player.x + dx, this.host.player.y + dy);
+  /**
+   * Debug / test hook: drop a hazard right now, ignoring the schedule. `instant` skips the ground
+   * warning so a zone takes effect on the next frame (tests that need the hit at an exact moment).
+   */
+  trigger(kind: HazardKind, dx = 40, dy = 0, dir: Cardinal = 'left', instant = false) {
+    if (kind === 'gust') {
+      this.startGust(dir);
+      return;
+    }
+    this.addZone(kind, this.host.player.x + dx, this.host.player.y + dy);
+    if (instant) this.zones[this.zones.length - 1].age = ZONES[kind as ZoneKind].warnMs;
   }
 
   private addZone(kind: ZoneKind, x: number, y: number) {

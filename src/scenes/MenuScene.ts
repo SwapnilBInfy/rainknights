@@ -135,16 +135,29 @@ export class MenuScene extends Phaser.Scene {
       .text(width / 2, height - 12, menuHint(false), { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 })
       .setOrigin(0.5, 0)
       .setDepth(8);
+    // The optional tutorial. Under PRESS START on a fresh title; in the corner beside a saved game's menu.
+    const linkStyle = { ...textStyle('#a8e0ff'), stroke: '#202030', strokeThickness: 3 };
+    const link = choices
+      ? this.add.text(4, 4, 'T: TUTORIAL', linkStyle).setOrigin(0, 0)
+      : this.add.text(width / 2, 134, 'T: TUTORIAL', linkStyle).setOrigin(0.5, 0);
+    link.setDepth(8).setInteractive({ useHandCursor: true });
+    link.on('pointerover', () => link.setColor('#f8f8f8'));
+    link.on('pointerout', () => link.setColor('#a8e0ff'));
+    link.on('pointerdown', () => this.startTutorial());
     const detachTouch = onTouchControlsChange((touch) => {
       const hint = menuHint(touch);
       controls.setText(hint);
+      link.setText(touch ? 'TAP: TUTORIAL' : 'T: TUTORIAL');
       const app = document.getElementById('app');
-      if (app) app.dataset.menuHint = hint;
+      if (app) {
+        app.dataset.menuHint = hint;
+        app.dataset.tutorialLink = link.text;
+      }
     });
 
     if (!choices) {
       const start = this.add
-        .text(width / 2, 128, 'PRESS START', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 })
+        .text(width / 2, 121, 'PRESS START', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 })
         .setOrigin(0.5, 0)
         .setDepth(5);
       this.tweens.add({ targets: start, alpha: 0, duration: 500, yoyo: true, repeat: -1, hold: 200 });
@@ -152,6 +165,7 @@ export class MenuScene extends Phaser.Scene {
       this.input.once('pointerdown', go);
       this.input.keyboard?.once('keydown-SPACE', go);
       this.input.keyboard?.once('keydown-ENTER', go);
+      this.input.keyboard?.once('keydown-T', () => this.startTutorial());
     } else {
       this.add.rectangle(0, 0, width, height, 0x080810, 0.55).setOrigin(0, 0).setDepth(4);
       this.showPage();
@@ -169,6 +183,7 @@ export class MenuScene extends Phaser.Scene {
       const app = document.getElementById('app');
       if (!app) return;
       delete app.dataset.menuHint;
+      delete app.dataset.tutorialLink;
       delete app.dataset.titleMenu;
       delete app.dataset.titleChoice;
       delete app.dataset.runLevel;
@@ -282,6 +297,7 @@ export class MenuScene extends Phaser.Scene {
     if (key === 'arrowup' || key === 'w') this.step(-1);
     else if (key === 'arrowdown' || key === 's') this.step(1);
     else if (key === 'enter' || key === ' ' || key === 'z') this.activate();
+    else if (key === 't') this.startTutorial();
     else if (key >= '1' && key <= String(this.choices.length)) this.pick(Number(key) - 1);
   };
 
@@ -383,6 +399,21 @@ export class MenuScene extends Phaser.Scene {
     this.leaving = true;
     audio.play('confirm');
     this.scene.start('GameScene', { resume: true });
+  }
+
+  /** The optional tutorial: the real game with nothing at stake, and nothing written to the save. */
+  private startTutorial() {
+    if (this.leaving) return;
+    this.leaving = true;
+    audio.play('confirm');
+    this.scene.start('GameScene', {
+      tutorial: true,
+      characterId: 'rainKnight',
+      regionId: 'nyc',
+      weatherCondition: 'clear',
+      weatherLabel: 'Tutorial',
+      weatherTint: 0x8fe0ff,
+    });
   }
 
   private startNewGame() {

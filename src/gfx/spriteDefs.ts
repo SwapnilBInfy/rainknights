@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { generateBlobTexture } from './PixelSpriteFactory';
 import { generateKnightTextures } from './chibi';
 import { generateCabWraithTexture, generatePhantomBusTexture } from './vehicles';
+import { generateTrainingDummyTexture } from './props';
 import { generateWeaponTextures } from './weapons';
 import { CHARACTERS } from '../config/characters';
 import { generateTerrainTileset, generateRainTexture } from './tiles';
@@ -16,6 +17,7 @@ export const TEX = {
   tornadoBoss: 'tornadoBoss',
   cabWraith: 'cabWraith',
   phantomBus: 'phantomBus',
+  trainingDummy: 'trainingDummy',
   xpGem: 'xpGem',
   projectile: 'projectile',
   terrainTilesNyc: 'terrainTiles_nyc',
@@ -77,6 +79,7 @@ export async function generateAllTextures(scene: Phaser.Scene, afterBatch?: () =
 
   generateCabWraithTexture(scene, TEX.cabWraith);
   generatePhantomBusTexture(scene, TEX.phantomBus);
+  generateTrainingDummyTexture(scene, TEX.trainingDummy);
 
   generateBlobTexture(scene, TEX.xpGem, { radius: 2.4, shape: 'diamond', ...P.XP_GEM }, 1);
   generateBlobTexture(scene, TEX.projectile, { radius: 2, shape: 'diamond', ...P.PROJECTILE }, 1);

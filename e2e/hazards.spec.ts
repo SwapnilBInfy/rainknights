@@ -43,8 +43,9 @@ test('thunderstorm: rain soaks the knight and a lightning strike is telegraphed 
 test('cold front: standing in a frost patch freezes the knight, then they thaw', async ({ page }) => {
   const errors = await beginRun(page, 'cold_front');
   await trigger(page, 'frost', 0);
-  await expect.poll(() => statuses(page), { timeout: 5000 }).toContain('frozen');
-  await expect.poll(() => statuses(page), { timeout: 6000 }).not.toContain('frozen');
+  // Frozen lasts only ~1s, so watch every frame; a slow poll can miss it entirely.
+  await page.waitForFunction(() => (window as any).__rk.statuses().includes('frozen'), undefined, { polling: 'raf', timeout: 8000 });
+  await page.waitForFunction(() => !(window as any).__rk.statuses().includes('frozen'), undefined, { polling: 'raf', timeout: 8000 });
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
