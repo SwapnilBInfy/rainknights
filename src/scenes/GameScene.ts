@@ -19,6 +19,7 @@ import { FONT } from '../ui/Window';
 import { LevelUpSystem } from '../systems/LevelUpSystem';
 import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/PowerupSystem';
 import { buildTerrain, randomSeed, seedFromUrl, type TerrainResult } from '../systems/Terrain';
+import { Enemy as EnemyBase } from '../entities/enemies/Enemy';
 import { floodRingsFor } from '../systems/terrainRules';
 import { HUD } from '../ui/HUD';
 import { audio } from '../audio/engine';
@@ -79,11 +80,25 @@ interface RunBridge {
   /** Defeat the nearest living enemy (debug / tests). */
   killNearest: () => void;
   /** The map: its seed, tile counts, flood level and what is under the knight. */
-  terrain: () => { seed: number; floodRings: number; counts: Record<string, number>; under: number; grip: number; speed: number };
+  terrain: () => { seed: number; floodRings: number; counts: Record<string, number>; under: number; grip: number; speed: number; decorOps: number; decorDraws: number };
+  /** Raise the flood to this many rings now (debug / tests). */
+  floodTo: (rings: number) => number;
+  /** Teleport the knight beside a tile of this type, on its west side, facing it (debug / tests). */
+  tpBesideSolid: (type: number) => boolean;
+  /** Rotation of each living enemy in degrees, in the same order as enemyTypes. */
+  enemyAngles: () => number[];
+  /** Where each living enemy is relative to the knight, [dx, dy] in px, in the same order as enemyTypes. */
+  enemyOffsets: () => number[][];
+  /** Restore the knight to full health (debug / tests that are about something other than survival). */
+  heal: () => void;
+  /** Vehicle crashes so far this run. */
+  crashes: () => number;
+  /** Teleport the knight onto a long street, `tilesBefore` tiles before it ends at a wall; returns whether one was found. */
+  tpStreetEnd: (tilesBefore?: number) => boolean;
   /** How many living enemies are standing inside a solid tile (should always be 0). */
   enemiesInSolid: () => number;
   /** Teleport the knight onto a tile of this type that has `run` more of it to its right (debug / tests). */
-  tpToTile: (type: number, run?: number) => boolean;
+  tpToTile: (type: number, run?: number, offCols?: number, offRows?: number) => boolean;
   /** Current tutorial step id, or null outside the tutorial. */
   tutorialStep: () => TutorialStepId | null;
   /** Skip the current tutorial step (debug / tests). */
@@ -147,6 +162,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private tutorial: TutorialDirector | null = null;
   private tutorialBadge = '';
   private mapSeed = 0;
+  private crashCount = 0;
   private terrainClock = 0;
   private wasWet = false;
 
@@ -171,6 +187,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.tutorial = null;
     this.tutorialBadge = '';
     this.terrainClock = 0;
+    this.crashCount = 0;
     this.wasWet = false;
     this.physics.world.timeScale = 1;
 
@@ -310,13 +327,34 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
           under: this.terrain.field.tileAt(body.center.x, body.center.y),
           grip: this.player.grip,
           speed: this.player.terrainSpeed,
+          decorOps: this.terrain.field.decorOps,
+          decorDraws: this.terrain.field.decorDraws,
         };
       },
-      enemiesInSolid: () => this.getActiveEnemies().filter((e) => this.terrain.field.isSolidAt(e.x, e.y)).length,
-      tpToTile: (type, run = 0) => {
-        const spot = this.terrain.field.findTile(type, run);
+      floodTo: (rings) => this.terrain.field.setFloodRings(rings),
+      tpBesideSolid: (type) => {
+        const spot = this.terrain.field.findBesideSolid(type);
         if (!spot) return false;
         this.player.setPosition(spot.x, spot.y);
+        return true;
+      },
+      enemyAngles: () => this.getActiveEnemies().map((e) => (((e.angle % 360) + 360) % 360)),
+      enemyOffsets: () => this.getActiveEnemies().map((e) => [e.x - this.player.x, e.y - this.player.y]),
+      heal: () => {
+        this.player.hp = this.player.maxHp;
+      },
+      crashes: () => this.crashCount,
+      tpStreetEnd: (tilesBefore = 3) => {
+        const end = this.terrain.field.findStreetEnd();
+        if (!end) return false;
+        this.player.setPosition(end.x - tilesBefore * 16, end.y);
+        return true;
+      },
+      enemiesInSolid: () => this.getActiveEnemies().filter((e) => this.terrain.field.isSolidAt(e.x, e.y)).length,
+      tpToTile: (type, run = 0, offCols = 0, offRows = 0) => {
+        const spot = this.terrain.field.findTile(type, run);
+        if (!spot) return false;
+        this.player.setPosition(spot.x + offCols * 16, spot.y + offRows * 16);
         return true;
       },
       tutorialStep: () => this.tutorial?.stepId ?? null,
@@ -465,12 +503,16 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const angle = Math.random() * Math.PI * 2;
     const dist = Phaser.Math.Between(130, 180);
     // On open ground: with city blocks and canals about, a random spot is often inside a building.
-    const spot = this.openSpot(this.player.x + Math.cos(angle) * dist, this.player.y + Math.sin(angle) * dist);
+    let spot = this.openSpot(this.player.x + Math.cos(angle) * dist, this.player.y + Math.sin(angle) * dist);
+    // Vehicles belong on streets: put them on the nearest road if there is one close by.
+    if (typeKey === 'cabWraith') spot = this.terrain.field.roadSpotNear(spot.x, spot.y, 6) ?? spot;
     this.spawnEnemyAt(typeKey, spot.x, spot.y);
   }
 
   private spawnEnemyAt(typeKey: string, x: number, y: number): Enemy {
     const enemy = createEnemy(this, typeKey, x, y, this.player);
+    enemy.terrain = this.terrain.field;
+    enemy.on('crash', this.handleCrash);
     enemy.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(enemy);
     if (this.rule.wet) enemy.applyStatus('wet', STATUS_TUNING.wetMs);
@@ -495,12 +537,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   spawnBoss(remainingHp?: number) {
     const angle = Math.random() * Math.PI * 2;
     const dist = BOSS_SPAWN_DISTANCE[this.region.boss] ?? 170;
-    const spot = this.openSpot(Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50), Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50));
+    let spot = this.openSpot(Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50), Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50));
+    if (this.region.boss === 'phantomBus') spot = this.terrain.field.roadSpotNear(spot.x, spot.y, 8) ?? spot;
     const x = spot.x;
     const y = spot.y;
     audio.play('bossAppears');
     audio.playMusic('boss');
     const boss = createEnemy(this, this.region.boss, x, y, this.player);
+    boss.terrain = this.terrain.field;
+    boss.on('crash', this.handleCrash);
     boss.once('enemyDied', this.handleEnemyDeath);
     boss.on('bossRage', () => {
       audio.play('bossAppears');
@@ -910,6 +955,38 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.time.delayedCall(400, () => this.scene.start('GameOverScene', data));
   }
 
+  // --- crashes ---
+
+  /** A vehicle slammed into a wall, a building or a parked car: shake, sparks, a sound, and it is dazed. */
+  private handleCrash = (enemy: Enemy) => {
+    this.crashCount += 1;
+    audio.play('crash');
+    const boss = enemy === this.boss;
+    this.cameras.main.shake(boss ? 220 : 120, boss ? 0.006 : 0.0025);
+    this.popup(enemy.x, enemy.y - 14, 'CRASH!', '#ff9030');
+    if (boss) this.hitStop(70);
+    this.debris(enemy.x, enemy.y);
+  };
+
+  /** A burst of little pieces flying off a crash. */
+  private debris(x: number, y: number) {
+    const colors = [0xf8c820, 0xc0c0c8, 0x808090, 0xff7030, 0xffffff];
+    for (let i = 0; i < 9; i++) {
+      const bit = this.add.rectangle(Math.round(x), Math.round(y), 2, 2, colors[i % colors.length]).setDepth(41);
+      const a = (i / 9) * Math.PI * 2 + Math.random() * 0.5;
+      const d = 14 + Math.random() * 16;
+      this.tweens.add({
+        targets: bit,
+        x: Math.round(x + Math.cos(a) * d),
+        y: Math.round(y + Math.sin(a) * d),
+        alpha: 0,
+        duration: 340 + Math.random() * 160,
+        ease: 'Quad.easeOut',
+        onComplete: () => bit.destroy(),
+      });
+    }
+  }
+
   // --- terrain under foot ---
 
   /**
@@ -925,7 +1002,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     for (const c of creatures) {
       const body = c.body as Phaser.Physics.Arcade.Body;
       const fx = field.effectsAt(body.center.x, body.center.y);
-      c.terrainSpeed = fx.slow;
+      // Vehicles are quick on streets and sluggish off them; everyone else ignores the road.
+      c.terrainSpeed = fx.slow * (c instanceof EnemyBase ? c.roadSpeed(field.isRoadAt(body.center.x, body.center.y)) : 1);
       c.grip = fx.grip;
       if (fx.wet) {
         const result = c.applyStatus('wet', 2400);

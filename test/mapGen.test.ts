@@ -106,6 +106,61 @@ describe('generateMap', () => {
     }
   });
 
+  it('streets have trees, parked cars and lamps or hydrants; Miami has palms and umbrellas but no cars', () => {
+    for (const seed of SEEDS.slice(0, 10)) {
+      const nyc = generateMap('nyc', seed).grid;
+      expect(count(nyc, TileType.CAR), `cars ${seed}`).toBeGreaterThan(12);
+      expect(count(nyc, TileType.TREE), `trees ${seed}`).toBeGreaterThan(20);
+      expect(count(nyc, TileType.PROP), `props ${seed}`).toBeGreaterThan(6);
+      const miami = generateMap('miami', seed).grid;
+      expect(count(miami, TileType.CAR), `miami cars ${seed}`).toBe(0);
+      expect(count(miami, TileType.TREE), `palms ${seed}`).toBeGreaterThan(220);
+      expect(count(miami, TileType.PROP), `umbrellas ${seed}`).toBeGreaterThan(8);
+    }
+  });
+
+  it('props are solid, and a parked car always sits on the road with open road beside it', () => {
+    for (const t of [TileType.TREE, TileType.CAR, TileType.PROP]) expect(isSolid(t)).toBe(true);
+    for (const seed of SEEDS.slice(0, 10)) {
+      const { grid } = generateMap('nyc', seed);
+      for (let y = 1; y < MAP_ROWS - 1; y++) {
+        for (let x = 1; x < MAP_COLS - 1; x++) {
+          if (grid[y][x] !== TileType.CAR) continue;
+          const road = [grid[y - 1][x], grid[y + 1][x], grid[y][x - 1], grid[y][x + 1]].filter((t) => t === TileType.PATH).length;
+          expect(road, `car at ${x},${y} seed ${seed}`).toBeGreaterThanOrEqual(1);
+        }
+      }
+    }
+  });
+
+  it('keeps the spawn plaza free of props', () => {
+    for (const region of REGIONS) {
+      for (const seed of SEEDS.slice(0, 10)) {
+        const { grid, spawn } = generateMap(region, seed);
+        for (let dy = -PLAZA_RADIUS + 1; dy < PLAZA_RADIUS; dy++) {
+          for (let dx = -PLAZA_RADIUS + 1; dx < PLAZA_RADIUS; dx++) {
+            if (dx * dx + dy * dy > (PLAZA_RADIUS - 1) ** 2) continue;
+            const t = grid[spawn.row + dy][spawn.col + dx];
+            expect([TileType.TREE, TileType.CAR, TileType.PROP], `${region} ${seed}`).not.toContain(t);
+          }
+        }
+      }
+    }
+  });
+
+  it('the world edge is a skyline in New York and a palm-lined sea wall in Miami', () => {
+    const nyc = generateMap('nyc', 5).grid;
+    // (the river runs off the map edge, so the skyline has a gap where it leaves)
+    expect(nyc[0].filter((t) => t === TileType.BUILDING).length).toBeGreaterThan(MAP_COLS * 0.85);
+    expect(nyc.map((row) => row[0]).filter((t) => t === TileType.BUILDING).length).toBeGreaterThan(MAP_ROWS * 0.85);
+    const miami = generateMap('miami', 5).grid;
+    let palms = 0;
+    for (let y = 2; y < MAP_ROWS - 2; y++) {
+      for (const x of [1, MAP_COLS - 2]) if (miami[y][x] === TileType.TREE) palms++;
+    }
+    expect(palms).toBeGreaterThan(20);
+  });
+
   it('bridges are walkable', () => {
     expect(isSolid(TileType.BRIDGE)).toBe(false);
   });

@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from './fixtures';
+import { type Page } from '@playwright/test';
 
 // `?weather=` forces a condition and turns hazards on under automation
 // (they are off by default so the other smoke tests stay deterministic).
@@ -30,6 +31,9 @@ test('thunderstorm: rain soaks the knight and a lightning strike is telegraphed 
   await expect.poll(() => statuses(page), { timeout: 5000 }).toContain('wet');
   await expect(page.locator('#app')).toHaveAttribute('data-statuses', /wet/);
 
+  // Clear the ambient enemies and any hit invulnerability first, so the only thing that can hurt is the strike.
+  await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`);
+  await page.waitForFunction(() => !(window as any).__rk.invulnerable(), undefined, { polling: 'raf', timeout: 3000 });
   const hpBefore = await page.evaluate(() => (window as any).__rk.hp() as number);
   await trigger(page, 'lightning', 0);
   const warn = await hazards(page);

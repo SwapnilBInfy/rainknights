@@ -25,9 +25,15 @@ export const TileType = {
   BUILDING: 7,
   /** A bridge deck over water: walkable and dry, with the water carrying on underneath. */
   BRIDGE: 8,
+  /** A tree (a palm in Miami): solid. The art on top is drawn by the decor layer. */
+  TREE: 9,
+  /** A parked car on the road's outer lane: solid. */
+  CAR: 10,
+  /** A street lamp or hydrant (a beach umbrella in Miami): solid. */
+  PROP: 11,
 } as const;
 
-export const TILE_TYPE_COUNT = 9;
+export const TILE_TYPE_COUNT = 12;
 
 export type Grid = number[][];
 
@@ -43,7 +49,7 @@ export interface GeneratedMap {
   regionId: string;
 }
 
-const SOLID = new Set<number>([TileType.WATER, TileType.ROCK, TileType.BUILDING]);
+const SOLID = new Set<number>([TileType.WATER, TileType.ROCK, TileType.BUILDING, TileType.TREE, TileType.CAR, TileType.PROP]);
 export const isSolid = (t: number): boolean => SOLID.has(t);
 export const isWalkable = (t: number): boolean => !SOLID.has(t);
 const isGrass = (t: number): boolean => t === TileType.GRASS_A || t === TileType.GRASS_B;
@@ -315,12 +321,87 @@ function clearPlaza(grid: Grid, spawn: Spawn) {
   }
 }
 
-function frame(grid: Grid, t: number) {
+function frame(grid: Grid, regionId: string) {
   const rows = grid.length;
   const cols = grid[0].length;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
-      if ((x < FRAME || y < FRAME || x >= cols - FRAME || y >= rows - FRAME) && grid[y][x] !== TileType.WATER) grid[y][x] = t;
+      const depth = Math.min(x, y, cols - 1 - x, rows - 1 - y);
+      if (depth >= FRAME || grid[y][x] === TileType.WATER) continue;
+      if (regionId === 'miami') {
+        // a sea wall (outermost) with a row of palms inside it
+        grid[y][x] = depth === 0 ? TileType.ROCK : (x + y) % 2 === 0 ? TileType.TREE : TileType.ROCK;
+      } else {
+        grid[y][x] = TileType.BUILDING; // the skyline
+      }
+    }
+  }
+}
+
+/** True if any tile within `r` (a square) satisfies `pred`. */
+function near(grid: Grid, x: number, y: number, r: number, pred: (t: number) => boolean): boolean {
+  for (let yy = y - r; yy <= y + r; yy++) for (let xx = x - r; xx <= x + r; xx++) if (inBounds(grid, xx, yy) && pred(grid[yy][xx])) return true;
+  return false;
+}
+
+const isRoad = (t: number) => t === TileType.PATH || t === TileType.BRIDGE;
+const isWaterish = (t: number) => t === TileType.WATER || t === TileType.SHALLOW;
+
+/**
+ * Street furniture and greenery: parked cars on the outer lane of straight roads, trees on sidewalks and in
+ * open ground, lamps and hydrants. (Miami: palms along the boardwalks and beaches, umbrellas by the water.)
+ * All of it is solid, so it is placed before connectivity is checked.
+ */
+function placeProps(grid: Grid, rng: Rng, regionId: string) {
+  const rows = grid.length;
+  const cols = grid[0].length;
+  const miami = regionId === 'miami';
+  const edgeOk = (x: number, y: number) => x > FRAME + 1 && y > FRAME + 1 && x < cols - FRAME - 2 && y < rows - FRAME - 2;
+
+  // parked cars (New York)
+  if (!miami) {
+    for (let y = FRAME + 2; y < rows - FRAME - 2; y++) {
+      for (let x = FRAME + 3; x < cols - FRAME - 3; x++) {
+        if (grid[y][x] !== TileType.PATH || rng() > 0.05) continue;
+        const horiz = grid[y][x - 1] === TileType.PATH && grid[y][x + 1] === TileType.PATH;
+        const vert = grid[y - 1][x] === TileType.PATH && grid[y + 1][x] === TileType.PATH;
+        if (horiz === vert) continue;
+        // outer lane of a straight stretch: the tile beyond is not road along the whole run of five
+        let out = 0;
+        for (const s of [-1, 1]) {
+          let ok = true;
+          for (let k = -2; k <= 2 && ok; k++) {
+            const rx = horiz ? x + k : x + s;
+            const ry = horiz ? y + s : y + k;
+            const px = horiz ? x + k : x;
+            const py = horiz ? y : y + k;
+            if (grid[py]?.[px] !== TileType.PATH || isRoad(grid[ry]?.[rx] ?? TileType.BUILDING)) ok = false;
+          }
+          if (ok) out = s;
+        }
+        if (!out || near(grid, x, y, 5, (t) => t === TileType.CAR)) continue;
+        // keep the other two lanes clear
+        grid[y][x] = TileType.CAR;
+      }
+    }
+  }
+
+  // trees and lamps/hydrants/umbrellas
+  for (let y = FRAME + 2; y < rows - FRAME - 2; y++) {
+    for (let x = FRAME + 2; x < cols - FRAME - 2; x++) {
+      if (!isGrass(grid[y][x]) || !edgeOk(x, y)) continue;
+      const byRoad = near(grid, x, y, 1, isRoad) && [grid[y - 1][x], grid[y + 1][x], grid[y][x - 1], grid[y][x + 1]].some(isRoad);
+      const byWater = near(grid, x, y, 2, isWaterish);
+      const open = !near(grid, x, y, 1, (t) => isSolid(t) || isWaterish(t) || isRoad(t));
+      if (miami) {
+        if (byWater && !near(grid, x, y, 3, (t) => t === TileType.PROP) && rng() < 0.05) grid[y][x] = TileType.PROP; // umbrella
+        else if ((byRoad ? rng() < 0.12 : byWater ? rng() < 0.08 : open && rng() < 0.008) && !near(grid, x, y, 2, (t) => t === TileType.TREE)) grid[y][x] = TileType.TREE; // palm
+      } else if (byRoad) {
+        if (rng() < 0.04 && !near(grid, x, y, 3, (t) => t === TileType.TREE)) grid[y][x] = TileType.TREE;
+        else if (rng() < 0.025 && !near(grid, x, y, 5, (t) => t === TileType.PROP)) grid[y][x] = TileType.PROP;
+      } else if (open && rng() < 0.012 && !near(grid, x, y, 2, (t) => t === TileType.TREE)) {
+        grid[y][x] = TileType.TREE;
+      }
     }
   }
 }
@@ -440,8 +521,9 @@ export function generateMap(regionId: string, seed: number, cols = MAP_COLS, row
   const spawn: Spawn = { col: Math.floor(cols / 2), row: Math.floor(rows / 2) };
   if (regionId === 'miami') miamiLayout(grid, rng, spawn);
   else nycLayout(grid, rng, spawn);
+  placeProps(grid, rng, regionId);
   clearPlaza(grid, spawn);
-  frame(grid, regionId === 'miami' ? TileType.ROCK : TileType.BUILDING);
+  frame(grid, regionId);
   ensureConnected(grid, spawn);
   return { grid, spawn, seed, regionId };
 }

@@ -14,7 +14,9 @@ export function drawChargeLane(
   width: number,
   progress: number,
   color: number,
-  time: number
+  time: number,
+  /** The lane ends at a wall: mark the spot where the vehicle will crash. */
+  endMark = false
 ) {
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
@@ -42,9 +44,19 @@ export function drawChargeLane(
   for (let t = 8 + marchOffset; t <= length; t += 14) {
     g.fillRect(Math.round(x + dx * t) - 1, Math.round(y + dy * t) - 1, 3, 3);
   }
-  // arrowhead at the far end
+  // arrowhead at the far end (or a crash burst where the lane meets a wall)
   const tipX = x + dx * length;
   const tipY = y + dy * length;
+  if (endMark) {
+    g.fillStyle(0xff7030, blink);
+    for (let k = -3; k <= 3; k++) {
+      g.fillRect(Math.round(tipX + k * 2) - 1, Math.round(tipY + k * 2) - 1, 2, 2);
+      g.fillRect(Math.round(tipX + k * 2) - 1, Math.round(tipY - k * 2) - 1, 2, 2);
+    }
+    g.fillStyle(0xfff060, blink);
+    g.fillRect(Math.round(tipX) - 2, Math.round(tipY) - 2, 4, 4);
+    return;
+  }
   g.fillStyle(0xffffff, blink);
   for (let k = 0; k < 4; k++) {
     for (const s of [-1, 1]) {

@@ -46,6 +46,36 @@ describe('ChargeCycle', () => {
     expect(c.update(50, { inRange: true, blocked: true })).toBe('stall');
   });
 
+  it('a charge that hits something is a crash with a longer stall; one that runs its course is not', () => {
+    const tuning: ChargeTuning = { ...T, crashStallMs: 500 };
+    const crashed = new ChargeCycle(tuning);
+    run(crashed, 1500); // charging
+    expect(crashed.phase).toBe('charge');
+    run(crashed, 200, { inRange: true, blocked: true });
+    expect(crashed.phase).toBe('stall');
+    expect(crashed.crashed).toBe(true);
+    run(crashed, 400); // still stalled: the stall is 600 + 500
+    expect(crashed.phase).toBe('stall');
+    run(crashed, 800);
+    expect(crashed.phase).toBe('cruise');
+
+    const clean = new ChargeCycle(tuning);
+    run(clean, 2000); // charge ran out by itself
+    expect(clean.phase).toBe('stall');
+    expect(clean.crashed).toBe(false);
+    run(clean, 650);
+    expect(clean.phase).toBe('cruise'); // the plain 600ms stall
+  });
+
+  it('crashed resets for the next charge', () => {
+    const c = new ChargeCycle(T);
+    run(c, 1500);
+    run(c, 200, { inRange: true, blocked: true });
+    expect(c.crashed).toBe(true);
+    run(c, 3000); // through stall, cruise, telegraph into the next charge
+    expect(c.crashed).toBe(false);
+  });
+
   it('treats a huge frame delta as a hiccup, not a skipped phase', () => {
     const c = new ChargeCycle(T);
     expect(c.update(60_000, { inRange: true })).toBeNull(); // clamped to 100ms: still cruising

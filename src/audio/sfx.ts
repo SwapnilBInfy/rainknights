@@ -152,6 +152,13 @@ export const SFX = {
     tone(ctx, out, { t, dur: 0.3, freq: 130, slideTo: 90, voice: 'saw', vol: 0.06, release: 0.1 });
   },
 
+  /** A vehicle slams into something: a crunch and a low thud. */
+  crash(ctx: BaseAudioContext, out: AudioNode, t: number) {
+    noiseHit(ctx, out, { t, dur: 0.22, vol: 0.3, filter: 'bandpass', freq: 900, sweepTo: 200, q: 0.7, attack: 0.005 });
+    noiseHit(ctx, out, { t: t + 0.01, dur: 0.12, vol: 0.18, filter: 'highpass', freq: 3500, q: 0.5 });
+    tone(ctx, out, { t, dur: 0.28, freq: 110, slideTo: 40, voice: 'sine', vol: 0.22, release: 0.1 });
+  },
+
   /** Stepping into water: a short splash. */
   splash(ctx: BaseAudioContext, out: AudioNode, t: number) {
     noiseHit(ctx, out, { t, dur: 0.16, vol: 0.13, filter: 'bandpass', freq: 1400, sweepTo: 500, q: 0.8, attack: 0.01 });

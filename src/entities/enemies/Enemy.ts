@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { EnemyStats } from '../../config/constants';
 import { FONT } from '../../ui/Window';
 import { StatusSet, type ApplyResult, type StatusId } from '../../systems/status';
+import type { TerrainField } from '../../systems/Terrain';
 
 const STATUS_TINT: Partial<Record<StatusId, number>> = {
   frozen: 0xa0e8ff,
@@ -30,6 +31,8 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   /** Set by the scene from the tile underfoot: wading slows (< 1), ice makes it slide (grip < 1). */
   terrainSpeed = 1;
   grip = 1;
+  /** The map, for enemies that care about walls and streets. Set by the scene on spawn. */
+  terrain: TerrainField | null = null;
   private tintKey = '';
   /** A yellow "!" over the head while an attack is being wound up. */
   private alertMark: Phaser.GameObjects.Text | null = null;
@@ -62,6 +65,11 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
       this.alertMark?.destroy();
       this.alertMark = null;
     });
+  }
+
+  /** Speed multiplier for driving on a road or off it (vehicles are faster on streets). */
+  roadSpeed(_onRoad: boolean): number {
+    return 1;
   }
 
   /** Damage dealt on contact; a charging vehicle hits harder than a cruising one. */

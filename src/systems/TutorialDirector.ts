@@ -63,6 +63,8 @@ export class TutorialDirector {
   private wetClock = 0;
   private doneArmedMs = 0;
   private gemCheckMs = 0;
+  /** How long the cab has gone without winding up. */
+  private cabIdleMs = 0;
 
   constructor(private readonly host: TutorialHost) {}
 
@@ -140,6 +142,7 @@ export class TutorialDirector {
     this.lastCabPhase = '';
     this.doneArmedMs = 0;
     this.gemCheckMs = 0;
+    this.cabIdleMs = 0;
 
     switch (step.id) {
       case 'swing':
@@ -246,6 +249,16 @@ export class TutorialDirector {
       case 'dodge':
       case 'strike':
         this.watchCab(s);
+        // Never leave the step waiting on a cab that will not charge: bring in a fresh one.
+        if (this.stepId === 'dodge' && this.cab?.active) {
+          const phase = this.cab.debugPhase;
+          this.cabIdleMs = phase === 'cruise' ? this.cabIdleMs + dt : 0;
+          if (this.cabIdleMs > 9000) {
+            this.cab.destroy();
+            this.cab = null; // watchCab spawns a new one next frame
+            this.cabIdleMs = 0;
+          }
+        }
         break;
       case 'wet': {
         if (!this.dummy?.active) {

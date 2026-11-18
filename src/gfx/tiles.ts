@@ -4,7 +4,9 @@ import { TILE } from '../config/constants';
 /**
  * GBA-style 16x16 terrain tiles, painted pixel by pixel from a per-region
  * theme. One strip texture, in the order of `TileType` (systems/mapGen.ts):
- * groundA, groundB, path, water, rock, shallow, ice, building, bridge.
+ * groundA, groundB, path, water, rock, shallow, ice, building, bridge, tree, car, prop.
+ * Edges, curbs, lane markings, rails, roofs' parapets and wall faces, and the props themselves are painted on
+ * top by the decor layer (gfx/decor.ts), so these tiles stay plain and seamless.
  */
 export interface TerrainTheme {
   style: 'pavement' | 'sand';
@@ -50,7 +52,7 @@ function rng(seed: number) {
 
 export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: TerrainTheme) {
   if (scene.textures.exists(key)) return;
-  const tex = scene.textures.createCanvas(key, TILE * 9, TILE)!;
+  const tex = scene.textures.createCanvas(key, TILE * 12, TILE)!;
   const ctx = tex.getContext();
 
   const put = (tile: number, x: number, y: number, c: number) => {
@@ -92,11 +94,9 @@ export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: 
   const path = (tile: number) => {
     fill(tile, theme.pathA);
     if (theme.style === 'pavement') {
-      // asphalt with a dashed lane marking
-      for (const x of [1, 2, 3, 4, 5, 9, 10, 11, 12, 13]) {
-        put(tile, x, 7, theme.pathB);
-        put(tile, x, 8, theme.pathB);
-      }
+      // asphalt: plain, with a little grit (the lane markings are painted by the decor layer)
+      const rand = rng(61);
+      for (let i = 0; i < 10; i++) put(tile, Math.floor(rand() * TILE), Math.floor(rand() * TILE), shade(theme.pathA, i % 2 ? 0.08 : -0.1));
     } else {
       // boardwalk planks
       for (let y = 0; y < TILE; y++) {
@@ -145,54 +145,30 @@ export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: 
     for (const [x, y] of [[12, 4], [3, 9], [10, 13]]) put(tile, x, y, shade(theme.water, -0.15));
   };
 
-  // Ice: pale, glossy, with cracks.
+  // Ice: pale and glossy (the edges and cracks are painted by the decor layer).
   const ice = (tile: number) => {
+    const rand = rng(71);
     fill(tile, 0xcdeaf7);
-    for (let i = 0; i < TILE; i++) {
-      put(tile, i, 0, 0xa6d0e6);
-      put(tile, 0, i, 0xa6d0e6);
-    }
-    for (const [x, y] of [[2, 2], [3, 3], [4, 3], [5, 4], [6, 5], [11, 10], [12, 11], [13, 11]]) put(tile, x, y, 0x86b4d2);
-    for (const [x, y] of [[3, 1], [4, 1], [9, 6], [10, 6], [10, 7], [6, 12], [7, 12], [12, 3]]) put(tile, x, y, 0xffffff);
-    for (const [x, y] of [[8, 9], [9, 10], [9, 11], [10, 12]]) put(tile, x, y, 0x9cc6de);
+    for (let i = 0; i < 12; i++) put(tile, Math.floor(rand() * TILE), Math.floor(rand() * TILE), i % 3 ? 0xdff3fc : 0xb4dcee);
+    for (const [x, y] of [[3, 1], [4, 1], [9, 6], [10, 6], [6, 12], [7, 12]]) put(tile, x, y, 0xffffff);
   };
 
-  // A rooftop: tar and gravel, vents, a parapet edge.
+  // A rooftop: seamless tar and gravel (parapets, vents and the wall face are painted by the decor layer).
   const building = (tile: number) => {
+    const rand = rng(83);
     fill(tile, theme.roof);
-    for (let i = 0; i < TILE; i++) {
-      put(tile, i, 0, theme.roofLight);
-      put(tile, 0, i, theme.roofLight);
-      put(tile, i, TILE - 1, theme.roofDark);
-      put(tile, TILE - 1, i, theme.roofDark);
-    }
-    for (let i = 1; i < TILE - 1; i++) {
-      put(tile, i, TILE - 2, shade(theme.roof, -0.12));
-      put(tile, TILE - 2, i, shade(theme.roof, -0.12));
-    }
-    for (let x = 3; x < 6; x++) for (let y = 3; y < 6; y++) put(tile, x, y, theme.roofVent);
-    put(tile, 3, 3, shade(theme.roofVent, 0.25));
-    for (const [x, y] of [[10, 9], [11, 9], [10, 10], [11, 10]]) put(tile, x, y, shade(theme.roof, -0.2));
-    for (const [x, y] of [[9, 3], [12, 6], [6, 11], [13, 12]]) put(tile, x, y, shade(theme.roof, 0.12));
+    for (let i = 0; i < 16; i++) put(tile, Math.floor(rand() * TILE), Math.floor(rand() * TILE), shade(theme.roof, i % 2 ? 0.1 : -0.12));
   };
 
-  // A bridge deck: boards with joints, rails along both edges whichever way it runs.
+  // A bridge deck: smooth boards with a faint seam (the rails are painted by the decor layer).
   const bridge = (tile: number) => {
     const deck = theme.style === 'pavement' ? shade(theme.pathA, 0.1) : theme.pathA;
-    const rail = theme.style === 'pavement' ? 0x383a46 : theme.pathB;
+    const rand = rng(97);
     fill(tile, deck);
-    for (let i = 0; i < TILE; i++) {
-      if (i % 4 === 3) {
-        for (let k = 0; k < TILE; k++) put(tile, i, k, shade(deck, -0.14));
-        for (let k = 0; k < TILE; k++) put(tile, k, i, shade(deck, -0.14));
-      }
-    }
-    for (const [x, y] of [[0, 0], [TILE - 1, 0], [0, TILE - 1], [TILE - 1, TILE - 1]]) put(tile, x, y, rail);
-    for (let i = 0; i < TILE; i += 4) {
-      put(tile, i, 0, rail);
-      put(tile, i, TILE - 1, rail);
-      put(tile, 0, i, rail);
-      put(tile, TILE - 1, i, rail);
+    for (let i = 0; i < 12; i++) put(tile, Math.floor(rand() * TILE), Math.floor(rand() * TILE), shade(deck, i % 2 ? 0.07 : -0.09));
+    for (let k = 0; k < TILE; k++) {
+      put(tile, 7, k, shade(deck, -0.07));
+      put(tile, k, 7, shade(deck, -0.07));
     }
   };
 
@@ -205,6 +181,9 @@ export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: 
   ice(6);
   building(7);
   bridge(8);
+  ground(9, theme.groundA, false, 11); // tree
+  path(10); // car (on the road)
+  ground(11, theme.groundA, false, 11); // lamp, hydrant or umbrella
   tex.refresh();
 }
 

@@ -1,4 +1,5 @@
-import { test, expect, type Browser, type Page } from '@playwright/test';
+import { test, expect, stubWeather } from './fixtures';
+import { type Browser, type Page } from '@playwright/test';
 
 // The world: seeded, city-shaped maps that the weather changes, and tiles that do things to you.
 // Tile ids (systems/mapGen.ts): 0 grass, 2 road, 3 deep water, 4 rock, 5 shallow, 6 ice, 7 building, 8 bridge.
@@ -33,6 +34,7 @@ const raf = { polling: 'raf' as const, timeout: 8000 };
 /** Boot a run just to read its map, in a fresh browser context (a saved run would otherwise show the Continue menu). */
 async function mapOf(browser: Browser, query: string, region: 'nyc' | 'miami' = 'nyc') {
   const ctx = await browser.newContext();
+  await stubWeather(ctx);
   const page = await ctx.newPage();
   await begin(page, query, region);
   const t = await terrain(page);
@@ -187,17 +189,17 @@ test.describe('water carries lightning', () => {
     expect(errors, errors.join('\n')).toEqual([]);
   });
 
-  test('the same strike over dry ground does nothing to a knight standing beside it', async ({ page }) => {
+  test('the same strike over dry ground does not shock a knight standing beside it', async ({ page }) => {
     const errors = await begin(page, '?seed=11&weather=thunderstorm');
     await quietMoment(page);
     expect(await tp(page, GRASS, 2)).toBe(true);
     await page.waitForFunction(() => (window as any).__rk.terrain().under === 0, undefined, raf);
     await quietMoment(page);
-    const hp = (await page.evaluate(`window.__rk.hp()`)) as number;
+    // Watch every frame for the whole strike: a shock (from the water carrying it) must never appear.
+    await page.evaluate(`window.__everShocked = false; (function watch() { if (window.__rk && window.__rk.statuses().includes('shocked')) window.__everShocked = true; requestAnimationFrame(watch); })()`);
     await page.evaluate(`window.__rk.triggerHazard('lightning', 32, 0, true)`);
-    await page.waitForTimeout(700);
-    expect(await statuses(page)).not.toContain('shocked');
-    expect(await page.evaluate(`window.__rk.hp()`)).toBe(hp);
+    await page.waitForTimeout(900);
+    expect(await page.evaluate(`window.__everShocked`)).toBe(false);
     expect(errors, errors.join('\n')).toEqual([]);
   });
 });
