@@ -21,7 +21,12 @@ async function openTutorial(page: Page) {
 const step = (page: Page) => page.evaluate(`window.__rk.tutorialStep()`) as Promise<string | null>;
 const frame = { polling: 'raf' as const, timeout: 20_000 };
 const waitForStep = (page: Page, id: string) =>
-  page.waitForFunction((s) => (window as any).__rk.tutorialStep() === s, id, frame);
+  page.waitForFunction((s) => (window as any).__rk.tutorialStep() === s, id, frame).catch(async (e) => {
+    const state = await page
+      .evaluate(`JSON.stringify({ step: window.__rk.tutorialStep(), hp: window.__rk.hp(), x: Math.round(window.__rk.x()), y: Math.round(window.__rk.y()), types: window.__rk.enemyTypes(), d: window.__rk.enemyDistances().map(Math.round) })`)
+      .catch(() => 'unavailable');
+    throw new Error(`still waiting for step "${id}": ${state}\n${e.message}`);
+  });
 
 /** Steer toward the nearest gem until none are left (or the step has moved on). */
 async function walkToGems(page: Page) {
@@ -33,7 +38,8 @@ async function walkToGems(page: Page) {
       if (!want.has(k) && down.has(k)) await page.keyboard.up(k), down.delete(k);
     }
   };
-  for (let i = 0; i < 400; i++) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
     const info = await page.evaluate(`JSON.stringify({ step: window.__rk.tutorialStep(), x: window.__rk.x(), y: window.__rk.y(), gems: window.__rk.gems() })`);
     const { step: s, x, y, gems } = JSON.parse(info as string) as { step: string; x: number; y: number; gems: number[][] };
     if (s !== 'gems' || gems.length === 0) break;
@@ -129,7 +135,10 @@ test('walks through every step with real input, then returns to the title', asyn
     await page.waitForTimeout(1900);
     await page.keyboard.up(dir);
   }
-  await waitForStep(page, 'done');
+  await waitForStep(page, 'done').catch(async (e) => {
+    const state = await page.evaluate(`JSON.stringify({ step: window.__rk.tutorialStep(), hp: window.__rk.hp(), x: Math.round(window.__rk.x()), y: Math.round(window.__rk.y()), hazards: window.__rk.hazards() })`);
+    throw new Error(`stuck at the storm step: ${state}\n${e.message}`);
+  });
 
   // 10 DONE: Space returns to the title.
   await expect(app).toHaveAttribute('data-prompt', /^10\/10 ALL SET!/);

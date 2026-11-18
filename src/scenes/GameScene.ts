@@ -46,7 +46,7 @@ interface RunBridge {
   /** Live hazard zones, or null when this weather has none. */
   hazards: () => ReturnType<HazardDirector['snapshot']> | null;
   /** Drop a hazard next to the player now (debug / tests). */
-  triggerHazard: (kind: HazardKind, dx?: number, dy?: number) => void;
+  triggerHazard: (kind: HazardKind, dx?: number, dy?: number, instant?: boolean) => void;
   /** Put a status on the player or nearest enemy (debug / tests). */
   applyStatus: (target: 'player' | 'enemy', id: StatusId, ms?: number) => void;
   /** Spawn an enemy a short way from the player (debug / tests). */
@@ -254,7 +254,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       statuses: () => this.player.statuses.list(),
       enemyStatuses: () => this.getActiveEnemies().map((e) => e.statuses.list()),
       hazards: () => this.hazards?.snapshot() ?? null,
-      triggerHazard: (kind, dx = 40, dy = 0) => this.hazards?.trigger(kind, dx, dy),
+      triggerHazard: (kind, dx = 40, dy = 0, instant = false) => this.hazards?.trigger(kind, dx, dy, 'left', instant),
       applyStatus: (target, id, ms = 4000) => {
         if (target === 'player') this.player.applyStatus(id, ms);
         else this.getActiveEnemies()[0]?.applyStatus(id, ms);
@@ -886,12 +886,12 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
           let angle = base;
           for (let k = 0; k < 24; k++) {
             const a = base + (k % 2 === 0 ? 1 : -1) * Math.ceil(k / 2) * 0.26;
-            if (clear(a, 60)) {
+            if (clear(a, 44)) {
               angle = a;
               break;
             }
           }
-          const p = this.openSpot(this.player.x + Math.cos(angle) * 60, this.player.y + Math.sin(angle) * 60);
+          const p = this.openSpot(this.player.x + Math.cos(angle) * 44, this.player.y + Math.sin(angle) * 44);
           this.spawnXpGem(p.x, p.y, 4);
         }
       },
