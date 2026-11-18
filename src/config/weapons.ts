@@ -11,6 +11,8 @@ export interface MeleeStats {
   cooldownMs: number;
   /** Pixels enemies are shoved back on a hit. */
   knockback: number;
+  /** Damage multiplier when this hit shatters a Frozen enemy. */
+  shatterMult: number;
 }
 
 /** Manual energy beam (J / X): a piercing line in the aim direction. */
@@ -24,9 +26,9 @@ export interface BeamStats {
 }
 
 export const MELEE: Record<WeaponType, MeleeStats> = {
-  sword: { reach: 30, arcDeg: 150, damageMult: 2.2, cooldownMs: 380, knockback: 8 },
-  hammer: { reach: 28, arcDeg: 200, damageMult: 3.2, cooldownMs: 640, knockback: 14 },
-  daggers: { reach: 24, arcDeg: 130, damageMult: 1.4, cooldownMs: 230, knockback: 4 },
+  sword: { reach: 30, arcDeg: 150, damageMult: 2.2, cooldownMs: 380, knockback: 8, shatterMult: 2 },
+  hammer: { reach: 28, arcDeg: 200, damageMult: 3.2, cooldownMs: 640, knockback: 14, shatterMult: 3 },
+  daggers: { reach: 24, arcDeg: 130, damageMult: 1.4, cooldownMs: 230, knockback: 4, shatterMult: 1.8 },
 };
 
 export const BEAM: Record<WeaponType, BeamStats> = {

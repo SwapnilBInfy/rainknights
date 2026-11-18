@@ -4,6 +4,7 @@ import type { CharacterDef } from '../config/characters';
 import { chibiKey, type Facing, type WeaponType } from '../gfx/chibi';
 import { weaponKey, SLASH_KEY } from '../gfx/weapons';
 import { audio } from '../audio/engine';
+import { STATUS_TUNING, StatusSet, type ApplyResult, type StatusId } from '../systems/status';
 import type { PlayerSnapshot } from '../save/save';
 
 export interface PowerupLevels {
@@ -43,6 +44,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private facing: Facing = 'down';
   private weapon: Phaser.GameObjects.Image;
   private attackSwingUntil = 0;
+  private hurtFlashMs = 0;
+  private tintKey = '';
+  /** Wet / burning / chilled / frozen / shocked. Frozen holds you still for a moment; shock only slows. */
+  readonly statuses = new StatusSet({ frozenMs: STATUS_TUNING.frozenPlayerMs, shockStuns: false });
   private castUntil = 0;
   private castAngle = 0;
 
@@ -121,14 +126,60 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   get effectiveMoveSpeed(): number {
-    return this.baseMoveSpeed * (1 + 0.2 * this.powerups.gale);
+    return this.baseMoveSpeed * (1 + 0.2 * this.powerups.gale) * this.statuses.speedMult;
   }
 
   preUpdate(time: number, delta: number) {
     super.preUpdate(time, delta);
+    const { burnTicks } = this.statuses.update(delta);
+    for (let i = 0; i < burnTicks; i++) this.takeStatusDamage(1, time);
+    this.hurtFlashMs = Math.max(0, this.hurtFlashMs - delta);
     this.handleMovement(time);
     this.handleAuras(time, delta);
     this.updateWeaponRest(time);
+    this.refreshTint(time);
+  }
+
+  applyStatus(id: StatusId, ms: number): ApplyResult {
+    return this.statuses.apply(id, ms);
+  }
+
+  /** Burn ticks: no invulnerability frames, but a rainbow shield still blocks them. */
+  takeStatusDamage(amount: number, time: number) {
+    if (this.isInvulnerable(time) || this.hp <= 0) return;
+    this.hp -= amount;
+    audio.play('burn');
+    this.hurtFlashMs = 60;
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.onDied?.();
+    }
+  }
+
+  /** One place decides the tint so statuses never fight the red hurt flash. */
+  private refreshTint(time: number) {
+    const s = this.statuses;
+    let key = '';
+    if (this.hurtFlashMs > 0) key = 'hurt';
+    else if (s.has('frozen')) key = 'frozen';
+    else if (s.has('shocked')) key = Math.floor(time / 90) % 2 === 0 ? 'shock-a' : 'shock-b';
+    else if (s.has('burning')) key = Math.floor(time / 120) % 2 === 0 ? 'burn-a' : 'burn-b';
+    else if (s.has('chilled')) key = 'chilled';
+    else if (s.has('wet')) key = 'wet';
+    if (key === this.tintKey) return;
+    this.tintKey = key;
+    const tints: Record<string, number> = {
+      frozen: 0xa0e8ff,
+      'shock-a': 0xffff80,
+      'shock-b': 0xffffff,
+      'burn-a': 0xff9040,
+      'burn-b': 0xffd070,
+      chilled: 0xc8ecff,
+      wet: 0x9ac0ff,
+    };
+    if (key === '') this.clearTint();
+    else if (key === 'hurt') this.setTintFill(0xff4040);
+    else this.setTint(tints[key]);
   }
 
   private facingFor(dx: number, dy: number): { facing: Facing; flip: boolean } {
@@ -203,8 +254,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       (right ? 1 : 0) - (left ? 1 : 0),
       (down ? 1 : 0) - (up ? 1 : 0)
     );
-    const moving = dir.lengthSq() > 0;
-    if (moving) {
+    const wantsMove = dir.lengthSq() > 0;
+    const moving = wantsMove && !this.statuses.stunned;
+    if (wantsMove) {
       dir.normalize();
       this.aim.copy(dir);
       if (time >= this.attackSwingUntil) this.face(dir.x, dir.y);
@@ -268,10 +320,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.hp -= amount;
     audio.play('hurt');
     this.invulnerableUntil = time + 500;
-    this.setTintFill(0xff4040);
-    this.scene.time.delayedCall(120, () => {
-      if (this.active) this.clearTint();
-    });
+    this.hurtFlashMs = 120;
     if (this.hp <= 0) {
       this.hp = 0;
       this.onDied?.();

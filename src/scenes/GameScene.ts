@@ -11,6 +11,10 @@ import type { Enemy } from '../entities/enemies/Enemy';
 import type { TornadoBoss } from '../entities/enemies/TornadoBoss';
 import { createEnemy } from '../entities/enemies/factory';
 import { WeatherDirector, type WeatherHost } from '../systems/WeatherDirector';
+import { HazardDirector } from '../systems/HazardDirector';
+import { resolveHit, STATUS_TUNING, type DamageKind, type StatusId } from '../systems/status';
+import { hazardsEnabled, ruleFor, type HazardKind, type WeatherRule } from '../config/weatherRules';
+import { FONT } from '../ui/Window';
 import { LevelUpSystem } from '../systems/LevelUpSystem';
 import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/PowerupSystem';
 import { buildTerrain, type TerrainResult } from '../systems/Terrain';
@@ -34,6 +38,18 @@ interface RunBridge {
   hp: () => number;
   characterId: () => string;
   regionId: () => string;
+  /** Player status ids, e.g. ['wet','shocked']. */
+  statuses: () => StatusId[];
+  /** Status ids of every living enemy, nearest first. */
+  enemyStatuses: () => StatusId[][];
+  /** Live hazard zones, or null when this weather has none. */
+  hazards: () => ReturnType<HazardDirector['snapshot']> | null;
+  /** Drop a hazard next to the player now (debug / tests). */
+  triggerHazard: (kind: HazardKind, dx?: number, dy?: number) => void;
+  /** Put a status on the player or nearest enemy (debug / tests). */
+  applyStatus: (target: 'player' | 'enemy', id: StatusId, ms?: number) => void;
+  /** Spawn an enemy a short way from the player (debug / tests). */
+  spawnEnemy: (type: string, dx?: number, dy?: number) => void;
 }
 
 declare global {
@@ -80,6 +96,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private runWeatherCondition = 'clear';
   private runWeatherTint = 0x8fe0ff;
   private runStartFront = 0;
+  private rule: WeatherRule = ruleFor('clear');
+  private hazards: HazardDirector | null = null;
+  private wetClock = 0;
 
   constructor() {
     super('GameScene');
@@ -93,6 +112,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.ended = false;
     this.boss = null;
     this.bossSummonEvent = null;
+    this.hazards = null;
+    this.wetClock = 0;
 
     const resume = data.resume ? loadGame().run : null;
     const character = getCharacter(resume?.characterId ?? data.characterId);
@@ -103,6 +124,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.runWeatherCondition = resume?.weatherCondition ?? data.weatherCondition ?? 'clear';
     this.runWeatherTint = resume?.weatherTint ?? data.weatherTint ?? 0x8fe0ff;
     this.runStartFront = resume?.startFrontIndex ?? data.startFrontIndex ?? 0;
+    this.rule = ruleFor(this.runWeatherCondition);
 
     this.physics.world.setBounds(0, 0, WORLD.width, WORLD.height);
     this.terrain = buildTerrain(this, region);
@@ -165,6 +187,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       hp: () => this.player.hp,
       characterId: () => this.runCharacterId,
       regionId: () => this.runRegionId,
+      statuses: () => this.player.statuses.list(),
+      enemyStatuses: () => this.getActiveEnemies().map((e) => e.statuses.list()),
+      hazards: () => this.hazards?.snapshot() ?? null,
+      triggerHazard: (kind, dx = 40, dy = 0) => this.hazards?.trigger(kind, dx, dy),
+      applyStatus: (target, id, ms = 4000) => {
+        if (target === 'player') this.player.applyStatus(id, ms);
+        else this.getActiveEnemies()[0]?.applyStatus(id, ms);
+      },
+      spawnEnemy: (type, dx = 50, dy = 0) => this.spawnEnemyAt(type, this.player.x + dx, this.player.y + dy),
     };
     window.__rk = bridge;
     this.detachPause = bindGameplayPause({
@@ -195,6 +226,26 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (resume?.bossHp != null) this.spawnBoss(resume.bossHp);
 
     this.setupAmbientWeather(this.runWeatherTint);
+    if (hazardsEnabled() && this.rule.hazards.length > 0) {
+      this.hazards = new HazardDirector(
+        {
+          scene: this,
+          player: this.player,
+          enemies: () => this.getActiveEnemies(),
+          isOpenGround: (x, y) => {
+            const tile = this.terrain.layer.getTileAtWorldXY(x, y);
+            return !!tile && !tile.collides;
+          },
+          frontIndex: () => this.weather.currentFrontIndex,
+          hurtEnemy: (enemy, damage, kind) => this.damageEnemy(enemy, damage, kind),
+          popup: (x, y, text, color) => this.popup(x, y, text, color),
+        },
+        this.rule
+      );
+    }
+    if (this.rule.hint && !(resume && resume.pendingLevelUps > 0)) {
+      this.time.delayedCall(6000, () => this.showWeatherHint());
+    }
     this.checkpoint();
 
     this.events.once('shutdown', () => {
@@ -203,6 +254,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.detachTouch?.();
       this.detachTouch = null;
       if (window.__rk === bridge) delete window.__rk;
+      this.hazards?.destroy();
+      this.hazards = null;
       this.hud.destroy();
       this.levelUpSystem.close();
       audio.setMuffled(false);
@@ -228,6 +281,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
     this.weather.update(delta);
     this.updateAmbientWeather(delta);
+    this.updateWeatherEffects(delta);
     this.updateGems();
     applyFrostAura(this.player, this.getActiveEnemies());
     this.updatePull();
@@ -235,6 +289,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.handleAttack(time);
 
     this.hud.update(this.player, this.weather.elapsedSeconds, this.weather.frontName, delta, this.player.beamCharge(time));
+    this.hud.setStatuses(this.player.statuses.list());
     this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1);
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
       this.lastFrontIndex = this.weather.currentFrontIndex;
@@ -251,9 +306,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const dist = Phaser.Math.Between(130, 180);
     const x = Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 20, WORLD.width - 20);
     const y = Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 20, WORLD.height - 20);
+    this.spawnEnemyAt(typeKey, x, y);
+  }
+
+  private spawnEnemyAt(typeKey: string, x: number, y: number) {
     const enemy = createEnemy(this, typeKey, x, y, this.player);
     enemy.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(enemy);
+    if (this.rule.wet) enemy.applyStatus('wet', STATUS_TUNING.wetMs);
   }
 
   spawnBoss(remainingHp?: number) {
@@ -301,9 +361,22 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   };
 
   /** Damage from any source; also feeds Static Charge chaining. */
-  private damageEnemy(enemy: Enemy, damage: number) {
+  private damageEnemy(enemy: Enemy, damage: number, kind: DamageKind = 'bolt', shatterMult = 1) {
     audio.play('hit');
+    const hit = resolveHit(kind, enemy.statuses, damage, shatterMult);
+    damage = hit.damage;
     enemy.takeDamage(damage);
+    if (enemy.active && hit.shockMs > 0) {
+      const result = enemy.applyStatus('shocked', hit.shockMs);
+      if (result.applied) {
+        audio.play('zap');
+        if (hit.wetShock) this.popup(enemy.x, enemy.y - 12, 'SHOCK', '#d8a800');
+      }
+    }
+    if (hit.shattered) {
+      audio.play('shatter');
+      this.popup(enemy.x, enemy.y - 12, 'SHATTER', '#58a8e0');
+    }
     if (this.player.powerups.staticCharge > 0) {
       applyStaticChain(
         this,
@@ -388,7 +461,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       const cos = dist > 0.001 ? (dx * p.aim.x + dy * p.aim.y) / dist : 1;
       if (dist > radius + 6 && cos < cosHalf) continue; // point-blank enemies are always hit
 
-      this.damageEnemy(enemy, damage);
+      this.damageEnemy(enemy, damage, 'melee', stats.shatterMult);
       if (enemy.active && dist > 0.001) {
         const shove = enemy === this.boss ? stats.knockback * 0.25 : stats.knockback;
         enemy.x += (dx / dist) * shove;
@@ -420,7 +493,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       const dist = Math.hypot(enemy.x - (ox + abx * t), enemy.y - (oy + aby * t));
       const radius = (enemy.body as Phaser.Physics.Arcade.Body).halfWidth;
       if (dist > stats.halfWidth + radius) continue;
-      this.damageEnemy(enemy, damage); // the beam pierces everything in line
+      this.damageEnemy(enemy, damage, 'beam'); // the beam pierces everything in line
       this.hitSpark(enemy.x, enemy.y);
     }
 
@@ -636,6 +709,45 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     };
     recordRunResult(data);
     this.time.delayedCall(400, () => this.scene.start('GameOverScene', data));
+  }
+
+  // --- status effects and weather hazards ---
+
+  private showWeatherHint() {
+    if (this.ended || this.paused || !this.rule.hint) return;
+    this.hud.showMessage(this.rule.hint);
+  }
+
+  /** Small rising label for reactions (SHOCK, SHATTER, STEAM...). */
+  private popup(x: number, y: number, text: string, color: string) {
+    const label = this.add
+      .text(Math.round(x), Math.round(y), text, { fontFamily: FONT, fontSize: '8px', color, stroke: '#101018', strokeThickness: 2 })
+      .setOrigin(0.5, 1)
+      .setDepth(40);
+    this.tweens.add({ targets: label, y: label.y - 12, alpha: 0, duration: 650, delay: 150, onComplete: () => label.destroy() });
+  }
+
+  private updateWeatherEffects(delta: number) {
+    if (this.rule.wet) {
+      // Rain keeps everyone soaked; re-apply once a second so it never runs out.
+      this.wetClock += Math.min(delta, STATUS_TUNING.maxStepMs);
+      if (this.wetClock >= 1000) {
+        this.wetClock = 0;
+        this.player.applyStatus('wet', STATUS_TUNING.wetMs);
+        for (const enemy of this.getActiveEnemies()) enemy.applyStatus('wet', STATUS_TUNING.wetMs);
+      }
+    }
+    if (!this.hazards) return;
+    this.hazards.update(delta);
+    const push = this.hazards.gustPush;
+    if (push.x === 0 && push.y === 0) return;
+    // A position nudge (like melee knockback): velocities are rewritten every
+    // preUpdate, so adding to them here would be lost before physics runs.
+    const dt = Math.min(delta, STATUS_TUNING.maxStepMs) / 1000;
+    for (const obj of [this.player, ...this.getActiveEnemies()]) {
+      obj.x += push.x * dt;
+      obj.y += push.y * dt;
+    }
   }
 
   // --- ambient weather ---
