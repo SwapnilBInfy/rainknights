@@ -6,6 +6,8 @@ import { TEX } from '../gfx/spriteDefs';
 import { getCharacter } from '../config/characters';
 import { getRegion, type RegionDef } from '../config/regions';
 import { drawFlightPad } from '../gfx/flight';
+import { finaleBuff, runEnded as storyRunEnded, runObjective } from '../story/story';
+import { STRIKE, strikeHits, strikeSpots } from '../systems/regent';
 import { onPad, padCenterFor, PAD_SIZE, stepPadCharge } from '../systems/flightPad';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
@@ -29,7 +31,7 @@ import { replayHeldKeys } from '../input/keys';
 import { attackHint, beamKeyLabel, rollHint, rollKeyLabel } from '../input/prompts';
 import { isTouchControlsActive, onTouchControlsChange } from '../input/touchControls';
 import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
-import { clearRun, loadGame, recordRunResult, resetGameSave, saveRun, writeProfile } from '../save/save';
+import { clearRun, loadGame, loadStory, recordRunResult, resetGameSave, saveRun, writeProfile, writeStory } from '../save/save';
 import { DEFEAT_HP_FRACTION, battleGear, collect, consumable, lootFor, spendItem, townMaxHp } from '../economy/economy';
 import { ListMenu } from '../ui/listMenu';
 
@@ -85,6 +87,10 @@ interface RunBridge {
   gems: () => number[][];
   /** Defeat the nearest living enemy (debug / tests). */
   killNearest: () => void;
+  /** Defeat the boss, if one is on the field; how many times the Regent has called lightning; its phase (debug / tests). */
+  killBoss: () => void;
+  lightningCasts: () => number;
+  regentPhase: () => number;
   /** The map: its seed, tile counts, flood level and what is under the knight. */
   terrain: () => { seed: number; floodRings: number; counts: Record<string, number>; under: number; grip: number; speed: number; decorOps: number; decorDraws: number };
   /** Raise the flood to this many rings now (debug / tests). */
@@ -198,6 +204,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private padGfx: Phaser.GameObjects.Graphics | null = null;
   private padCharge = 0;
   private padHinted = 0;
+  private finaleBuffText = '';
+  private castCount = 0;
   private wasWet = false;
   private runDrips = 0;
   private bagMenu: ListMenu | null = null;
@@ -259,9 +267,20 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     } else if (!data.tutorial) {
       const town = loadGame().town;
       this.player.applyBattleGear(battleGear(this.runCharacterId, town.armorId, town.hp));
+      // The finale: the shards on the altar, the Stormglass restored, make the knight tougher and sharper.
+      if (region.id === 'stormhold') {
+        const buff = finaleBuff(loadStory());
+        if (buff.hp > 0) {
+          this.player.maxHp += buff.hp;
+          this.player.hp += buff.hp;
+          this.player.attackDamage = Math.round(this.player.attackDamage * (1 + buff.damage));
+          this.finaleBuffText = `The Stormglass hums:\n+${buff.hp} HP, +${Math.round(buff.damage * 100)}% damage.`;
+        }
+      }
     }
     this.player.onDied = () => this.endRun(false);
     this.padCharge = 0;
+    this.castCount = 0;
     this.padHinted = -1e9;
     this.padGfx = data.tutorial ? null : this.add.graphics().setDepth(0.6);
     this.player.onLevelUp = () => this.pauseForLevelUp();
@@ -313,12 +332,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1);
 
-    this.weather = new WeatherDirector(this, resume ? 0 : (data.startFrontIndex ?? 0), region.signature);
+    this.weather = new WeatherDirector(this, resume ? 0 : (data.startFrontIndex ?? 0), region.signature, region.bossAt);
     if (resume) this.weather.restoreClock(resume.elapsedSeconds, resume.bossHp != null);
 
     audio.playMusic(region.music);
     audio.setAmbience(resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
     this.hud = new HUD(this);
+    this.hud.setObjective(data.tutorial ? '' : runObjective(loadStory(), region.id));
     this.levelUpSystem = new LevelUpSystem(this);
     this.detachTouch = onTouchControlsChange((touch) => {
       this.hud.setBeamKeyLabel(beamKeyLabel(touch));
@@ -368,6 +388,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         const target = this.findNearestEnemy(9999);
         if (target) target.takeDamage(99999);
       },
+      killBoss: () => {
+        if (this.boss?.active) this.boss.takeDamage(99999);
+      },
+      lightningCasts: () => this.castCount,
+      regentPhase: () => (this.boss as unknown as { phase?: number } | null)?.phase ?? -1,
       terrain: () => {
         const body = this.player.body as Phaser.Physics.Arcade.Body;
         return {
@@ -630,7 +655,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   spawnBoss(remainingHp?: number) {
-    const angle = Math.random() * Math.PI * 2;
+    // The Regent arrives from above (the boss bar and the message box fill the bottom of the screen), so its entrance is seen.
+    const angle = this.region.boss === 'tempestRegent' ? -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.8 : Math.random() * Math.PI * 2;
     const dist = BOSS_SPAWN_DISTANCE[this.region.boss] ?? 170;
     let spot = this.openSpot(Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50), Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50));
     if (this.region.boss === 'phantomBus') spot = this.terrain.field.roadSpotNear(spot.x, spot.y, 8) ?? spot;
@@ -646,11 +672,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       audio.play('bossAppears');
       this.cameras.main.shake(260, 0.004);
       this.hud.showMessage(`The ${boss.stats.name} is enraged!\nIt calls for backup!`);
+      if (boss.stats.key === 'tempestRegent') for (let i = 0; i < 3; i++) this.spawnEnemyAroundPlayer('lightningWisp');
     });
+    boss.on('regentCast', (_regent: Enemy, strikes: number) => this.castLightning(strikes));
     this.enemyGroup.add(boss);
     this.boss = boss;
     if (remainingHp != null) boss.hp = Math.min(boss.maxHp, remainingHp);
     else if (this.region.bossIntro) this.hud.showMessage(this.region.bossIntro);
+    if (!remainingHp && this.finaleBuffText) this.time.delayedCall(2800, () => this.hud.showMessage(this.finaleBuffText));
 
     const summon = BOSS_SUMMONS[boss.stats.key];
     if (summon) {
@@ -1059,6 +1088,33 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.paused = false;
   }
 
+  /** The Regent calls lightning: rings on the ground where it will land, then the strikes. The first is on the knight. */
+  private castLightning(strikes: number) {
+    if (this.ended || !this.player?.active) return;
+    this.castCount += 1;
+    audio.play('thunder');
+    for (const spot of strikeSpots(this.player, strikes, Math.random)) {
+      const ring = this.add.graphics().setDepth(6);
+      const draw = (alpha: number, fill: number) => {
+        ring.clear();
+        ring.fillStyle(fill, alpha * 0.45).fillCircle(spot.x, spot.y, STRIKE.radius);
+        ring.lineStyle(2, 0xfff06a, Math.min(1, alpha + 0.3)).strokeCircle(spot.x, spot.y, STRIKE.radius);
+      };
+      draw(0.35, 0xb070ff);
+      this.tweens.addCounter({ from: 0.35, to: 0.9, duration: STRIKE.telegraphMs, onUpdate: (t) => ring.active && draw(t.getValue() ?? 0.5, 0xb070ff) });
+      this.time.delayedCall(STRIKE.telegraphMs, () => {
+        if (!ring.active) return;
+        ring.clear();
+        ring.fillStyle(0xffffff, 0.9).fillCircle(spot.x, spot.y, STRIKE.radius + 4);
+        ring.fillStyle(0xfff06a, 0.9).fillRect(spot.x - 2, spot.y - 90, 4, 90);
+        this.time.delayedCall(140, () => ring.destroy());
+        if (this.ended || !this.player?.active) return;
+        this.cameras.main.shake(110, 0.003);
+        if (strikeHits(spot, this.player)) this.player.takeDamage(STRIKE.damage, this.time.now);
+      });
+    }
+  }
+
   /** The blue pad on the plaza: stand still on it and the ring fills; full, and the knight flies out. */
   private updateFlightPad(time: number, delta: number) {
     if (!this.padGfx) return;
@@ -1179,7 +1235,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const ratio = this.player.maxHp > 0 ? Math.max(0, this.player.hp) / this.player.maxHp : 0;
     const townHp = won ? Math.max(1, Math.round(max * ratio)) : Math.max(1, Math.round(max * DEFEAT_HP_FRACTION));
     recordRunResult(data, townHp);
-    this.time.delayedCall(400, () => this.scene.start('GameOverScene', { ...data, drips: this.runDrips }));
+    // Story mode: a win in the right city recovers a shard; a win at the Eye ends the story.
+    const outcome = storyRunEnded(loadStory(), this.region.id, won);
+    if (outcome.state !== loadStory()) writeStory(outcome.state);
+    this.time.delayedCall(400, () => this.scene.start('GameOverScene', { ...data, drips: this.runDrips, story: outcome.messages }));
   }
 
   private openBag() {

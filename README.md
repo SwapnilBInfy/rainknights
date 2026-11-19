@@ -40,7 +40,7 @@ Keyboard, the on-screen buttons on a touch screen, and a gamepad Start button.
 
 | Input | What it does |
 | ----- | ------------ |
-| Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. On the city screen, Up/Down (or W/S, A/D) moves down the list, Enter picks, and 1-5 pick a city directly. |
+| Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. In Mistford, Q opens the story journal (once the story has begun). On the city screen, Up/Down (or W/S, A/D) moves down the list, Enter picks, and 1-5 pick a city directly. |
 | Space | Swing (hold). Also confirms menus, starts a run, and continues from game over. |
 | J or X | Energy beam (hold). |
 | Shift or K | Dodge roll: a quick tumble in the direction you are moving (or facing). You cannot be hit mid-roll. |
@@ -395,6 +395,52 @@ the atmosphere). The knight is a point on the unit sphere with a direction of tr
 flat-map edge cases. That maths and the continent outlines are in `src/systems/worldMap.ts` (no Phaser, unit-tested:
 every city must sit on land, a flight along the equator covers a great circle, over a pole comes out the other side, and
 round the world comes back to the start). The pad's rules are in `src/systems/flightPad.ts`.
+
+### Story mode: The Long Rain
+
+Press **G** on the title (or click `G: STORY MODE`) to begin. It sits on top of the game you already have: Mistford,
+the runs and the flight map are the same, with objectives, people and a finale added. A game that never chooses the
+story looks exactly as it did before. Your progress is saved (an optional `story` in the save document, so older saves
+need no migration) and the title then reads `G: CONTINUE STORY`.
+
+**The story.** Mistford has been under rain for a hundred days and the weathervane on the plaza has frozen, its arrow
+aimed at the empty sea. The **Stormglass**, which kept the world's weather in balance, has shattered; its shards fell
+on five cities. Old Marrow, the keeper of the vane, asks the Rain Knight to bring them home to the altar. At the end
+the knight flies to the **Eye**, a storm island in the Pacific, to face the **Tempest Regent**: Sir Aurel, the first Rain
+Knight, who tried to hold all the weather in one storm and has been hiding in it since.
+
+| Stage | Objectives |
+| --- | --- |
+| 1. The Stuck Vane | Talk to Pia, examine the weathervane, speak with Marrow |
+| 2. The Gray Shard | Win a run in New York (the Phantom Bus), place the shard on the altar, speak with Marrow |
+| 3. The Far Storms | Win in **two** of London, Tokyo and Mumbai, place both shards, talk to Brent (he gives three Rain Buns) |
+| 4. The Amber Sun | Win in Miami (the Tornado), place the shard (the fourth restores the Stormglass), speak with Marrow |
+| 5. The Eye of the Storm | Talk to Quill, fly to the Eye, defeat the Tempest Regent |
+
+**People and things.** Pia, Brent, **Marrow** and **Quill** (a courier who turns up at the flight pad once the Stormglass
+is whole); the **weathervane** (frozen at first, it trembles as the shards wake and spins free at the end) and the
+**Stormglass altar** (four sockets that light with each shard); and the five **shards**, one per city
+(Gray, Mist, Neon, Tide, Amber). A shard is recovered by winning a run in the city the current stage wants; a win
+elsewhere is just a win, and the game-over screen says so.
+
+**Following it.** `Q` in Mistford opens the **journal** (the stage, its objectives with ticks and counters, and the
+shards). The next thing to do is always shown along the bottom of the screen in Mistford, in runs ("WIN HERE: GRAY SHARD")
+and on the flight map, where the stars the story wants are **marked in gold** (a bobbing arrow and a ring on the radar,
+and Mistford itself when something waits there). Completing a stage plays a short story card; the prologue, the Stormglass
+being restored, and the ending have their own.
+
+**The finale.** Quill marks the Eye on your map; fly there and land. Stormhold is a story-only place (it is not in the city
+list) and the Regent arrives after 50 seconds, from above. Every shard on the altar makes the knight stronger for this
+fight (+10 HP and +6% damage each). The Regent drifts after you and calls lightning: a ring shows where each strike
+will land, the first always on you, then it hits. It has three phases, below two thirds and below a third of its health,
+each faster, casting sooner and calling more strikes (2, 3, 4), and it calls for backup at each change. When it falls
+the story ends, **the rain stops in Mistford** (no rain, a warm light, the weathervane spins) and the people have new
+things to say.
+
+The story's rules are in `src/story/story.ts` (no Phaser): the stages and objectives, every line of dialogue, the
+cutscenes, and the functions the game calls when something happens (`interact`, `runEnded`, `landed`). `test/story.test.ts`
+plays the whole story from start to ending and checks that every line fits the screen. The Regent's phases and
+lightning are in `src/systems/regent.ts`; Mistford's props and journal are in `src/town/storyTown.ts`.
 
 ### City enemies and bosses
 

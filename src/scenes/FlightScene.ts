@@ -12,8 +12,9 @@ import {
   OUTLINE_W,
   OUTLINE_CELL,
 } from '../gfx/flight';
-import { loadGame } from '../save/save';
-import { fetchRegionWeather, type RegionWeatherState } from '../systems/WeatherService';
+import { loadGame, loadStory, writeStory } from '../save/save';
+import { CONDITION_PRESETS, fetchRegionWeather, type RegionWeatherState } from '../systems/WeatherService';
+import { finaleUnlocked, flightTargets, landed, trackerText } from '../story/story';
 import { runStartData } from '../systems/runStart';
 import { textStyle } from '../ui/Window';
 import { drawWeatherIcon, WEATHER_SHORT } from '../ui/weatherIcons';
@@ -77,6 +78,8 @@ interface FlightBridge {
   frames: () => number;
   landing: () => boolean;
   weatherReady: () => number;
+  /** The stars the story marks as "go here". */
+  targets: () => string[];
   teleportTo: (id: string, alt?: number) => void;
 }
 
@@ -94,6 +97,7 @@ declare global {
 export class FlightScene extends Phaser.Scene {
   private characterId = 'rainKnight';
   private stars: Star[] = [];
+  private targets = new Set<string>();
   private state!: FlightState;
   private ground!: GroundRenderer;
   private knight!: Phaser.GameObjects.Sprite;
@@ -122,7 +126,10 @@ export class FlightScene extends Phaser.Scene {
 
   create(data: { from?: string } = {}) {
     this.characterId = loadGame().town.characterId;
-    this.stars = starsFor(REGIONS);
+    // The cities, and (in the story, once Quill has marked it) the Eye of the storm
+    const story = loadStory();
+    this.stars = starsFor(REGIONS.filter((r) => !r.story || (r.id === 'stormhold' && finaleUnlocked(story))));
+    this.targets = new Set(flightTargets(story));
     this.frames = 0;
     this.flying = 0;
     this.isLanding = false;
@@ -164,6 +171,12 @@ export class FlightScene extends Phaser.Scene {
     this.add.image(MINI.x, MINI.y, FLIGHT_TEX.outline).setOrigin(0, 0).setDepth(38).setAlpha(0.9);
     this.plate = this.add.graphics().setDepth(41);
     this.plateText = this.add.text(VIEW_W / 2, 6, '', { ...textStyle('#ffffff'), stroke: '#14121f', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(42);
+    this.add.text(VIEW_W / 2, 19, story.started ? `* ${trackerText(story)}` : '', { ...textStyle('#ffe9a0'), stroke: '#14121f', strokeThickness: 3 }).setOrigin(0.5, 0).setDepth(42);
+    const objApp = document.getElementById('app');
+    if (objApp) {
+      if (story.started) objApp.dataset.objective = trackerText(story);
+      else delete objApp.dataset.objective;
+    }
     this.bar = this.add.graphics().setDepth(44);
     this.drawBar();
 
@@ -192,7 +205,7 @@ export class FlightScene extends Phaser.Scene {
       alive = false;
       if (window.__flight === bridge) delete window.__flight;
     });
-    for (const region of REGIONS) {
+    for (const region of REGIONS.filter((r) => !r.story)) {
       void fetchRegionWeather(region).then((w) => {
         if (alive) this.weather.set(region.id, w);
       });
@@ -209,6 +222,7 @@ export class FlightScene extends Phaser.Scene {
       frames: () => this.frames,
       landing: () => this.isLanding,
       weatherReady: () => this.weather.size,
+      targets: () => [...this.targets],
       teleportTo: (id, alt = ALT_MIN) => {
         const star = this.stars.find((st) => st.id === id);
         if (star) this.state = { ...this.state, p: star.v, f: faceToward(star.v, add(star.v, this.state.f)), alt, speed: 0 };
@@ -335,6 +349,13 @@ export class FlightScene extends Phaser.Scene {
         const r = Math.round(7 * size + 1.5 * Math.sin(time / 120));
         this.overlay.lineStyle(1, 0xffffff, 0.9).strokeRect(Math.round(base.sx - r), Math.round(base.sy - r / 3), r * 2, Math.round((r * 2) / 3));
       }
+      if (this.targets.has(star.id)) {
+        // the story's "go here": a bobbing gold arrow over the star
+        const ax = Math.round(top.sx);
+        const ay = Math.round(top.sy - 12 * size - 12 + Math.sin(time / 180) * 2);
+        this.overlay.fillStyle(0x14121f, 1).fillTriangle(ax - 6, ay - 1, ax + 6, ay - 1, ax, ay + 8);
+        this.overlay.fillStyle(0xffd84a, 1).fillTriangle(ax - 4, ay, ax + 4, ay, ax, ay + 6);
+      }
       const w = this.weather.get(star.id);
       if (w && top.depth < 0.9) drawWeatherIcon(this.overlay, Math.round(top.sx) - 4, Math.round(top.sy - 7 * size - 10), w.condition);
     }
@@ -365,6 +386,7 @@ export class FlightScene extends Phaser.Scene {
       const py = Math.round(cy + p.y * (r - 2));
       g.fillStyle(0x14121f, 1).fillRect(px - 2, py - 2, 5, 5);
       g.fillStyle(colour, p.far ? 0.6 : 1).fillRect(px - 1, py - 1, 3, 3);
+      if (this.targets.has(star.id)) g.lineStyle(1, 0xffd84a, 1).strokeRect(px - 3.5, py - 3.5, 7, 7);
     }
     // the knight: a small arrow at the centre, always pointing up
     g.fillStyle(0xffffff, 1);
@@ -456,6 +478,14 @@ export class FlightScene extends Phaser.Scene {
         return;
       }
       const region = this.regionOf(star)!;
+      if (region.story) {
+        // landing at the Eye begins the finale, under a thunderstorm of its own
+        const next = landed(loadStory(), region.id);
+        writeStory(next);
+        const storm: RegionWeatherState = { ...CONDITION_PRESETS.thunderstorm, temp: 18, source: 'fallback' };
+        this.scene.start('GameScene', runStartData(this.characterId, region, storm));
+        return;
+      }
       this.scene.start('GameScene', runStartData(this.characterId, region, this.weather.get(region.id)));
     });
   }

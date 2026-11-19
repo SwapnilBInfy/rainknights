@@ -97,7 +97,27 @@ export const MUMBAI_TERRAIN: TerrainTheme = {
   roofVent: 0x58b8a0,
 };
 
+/** Stormhold: dark storm-stone and indigo water, with a spark of yellow in the roofs. */
+export const STORMHOLD_TERRAIN: TerrainTheme = {
+  style: 'sand',
+  groundA: 0x5a5470,
+  groundB: 0x514b68,
+  pathA: 0x2e2a40,
+  pathB: 0x8a7ad0,
+  water: 0x2a2f6a,
+  waterLight: 0x5a68b8,
+  waterDark: 0x14183c,
+  rock: 0x403a58,
+  rockLight: 0x6a6490,
+  rockDark: 0x1e1a30,
+  roof: 0x3a3460,
+  roofLight: 0x6a58b0,
+  roofDark: 0x1a1630,
+  roofVent: 0xfff06a,
+};
+
 export const TERRAIN_THEMES: Record<string, TerrainTheme> = {
+  stormhold: STORMHOLD_TERRAIN,
   nyc: NYC_TERRAIN,
   miami: MIAMI_TERRAIN,
   london: LONDON_TERRAIN,
@@ -237,7 +257,34 @@ export const DECOR_MUMBAI: DecorPalette = {
   leaf: 0x2e9a48,
 };
 
+export const DECOR_STORMHOLD: DecorPalette = {
+  ...DECOR_COMMON,
+  curb: 0x6a6490,
+  curbShade: 0x1e1a30,
+  lane: 0xa890f0,
+  parapetLight: 0x8a7ad0,
+  parapetDark: 0x24204a,
+  wallFace: 0x453a7a,
+  wallShade: 0x24204a,
+  window: 0x2a2f6a,
+  windowLit: 0xfff06a,
+  carBody: 0x453a7a,
+  carBody2: 0x453a7a,
+  carBody3: 0x453a7a,
+  umbrellaA: 0xb070ff,
+  umbrellaB: 0xffe8a0,
+  railDark: 0x2a2450,
+  railLight: 0x8a7ad0,
+  trunk: 0x3a2a48,
+  frond: 0x5a48a0,
+  frondLight: 0x9a88e8,
+  leaf: 0x5a48a0,
+  leafLight: 0x9a88e8,
+  leafDark: 0x2a2060,
+};
+
 export const DECOR_PALETTES: Record<string, DecorPalette> = {
+  stormhold: DECOR_STORMHOLD,
   nyc: DECOR_NYC,
   miami: DECOR_MIAMI,
   london: DECOR_LONDON,

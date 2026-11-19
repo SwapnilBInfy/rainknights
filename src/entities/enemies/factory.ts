@@ -6,6 +6,7 @@ import { DasherEnemy } from './DasherEnemy';
 import { TornadoBoss } from './TornadoBoss';
 import { CabWraithEnemy } from './CabWraithEnemy';
 import { PhantomBusBoss } from './PhantomBusBoss';
+import { TempestRegent } from './TempestRegent';
 import { TrainingDummy } from './TrainingDummy';
 import type { Enemy } from './Enemy';
 
@@ -28,6 +29,8 @@ export function createEnemy(
       return new CabWraithEnemy(scene, x, y, stats, target);
     case 'phantomBus':
       return new PhantomBusBoss(scene, x, y, stats, target);
+    case 'tempestRegent':
+      return new TempestRegent(scene, x, y, stats, target);
     case 'tornadoBoss':
       return new TornadoBoss(scene, x, y, stats, target);
     default:

@@ -7,6 +7,8 @@ import { generateWeaponTextures } from './weapons';
 import { CHARACTERS } from '../config/characters';
 import { generateTerrainTileset, generateRainTexture } from './tiles';
 import { generateEmblem } from './emblems';
+import { generateRegentTexture } from './regent';
+import { generateAltarTexture, generateVaneTexture, STORY_TEX } from './storyProps';
 import { generateSignTexture, generateVillagerTexture } from './townFolk';
 import { generateFurnitureTextures } from './furniture';
 import { REGIONS } from '../config/regions';
@@ -21,6 +23,7 @@ export const TEX = {
   tornadoBoss: 'tornadoBoss',
   cabWraith: 'cabWraith',
   phantomBus: 'phantomBus',
+  tempestRegent: 'tempestRegent',
   trainingDummy: 'trainingDummy',
   xpGem: 'xpGem',
   coin: 'coin',
@@ -90,6 +93,7 @@ export async function generateAllTextures(scene: Phaser.Scene, afterBatch?: () =
 
   generateCabWraithTexture(scene, TEX.cabWraith);
   generatePhantomBusTexture(scene, TEX.phantomBus);
+  generateRegentTexture(scene, TEX.tempestRegent);
   generateTrainingDummyTexture(scene, TEX.trainingDummy);
 
   generateBlobTexture(scene, TEX.xpGem, { radius: 2.4, shape: 'diamond', ...P.XP_GEM }, 1);
@@ -98,6 +102,10 @@ export async function generateAllTextures(scene: Phaser.Scene, afterBatch?: () =
   generateVillagerTexture(scene, TEX.villagerBlue, 0x3060c8, 0x4a3020);
   generateVillagerTexture(scene, TEX.villagerGreen, 0x2e8a48, 0x6a4a28);
   generateSignTexture(scene, TEX.signpost);
+  generateVaneTexture(scene, STORY_TEX.vane);
+  generateAltarTexture(scene, STORY_TEX.altar);
+  generateVillagerTexture(scene, STORY_TEX.marrow, 0x6a6a9a, 0xe8e8f0);
+  generateVillagerTexture(scene, STORY_TEX.quill, 0xe87830, 0x3a2a18);
   generateFurnitureTextures(scene);
   generateBlobTexture(scene, TEX.projectile, { radius: 2, shape: 'diamond', ...P.PROJECTILE }, 1);
   await pause();

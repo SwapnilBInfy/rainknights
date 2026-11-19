@@ -39,6 +39,8 @@ export class HUD {
 
   private prompt: Phaser.GameObjects.Container | null = null;
   private promptKey = '';
+  private objective: Phaser.GameObjects.Container | null = null;
+  private objectiveText = '';
   private message: Phaser.GameObjects.Container | null = null;
   private messageTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -213,6 +215,24 @@ export class HUD {
     g.fillRect(x + 1, 105, Math.round((w - 2) * pct), 4);
   }
 
+  /** A small story line along the bottom ("WIN HERE: GRAY SHARD"); empty text clears it. */
+  setObjective(text: string) {
+    if (text === this.objectiveText) return;
+    this.objectiveText = text;
+    this.objective?.destroy();
+    this.objective = null;
+    const app = document.getElementById('app');
+    if (app) {
+      if (text) app.dataset.objective = text;
+      else delete app.dataset.objective;
+    }
+    if (!text) return;
+    const label = this.scene.add.text(7, 148, `* ${text}`, { ...textStyle('#ffe9a0'), stroke: '#14121f', strokeThickness: 3 });
+    const back = this.scene.add.graphics();
+    back.fillStyle(0x14121f, 0.6).fillRect(3, 146, label.width + 8, 12);
+    this.objective = this.scene.add.container(0, 0, [back, label]).setScrollFactor(0).setDepth(DEPTH);
+  }
+
   /** Pokémon-style bottom message box; replaces any message currently showing. */
   showMessage(text: string, durationMs = 2600) {
     this.message?.destroy();
@@ -238,6 +258,7 @@ export class HUD {
     this.badge?.setVisible(visible);
     this.message?.setVisible(visible);
     this.prompt?.setVisible(visible);
+    this.objective?.setVisible(visible);
   }
 
   destroy() {
@@ -247,8 +268,12 @@ export class HUD {
     this.badge?.destroy();
     this.message?.destroy();
     this.prompt?.destroy();
+    this.objective?.destroy();
     const app = document.getElementById('app');
-    if (app) delete app.dataset.prompt;
+    if (app) {
+      delete app.dataset.prompt;
+      delete app.dataset.objective;
+    }
     this.messageTimer?.remove(false);
   }
 }

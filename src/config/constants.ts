@@ -56,16 +56,18 @@ export const ENEMY_STATS: Record<string, EnemyStats> = {
   tornadoBoss: { key: 'tornadoBoss', name: 'Tornado', hp: 900, speed: 28, damage: 26, xp: 300, contactCooldown: 500, scale: 1, statusResist: 0.25 },
   trainingDummy: { key: 'trainingDummy', name: 'Training Dummy', hp: 60, speed: 0, damage: 0, xp: 5, contactCooldown: 1000, scale: 1 },
   phantomBus: { key: 'phantomBus', name: 'Phantom Bus', hp: 1100, speed: 24, damage: 22, xp: 320, contactCooldown: 600, scale: 1, statusResist: 0.25 },
+  tempestRegent: { key: 'tempestRegent', name: 'Regent', hp: 1500, speed: 30, damage: 24, xp: 600, contactCooldown: 600, scale: 1.6, immune: ['shocked'], statusResist: 0.3 },
 };
 
 /** What each boss calls in on a timer while it is alive (Phaser time, not wall-clock). */
 export const BOSS_SUMMONS: Record<string, { everyMs: number; types: string[]; count: number }> = {
   tornadoBoss: { everyMs: 6000, types: ['hailBrute', 'lightningWisp'], count: 2 },
   phantomBus: { everyMs: 8000, types: ['cabWraith', 'rainImp'], count: 2 },
+  tempestRegent: { everyMs: 7000, types: ['lightningWisp', 'hailBrute', 'windWraith'], count: 2 },
 };
 
 /** How far from the knight a boss arrives. The view is only 240x160, so the bus comes in near the edge to be seen. */
-export const BOSS_SPAWN_DISTANCE: Record<string, number> = { tornadoBoss: 170, phantomBus: 112 };
+export const BOSS_SPAWN_DISTANCE: Record<string, number> = { tornadoBoss: 170, phantomBus: 112, tempestRegent: 100 };
 
 export interface WeatherFront {
   name: string;

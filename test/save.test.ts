@@ -7,9 +7,11 @@ import {
   createSaveStore,
   defaultSave,
   parseStored,
+  serialize,
   type KeyValueStorage,
   type RunSnapshot,
 } from '../src/save/save';
+import { freshStory, interact, startStory } from '../src/story/story';
 
 function memory(): KeyValueStorage & { dump: Map<string, string> } {
   const dump = new Map<string, string>();
@@ -177,6 +179,47 @@ describe('parseStored', () => {
     expect(result.writable).toBe(false);
     expect(result.recovered).toBe(false);
     expect(result.save).toEqual(defaultSave());
+  });
+});
+
+describe('the story in the save', () => {
+  it('is absent in a new save, so older saves and new ones look the same until the story starts', () => {
+    expect(defaultSave().story).toBeUndefined();
+    const parsed = parseStored(serialize(defaultSave()), null);
+    expect(parsed.save.story).toBeUndefined();
+    expect(parsed.recovered).toBe(false);
+  });
+
+  it('round-trips a story in progress', () => {
+    const save = defaultSave();
+    save.story = interact(startStory(freshStory()), 'pia').state;
+    const back = parseStored(serialize(save), null).save;
+    expect(back.story).toEqual(save.story);
+    expect(back.story?.flags).toContain('talk:pia');
+  });
+
+  it('cleans a damaged story without losing the rest of the save', () => {
+    const doc = JSON.parse(serialize(defaultSave()));
+    doc.meta.runs = 4;
+    doc.story = { started: true, stage: 'three', flags: [1, 'talk:pia'], items: ['bogus', 'grayShard'], placed: 5, pending: 'x' };
+    const back = parseStored(JSON.stringify(doc), null);
+    expect(back.recovered).toBe(false);
+    expect(back.save.meta.runs).toBe(4);
+    expect(back.save.story?.started).toBe(true);
+    expect(back.save.story?.stage).toBe(1);
+    expect(back.save.story?.flags).toEqual(['talk:pia']);
+    expect(back.save.story?.items).toEqual(['grayShard']);
+    expect(back.save.story?.placed).toEqual([]);
+  });
+
+  it('is wiped by a reset, like everything else', () => {
+    const store = createSaveStore(memory());
+    store.update((draft) => {
+      draft.story = startStory(freshStory());
+    });
+    expect(store.load().story?.started).toBe(true);
+    store.reset();
+    expect(store.load().story).toBeUndefined();
   });
 });
 

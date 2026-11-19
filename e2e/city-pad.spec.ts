@@ -1,6 +1,6 @@
 import { beginCityRun, test, expect } from './fixtures';
 import { type Page } from '@playwright/test';
-import { REGIONS } from '../src/config/regions';
+import { CITIES as REGIONS } from '../src/config/regions';
 
 // Every city has a blue flight pad on the plaza. Stand still on it until the ring fills and the knight flies out:
 // the run ends as a retreat (HP carries home) and the flight map opens over that city.

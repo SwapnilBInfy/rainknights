@@ -17,6 +17,8 @@ interface GameOverData {
   level: number;
   /** Drips picked up during this run. */
   drips?: number;
+  /** Story mode: what this run did for the story (a shard recovered, the Regent beaten). */
+  story?: string[];
 }
 
 export class GameOverScene extends Phaser.Scene {
@@ -42,9 +44,18 @@ export class GameOverScene extends Phaser.Scene {
     this.add.text(50, 68, `LEVEL    ${data.level}`, textStyle());
     this.add.text(50, 82, `DEFEATED ${data.kills}`, textStyle());
     this.add.text(50, 96, `DRIPS    ${data.drips ?? 0}`, textStyle('#c07800'));
-    this.add.text(50, 110, `BEST     ${clock(loadGame().meta.bestTime)}`, textStyle('#686868'));
+    if (data.story && data.story.length > 0) {
+      // the story's news takes the place of the best time
+      this.add.text(50, 110, data.story[0], textStyle('#c07800'));
+      if (data.story[1]) this.add.text(50, 122, data.story[1], textStyle('#686868'));
+      const app = document.getElementById('app');
+      if (app) app.dataset.storyResult = data.story.join(' | ');
+      this.events.once('shutdown', () => app && delete app.dataset.storyResult);
+    } else {
+      this.add.text(50, 110, `BEST     ${clock(loadGame().meta.bestTime)}`, textStyle('#686868'));
+    }
 
-    const prompt = this.add.text(width / 2, 124, 'PRESS START', textStyle('#c07800')).setOrigin(0.5, 0);
+    const prompt = this.add.text(width / 2, 134, 'PRESS START', textStyle('#c07800')).setOrigin(0.5, 0);
     this.tweens.add({ targets: prompt, alpha: 0, duration: 500, yoyo: true, repeat: -1, hold: 200 });
 
     const restart = () => {

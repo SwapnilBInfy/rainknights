@@ -19,6 +19,10 @@ export interface RegionDef {
   boss: string;
   /** Message shown when the boss arrives (2 lines, 27 chars each). */
   bossIntro?: string;
+  /** Seconds into the run when the boss arrives (default 5:00). */
+  bossAt?: number;
+  /** A place only the story takes you: not in the city list, and not on the flight map until the story marks it. */
+  story?: boolean;
 
   /** How the world is laid out: a street grid, or a coast with an ocean edge. */
   layout: 'city' | 'coast';
@@ -155,7 +159,31 @@ export const REGIONS: RegionDef[] = [
     climate: { kind: 'tropical', stormWindAt: 50, heatAt: 34, humidAt: 78 },
     fallback: { tint: 0x7fc8a8, temp: 30 },
   },
+  {
+    // The finale: a storm island in the Pacific where the Tempest Regent waits. Only the story goes here.
+    id: 'stormhold',
+    name: 'The Eye',
+    shortName: 'The Eye',
+    subtitle: 'The Black Storm',
+    lat: 5,
+    lon: -149.5,
+    emblemKey: 'emblem_stormhold',
+    terrainTilesKey: 'terrainTiles_stormhold',
+    music: 'stormhold',
+    boss: 'tempestRegent',
+    bossIntro: 'The Tempest Regent rises!\nIts storm answers its call.',
+    bossAt: 50,
+    story: true,
+    layout: 'coast',
+    dress: 'beach',
+    tuning: { canals: [1, 1], buildings: 8 },
+    climate: { kind: 'tropical', stormWindAt: 30 },
+    fallback: { tint: 0x2a1f3a, temp: 24 },
+  },
 ];
+
+/** The cities you can pick from the list and fly to; the story's own places are left out. */
+export const CITIES: RegionDef[] = REGIONS.filter((r) => !r.story);
 
 export function getRegion(id: string | undefined): RegionDef {
   return REGIONS.find((r) => r.id === id) ?? REGIONS[0];

@@ -9,3 +9,4 @@ export { GameScene } from './GameScene';
 export { GameOverScene } from './GameOverScene';
 export { OverlayScene } from './OverlayScene';
 export { FlightScene } from './FlightScene';
+export { CutsceneScene } from './CutsceneScene';

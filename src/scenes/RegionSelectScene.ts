@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { REGIONS, type RegionDef } from '../config/regions';
+import { CITIES as REGIONS, type RegionDef } from '../config/regions';
 import { fetchRegionWeather, type RegionWeatherState } from '../systems/WeatherService';
 import { UI } from '../gfx/palette';
 import { drawWindow, textStyle } from '../ui/Window';
@@ -35,6 +35,7 @@ export class RegionSelectScene extends Phaser.Scene {
     let alive = true;
     this.events.once('shutdown', () => {
       alive = false;
+      delete document.getElementById('app')?.dataset.regionSelected;
     });
 
     // The list.
@@ -62,6 +63,8 @@ export class RegionSelectScene extends Phaser.Scene {
       cardName.setText(region.name);
       cardSub.setText(region.subtitle.replace(/^The /, ''));
       cardKey.setText(`Press ${this.selected + 1}`);
+      const app = document.getElementById('app');
+      if (app) app.dataset.regionSelected = region.id;
     };
 
     REGIONS.forEach((region, i) => {
