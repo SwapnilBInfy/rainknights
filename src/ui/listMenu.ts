@@ -11,9 +11,9 @@ export interface MenuRow {
 }
 
 /**
- * A GBA-style list. Arrows / the d-pad move, Space / Enter / A / Start confirm,
- * Esc closes, and 1-9 pick a row. Touch A is Space and Start is Enter, so the
- * same menu works with the on-screen buttons.
+ * A GBA-style list. Arrows, WASD, the touch stick, and a gamepad d-pad move it.
+ * Holding a direction repeats. Space / Enter / A / Start confirm, Esc / B closes,
+ * and 1-9 pick a row. The scene calls `pump` every frame; that is the only path.
  */
 export class ListMenu {
   private root: Phaser.GameObjects.Container | null = null;
@@ -28,6 +28,17 @@ export class ListMenu {
   private onPick: (id: string) => void = () => {};
   private onClose: () => void = () => {};
   private onMove: (id: string) => void = () => {};
+  private listening = false;
+  private pendingDir = 0;
+  private pendingConfirm = false;
+  private pendingClose = false;
+  private pendingPick = 0;
+  private repeatDir = 0;
+  private repeatAt = 0;
+  private blockUp = false;
+  private blockDown = false;
+  private padConfirmWas = false;
+  private padBackWas = false;
   isOpen = false;
 
   constructor(private readonly scene: Phaser.Scene) {}
@@ -48,10 +59,17 @@ export class ListMenu {
     this.titleValue = opts.titleValue ?? '';
     this.index = 0;
     this.isOpen = true;
-    // Drop keys that were held to walk up to this counter, or their keyup gets lost and the knight keeps going.
-    this.scene.input.keyboard?.resetKeys();
+    this.pendingDir = 0;
+    this.pendingConfirm = false;
+    this.pendingClose = false;
+    this.pendingPick = 0;
+    this.repeatDir = 0;
+    this.repeatAt = 0;
+    // A direction still held from walking up to the counter must not spin the list.
+    this.blockUp = this.upHeld();
+    this.blockDown = this.downHeld();
     this.render(opts.title, opts.rows, opts.hint ?? '');
-    window.addEventListener('keydown', this.onKey, true);
+    this.listen();
     this.onMove(this.rows[0]?.id ?? '');
   }
 
@@ -72,14 +90,83 @@ export class ListMenu {
   hide() {
     if (!this.isOpen && !this.root) return;
     this.isOpen = false;
-    window.removeEventListener('keydown', this.onKey, true);
+    this.silence();
+    this.pendingDir = 0;
+    this.pendingConfirm = false;
+    this.pendingClose = false;
+    this.pendingPick = 0;
+    this.repeatDir = 0;
     this.root?.destroy(true);
     this.root = null;
     this.labels = [];
     this.cursor = null;
     this.hintText = null;
     this.digits = null;
+    // A key still held to scroll the list should not walk the knight out of the shop.
     this.scene.input.keyboard?.resetKeys();
+  }
+
+  /**
+   * One input path for the keyboard, the touch stick, and a gamepad.
+   * Call this from the scene update. Taps are remembered from Phaser's keydown
+   * (so a press and release in the same frame still counts) and a held direction
+   * repeats on a timer, the way a GBA menu does.
+   */
+  pump(time: number) {
+    if (!this.isOpen) return;
+    const pad = this.readPad();
+    if (pad.confirmEdge) this.pendingConfirm = true;
+    if (pad.backEdge) this.pendingClose = true;
+
+    if (this.pendingClose) {
+      this.pendingClose = false;
+      this.pendingConfirm = false;
+      this.pendingDir = 0;
+      this.pendingPick = 0;
+      this.onClose();
+      return;
+    }
+    if (this.pendingPick) {
+      const n = this.pendingPick - 1;
+      this.pendingPick = 0;
+      this.pendingConfirm = false;
+      if (n >= 0 && n < this.rows.length) {
+        this.index = n;
+        this.paint();
+        this.confirm();
+      }
+      return;
+    }
+
+    if (!this.upHeld()) this.blockUp = false;
+    if (!this.downHeld()) this.blockDown = false;
+
+    let dir = 0;
+    if (this.pendingDir === -1 && !this.blockUp) dir = -1;
+    else if (this.pendingDir === 1 && !this.blockDown) dir = 1;
+    else if (this.pendingDir === 0) {
+      const up = (this.upHeld() && !this.blockUp) || pad.up;
+      const down = (this.downHeld() && !this.blockDown) || pad.down;
+      if (up && !down) dir = -1;
+      else if (down && !up) dir = 1;
+    }
+    this.pendingDir = 0;
+
+    if (dir === 0) this.repeatDir = 0;
+    else if (dir !== this.repeatDir) {
+      this.repeatDir = dir;
+      this.repeatAt = time + 520;
+      this.step(dir);
+    } else if (time >= this.repeatAt) {
+      this.step(dir);
+      this.repeatAt = time + 150;
+    }
+
+    // A down-then-confirm that lands in the same frame should buy the row you moved to.
+    if (this.isOpen && this.pendingConfirm) {
+      this.pendingConfirm = false;
+      this.confirm();
+    }
   }
 
   private render(title: string, rows: MenuRow[], hint: string) {
@@ -135,29 +222,60 @@ export class ListMenu {
     }
   }
 
-  private onKey = (event: KeyboardEvent) => {
-    // Keyup must reach Phaser. Swallowing it left the walk key stuck down, so the knight
-    // kept marching into the counter after the menu closed and the town looked frozen.
-    // A keyup of Space was also treated as a confirm, so opening the shop bought on release.
-    if (!this.isOpen || event.type !== 'keydown') return;
+  private listen() {
+    const kb = this.scene.input.keyboard;
+    if (!kb || this.listening) return;
+    kb.on('keydown', this.onPhaserKey);
+    this.listening = true;
+  }
+
+  private silence() {
+    if (!this.listening) return;
+    this.scene.input.keyboard?.off('keydown', this.onPhaserKey);
+    this.listening = false;
+  }
+
+  private onPhaserKey = (event: KeyboardEvent) => {
+    if (!this.isOpen || event.repeat) return;
     const key = event.key.toLowerCase();
-    if (key === 'arrowup' || key === 'arrowdown' || key === ' ' || key === 'enter') event.preventDefault();
-    // Keep the key from also leaving the building. Keyup is not listened for, so Phaser still hears the release.
-    event.stopPropagation();
-    if (event.repeat && (key === 'enter' || key === ' ' || key === 'z')) return;
-    if (key === 'arrowup' || key === 'w') this.step(-1);
-    else if (key === 'arrowdown' || key === 's') this.step(1);
-    else if (key === 'escape' || key === 'p') this.onClose();
-    else if (key === 'enter' || key === ' ' || key === 'z') this.confirm();
-    else if (key >= '1' && key <= '9') {
-      const n = Number(key) - 1;
-      if (n < this.rows.length) {
-        this.index = n;
-        this.paint();
-        this.confirm();
-      }
-    }
+    if (key === 'arrowup' || key === 'w') this.pendingDir = -1;
+    else if (key === 'arrowdown' || key === 's') this.pendingDir = 1;
+    else if (key === 'escape' || key === 'p') this.pendingClose = true;
+    else if (key === 'enter' || key === ' ' || key === 'z') this.pendingConfirm = true;
+    else if (key >= '1' && key <= '9') this.pendingPick = Number(key);
   };
+
+  private upHeld() {
+    const kb = this.scene.input.keyboard;
+    if (!kb) return false;
+    return !!(kb.addKey('UP').isDown || kb.addKey('W').isDown);
+  }
+
+  private downHeld() {
+    const kb = this.scene.input.keyboard;
+    if (!kb) return false;
+    return !!(kb.addKey('DOWN').isDown || kb.addKey('S').isDown);
+  }
+
+  private readPad() {
+    let up = false;
+    let down = false;
+    let confirm = false;
+    let back = false;
+    const pads = typeof navigator !== 'undefined' ? navigator.getGamepads?.() ?? [] : [];
+    for (const pad of pads) {
+      if (!pad) continue;
+      up = up || !!pad.buttons[12]?.pressed || (pad.axes[1] ?? 0) < -0.5;
+      down = down || !!pad.buttons[13]?.pressed || (pad.axes[1] ?? 0) > 0.5;
+      confirm = confirm || !!pad.buttons[0]?.pressed;
+      back = back || !!pad.buttons[1]?.pressed;
+    }
+    const confirmEdge = confirm && !this.padConfirmWas;
+    const backEdge = back && !this.padBackWas;
+    this.padConfirmWas = confirm;
+    this.padBackWas = back;
+    return { up, down, confirmEdge, backEdge };
+  }
 
   private step(delta: number) {
     const next = (this.index + delta + this.rows.length) % this.rows.length;

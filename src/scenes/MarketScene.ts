@@ -66,8 +66,9 @@ export class MarketScene extends Phaser.Scene {
     this.publish();
   }
 
-  update() {
+  update(time: number) {
     this.frames += 1;
+    this.menu.pump(time);
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked && sameCell(cellOf(this.avatar.x, this.avatar.y), MARKET.door)) {
       this.leaving = true;

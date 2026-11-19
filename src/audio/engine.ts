@@ -39,7 +39,12 @@ class AudioEngine {
     if (!this.ctx) this.build();
     const ctx = this.ctx!;
     if (ctx.state !== 'running') {
-      void ctx.resume().then(() => this.onRunning());
+      void ctx.resume().then(
+        () => this.onRunning(),
+        () => {
+          /* This browser has no audio device. The game still runs. */
+        }
+      );
     } else {
       this.onRunning();
     }

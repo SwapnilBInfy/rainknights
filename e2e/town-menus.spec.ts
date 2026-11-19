@@ -184,12 +184,14 @@ test('market and chest open and close without freezing, and items move', async (
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-shop', 'open');
   await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(80);
   await page.keyboard.press('Space');
   await expect
     .poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('rainknights:save') ?? '{}').town.stash.rainBun))
     .toBe(1);
   await expect(app).toHaveAttribute('data-bag', '');
   await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(80);
   await page.keyboard.press('Space');
   await expect
     .poll(async () => page.evaluate(() => JSON.parse(localStorage.getItem('rainknights:save') ?? '{}').town.bag.rainBun))

@@ -257,7 +257,7 @@ walks you back. After a victory or a defeat, PRESS START returns you home.
 | Place | What you can do |
 | ----- | --------------- |
 | Your house (west) | The **bed** restores HP. The **chest** holds spare food. The **mirror** changes which knight you are. The **rack** swaps armor you own. |
-| The market (east) | Buy food and armor with **Drips**. Stand at the counter and press Space (or A). |
+| The market (east) | Buy food and armor with **Drips**. Stand at the counter and press Space (or A). Arrows, WASD, a held d-pad, or a gamepad move the list. |
 | The street | Two neighbours and a sign. Walk up and press Space (or A). |
 
 The screen stays mostly the map. A short HP bar sits in the top-left and
