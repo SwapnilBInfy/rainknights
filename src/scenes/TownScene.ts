@@ -107,8 +107,9 @@ export class TownScene extends Phaser.Scene {
     this.publish();
   }
 
-  update(_time: number, delta: number) {
+  update(time: number, delta: number) {
     this.frames += 1;
+    this.menu.pump(time);
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked) this.stepOn();
     this.interact = this.nearestTalk()?.id ?? '';
