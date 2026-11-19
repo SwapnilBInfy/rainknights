@@ -258,7 +258,14 @@ walks you back. After a victory or a defeat, PRESS START returns you home.
 | ----- | --------------- |
 | Your house (west) | The **bed** restores HP. The **chest** holds spare food. The **mirror** changes which knight you are. The **rack** swaps armor you own. |
 | The market (east) | Buy food and armor with **Drips**. Stand at the counter and press Space (or A). |
-| The street | Two neighbours and a sign. Space talks. |
+| The street | Two neighbours and a sign. Walk up and press Space (or A). |
+
+The screen stays mostly the map. A short HP bar sits in the top-left and
+the drips count (drawn as pixels, so an 8 is not an S) sits in the
+top-right. The place name fades in when you arrive, then goes away. A
+small A bubble appears over a door, neighbour, or piece of furniture only
+while you are close enough to use it. **I** opens the bag: HP, armor, and
+what you are carrying.
 
 A new knight finds 20 drips in a jar — one Rain Bun, not a suit of armor.
 Enemies drop drips (and, sometimes, food). Bosses drop more, plus a Sun

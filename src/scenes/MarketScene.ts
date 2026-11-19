@@ -1,9 +1,8 @@
 import Phaser from 'phaser';
 import { TEX } from '../gfx/spriteDefs';
 import { audio } from '../audio/engine';
-import { drawWindow, textStyle } from '../ui/Window';
 import { ListMenu } from '../ui/listMenu';
-import { onTouchControlsChange } from '../input/touchControls';
+import { HubChrome } from '../ui/hubChrome';
 import { loadGame, writeProfile } from '../save/save';
 import { bagLabel, buy, buyFailText, shopRows, townMaxHp } from '../economy/economy';
 import { Avatar } from '../town/avatar';
@@ -19,8 +18,8 @@ export class MarketScene extends Phaser.Scene {
   private leaving = false;
   private interact = '';
   private shopItem = '';
-  private hudText!: Phaser.GameObjects.Text;
-  private hint!: Phaser.GameObjects.Text;
+  private chrome!: HubChrome;
+  private frames = 0;
 
   constructor() {
     super('MarketScene');
@@ -30,6 +29,7 @@ export class MarketScene extends Phaser.Scene {
     this.leaving = false;
     this.interact = '';
     this.shopItem = '';
+    this.frames = 0;
     const profile = loadGame().town;
     const at = cellCenter(MARKET.spawn);
     this.cameras.main.setBackgroundColor('#2a2018');
@@ -42,21 +42,21 @@ export class MarketScene extends Phaser.Scene {
 
     const keeper = cellCenter(MARKET.keeper);
     this.add.image(keeper.x, keeper.y, TEX.villagerBlue).setDepth(8);
-    this.add.text(120, 28, 'MARKET', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5).setDepth(4);
-
-    this.hudText = this.add.text(8, 6, '', { ...textStyle('#383838'), lineSpacing: 3 }).setScrollFactor(0).setDepth(120);
-    this.hint = this.add.text(120, 154, '', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(120);
-    drawWindow(this, 2, 2, 112, 42).setScrollFactor(0).setDepth(110);
+    this.chrome = new HubChrome(this, 'MARKET');
 
     audio.playMusic('town');
     audio.setAmbience('rain');
-    const detach = onTouchControlsChange(() => this.paintHint());
-    this.paintHint();
-    const bridge = { x: () => this.avatar.x, y: () => this.avatar.y, place: () => 'market' };
+    const bridge = {
+      x: () => this.avatar.x,
+      y: () => this.avatar.y,
+      place: () => 'market',
+      frames: () => this.frames,
+      keys: () => this.heldKeys(),
+    };
     window.__hub = bridge;
     window.addEventListener('keydown', this.onKey);
     this.events.once('shutdown', () => {
-      detach();
+      this.chrome.destroy();
       this.menu.hide();
       this.speech.hide();
       window.removeEventListener('keydown', this.onKey);
@@ -67,6 +67,7 @@ export class MarketScene extends Phaser.Scene {
   }
 
   update() {
+    this.frames += 1;
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked && sameCell(cellOf(this.avatar.x, this.avatar.y), MARKET.door)) {
       this.leaving = true;
@@ -79,8 +80,14 @@ export class MarketScene extends Phaser.Scene {
     this.publish();
   }
 
+  private heldKeys() {
+    const keys = this.input.keyboard?.keys ?? [];
+    const down = (code: number) => !!keys[code]?.isDown;
+    return { up: down(38), down: down(40), left: down(37), right: down(39) };
+  }
+
   private onKey = (event: KeyboardEvent) => {
-    if (this.leaving || this.menu.isOpen) return;
+    if (event.type !== 'keydown' || this.leaving || this.menu.isOpen) return;
     const key = event.key.toLowerCase();
     if (event.repeat && (key === ' ' || key === 'enter' || key === 'z')) return;
     if (this.speech.open && (key === ' ' || key === 'enter' || key === 'z' || key === 'escape')) {
@@ -92,8 +99,29 @@ export class MarketScene extends Phaser.Scene {
       this.scene.start('TownScene', { at: 'shop' });
       return;
     }
-    if ((key === ' ' || key === 'enter' || key === 'z') && this.interact === 'shop') this.openShop();
+    if (key === 'i') this.openStatus();
+    else if ((key === ' ' || key === 'enter' || key === 'z') && this.interact === 'shop') this.openShop();
   };
+
+  private openStatus() {
+    const profile = loadGame().town;
+    const max = townMaxHp(profile.characterId, profile.armorId);
+    this.menu.show({
+      title: 'BAG',
+      titleValue: String(profile.coins),
+      rows: [
+        { id: 'hp', label: 'HP', value: String(profile.hp) },
+        { id: 'max', label: 'MAX', value: String(max) },
+        { id: 'worn', label: profile.armorId ? `WORN ${profile.armorId.toUpperCase()}` : 'NO ARMOR' },
+        { id: 'close', label: 'CLOSE' },
+      ],
+      hint: 'Drips, health, armor.',
+      onPick: (id) => {
+        if (id === 'close') this.menu.hide();
+      },
+      onClose: () => this.menu.hide(),
+    });
+  }
 
   private openShop() {
     this.avatar.locked = true;
@@ -101,7 +129,8 @@ export class MarketScene extends Phaser.Scene {
     const rows = shopRows(profile);
     this.shopItem = rows[0]?.id ?? '';
     this.menu.show({
-      title: `${profile.coins} DRIPS`,
+      title: 'DRIPS',
+      titleValue: String(profile.coins),
       rows,
       hint: rows[0]?.blurb ?? '',
       onMove: (id) => {
@@ -127,7 +156,7 @@ export class MarketScene extends Phaser.Scene {
         audio.play('confirm');
         const nextRows = shopRows(result.profile);
         const blurb = nextRows.find((entry) => entry.id === id)?.blurb ?? 'Bought.';
-        this.menu.refresh(`${result.profile.coins} DRIPS`, nextRows, `Bought. ${blurb}`);
+        this.menu.refresh('DRIPS', nextRows, `Bought. ${blurb}`, String(result.profile.coins));
         this.publish();
       },
       onClose: () => {
@@ -139,16 +168,14 @@ export class MarketScene extends Phaser.Scene {
     this.publish();
   }
 
-  private paintHint() {
-    const touch = document.documentElement.dataset.touchControls === '1';
-    const verb = this.interact === 'shop' ? 'SHOP' : 'MOVE';
-    this.hint.setText(touch ? `STICK MOVE   A ${verb}` : `ARROWS MOVE  SPACE ${verb}`);
-  }
-
   private publish() {
     const profile = loadGame().town;
     const max = townMaxHp(profile.characterId, profile.armorId);
-    this.hudText.setText(`MARKET\n${profile.coins} DRIPS\nHP ${profile.hp}/${max}`);
+    this.chrome.setStats(profile.hp, max, profile.coins);
+    if (this.interact === 'shop') {
+      const at = cellCenter({ col: Math.round(this.avatar.x / 16), row: MARKET.counterRow - 1 });
+      this.chrome.setBubble({ x: at.x, y: at.y });
+    } else this.chrome.setBubble(null);
     publishHub({
       place: 'market',
       coins: profile.coins,
@@ -161,6 +188,5 @@ export class MarketScene extends Phaser.Scene {
       shopItem: this.shopItem,
       dialog: this.speech.open ? 'open' : '',
     });
-    this.paintHint();
   }
 }

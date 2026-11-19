@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { Player } from '../entities/Player';
 import { UI } from '../gfx/palette';
 import { drawWindow, textStyle } from './Window';
+import { drawDigits } from './digits';
 import { drawWeatherIcon, WEATHER_SHORT } from './weatherIcons';
 import { drawStatusIcon } from './statusIcons';
 import type { StatusId } from '../systems/status';
@@ -9,9 +10,10 @@ import type { StatusId } from '../systems/status';
 const DEPTH = 100;
 
 /**
- * GBA-Pokémon-style in-canvas HUD, authored in native 240x160 pixels:
- * boxed status panel (level, timer, HP bar, XP bar) top-left, a weather
- * condition badge top-right, a boss HP bar, and a bottom message box.
+ * Slim battle readout along the top of the 240×160 screen: level, timer,
+ * a short HP bar with a pixel HP count, a thin XP line, and the J/K gauges.
+ * Weather is a one-line chip on the right. Touch controls live in the
+ * lower corners, so none of this sits down there.
  */
 export class HUD {
   private scene: Phaser.Scene;
@@ -20,7 +22,6 @@ export class HUD {
   private bars: Phaser.GameObjects.Graphics;
   private lvText: Phaser.GameObjects.Text;
   private timeText: Phaser.GameObjects.Text;
-  private hpText: Phaser.GameObjects.Text;
   private beamKeyText: Phaser.GameObjects.Text;
   private rollKeyText: Phaser.GameObjects.Text;
 
@@ -46,13 +47,10 @@ export class HUD {
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
 
-    this.add(drawWindow(scene, 2, 2, 100, 54));
-    this.lvText = this.text(7, 6, 'Lv1');
-    this.timeText = this.text(97, 6, '00:00').setOrigin(1, 0);
-    this.text(7, 18, 'HP', '#c07800');
-    this.hpText = this.text(97, 26, '', '#383838').setOrigin(1, 0);
-    this.beamKeyText = this.text(7, 45, 'J', '#3078d8');
-    this.rollKeyText = this.text(60, 45, 'K', '#28a038');
+    this.lvText = this.text(2, 1, 'Lv1');
+    this.timeText = this.text(30, 1, '00:00');
+    this.beamKeyText = this.text(72, 11, 'J', '#3078d8');
+    this.rollKeyText = this.text(104, 11, 'K', '#28a038');
     this.bars = this.add(scene.add.graphics());
     this.statusGfx = this.add(scene.add.graphics());
 
@@ -81,41 +79,38 @@ export class HUD {
     const m = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
     const s = Math.floor(elapsedSeconds % 60).toString().padStart(2, '0');
     this.timeText.setText(`${m}:${s}`);
-    this.hpText.setText(`${Math.ceil(player.hp)}/${player.maxHp}`);
 
     const g = this.bars;
     g.clear();
     const pct = Phaser.Math.Clamp(this.displayHp / player.maxHp, 0, 1);
-    g.fillStyle(UI.ink, 1);
-    g.fillRect(26, 17, 72, 8);
+    g.fillStyle(0x14121f, 0.85);
+    g.fillRect(1, 10, 68, 6);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(27, 18, 70, 6);
+    g.fillRect(2, 11, 66, 4);
     g.fillStyle(pct > 0.5 ? UI.hpGreen : pct > 0.2 ? UI.hpYellow : UI.hpRed, 1);
-    g.fillRect(27, 18, Math.round(70 * pct), 6);
+    g.fillRect(2, 11, Math.round(66 * pct), 4);
+    const hpLabel = String(Math.ceil(this.displayHp));
+    g.fillStyle(0x14121f, 0.8);
+    g.fillRect(1, 17, hpLabel.length * 4 + 1, 7);
+    drawDigits(g, 2, 18, hpLabel, 0xf8f8f0);
 
     const xpPct = Phaser.Math.Clamp(player.xp / player.xpToNext, 0, 1);
-    g.fillStyle(UI.ink, 1);
-    g.fillRect(6, 36, 92, 5);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(7, 37, 90, 3);
+    g.fillRect(36, 18, 32, 2);
     g.fillStyle(UI.xpBlue, 1);
-    g.fillRect(7, 37, Math.round(90 * xpPct), 3);
+    g.fillRect(36, 18, Math.round(32 * xpPct), 2);
 
     // energy beam recharge gauge (J / X on a keyboard, B on the touch cluster)
-    g.fillStyle(UI.ink, 1);
-    g.fillRect(17, 45, 40, 7);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(18, 46, 38, 5);
+    g.fillRect(80, 14, 20, 3);
     g.fillStyle(beamCharge >= 1 ? 0x60e0ff : 0x3078a8, 1);
-    g.fillRect(18, 46, Math.round(38 * beamCharge), 5);
+    g.fillRect(80, 14, Math.round(20 * beamCharge), 3);
 
     // dodge roll recharge gauge (K / Shift on a keyboard, R on the touch cluster)
-    g.fillStyle(UI.ink, 1);
-    g.fillRect(70, 45, 28, 7);
     g.fillStyle(UI.hpTrack, 1);
-    g.fillRect(71, 46, 26, 5);
+    g.fillRect(112, 14, 16, 3);
     g.fillStyle(rollCharge >= 1 ? 0x58e078 : 0x2a7a48, 1);
-    g.fillRect(71, 46, Math.round(26 * rollCharge), 5);
+    g.fillRect(112, 14, Math.round(16 * rollCharge), 3);
 
     if (frontName !== this.frontName) {
       this.frontName = frontName;
@@ -151,7 +146,7 @@ export class HUD {
     if (key === this.statusKey) return;
     this.statusKey = key;
     this.statusGfx.clear();
-    ids.forEach((id, i) => drawStatusIcon(this.statusGfx, 4 + i * 11, 59, id));
+    ids.forEach((id, i) => drawStatusIcon(this.statusGfx, 4 + i * 11, 26, id));
     const app = document.getElementById('app');
     if (app) app.dataset.statuses = key;
   }
@@ -179,15 +174,13 @@ export class HUD {
 
   private renderBadge() {
     this.badge?.destroy();
-    const chars = Math.max(this.conditionLabel.length + 2, this.frontName.length);
-    const w = chars * 8 + 10;
+    const w = (this.conditionLabel.length + 2) * 8 + 6;
     const x = 240 - w - 2;
-    const win = drawWindow(this.scene, x, 2, w, 26);
+    const win = drawWindow(this.scene, x, 1, w, 12);
     const icon = this.scene.add.graphics();
-    drawWeatherIcon(icon, x + 5, 6, this.condition);
-    const label = this.scene.add.text(x + 16, 6, this.conditionLabel, textStyle());
-    const front = this.scene.add.text(x + 5, 17, this.frontName, textStyle('#686868'));
-    this.badge = this.scene.add.container(0, 0, [win, icon, label, front]).setScrollFactor(0).setDepth(DEPTH);
+    drawWeatherIcon(icon, x + 3, 2, this.condition);
+    const label = this.scene.add.text(x + 13, 2, this.conditionLabel, textStyle());
+    this.badge = this.scene.add.container(0, 0, [win, icon, label]).setScrollFactor(0).setDepth(DEPTH);
   }
 
   setBoss(hp: number | null, maxHp: number, name = 'TORNADO') {
@@ -225,8 +218,9 @@ export class HUD {
     this.message?.destroy();
     this.messageTimer?.remove(false);
     const win = drawWindow(this.scene, 4, 118, 232, 38);
-    const label = this.scene.add.text(12, 126, text, {
+    const label = this.scene.add.text(12, 124, text, {
       ...textStyle(),
+      lineSpacing: 1,
       wordWrap: { width: 216 },
     });
     this.message = this.scene.add.container(0, 0, [win, label]).setScrollFactor(0).setDepth(DEPTH + 1);

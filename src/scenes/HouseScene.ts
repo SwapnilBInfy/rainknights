@@ -1,8 +1,7 @@
 import Phaser from 'phaser';
 import { audio } from '../audio/engine';
-import { drawWindow, textStyle } from '../ui/Window';
 import { ListMenu } from '../ui/listMenu';
-import { onTouchControlsChange } from '../input/touchControls';
+import { HubChrome } from '../ui/hubChrome';
 import { loadGame, writeProfile } from '../save/save';
 import { ARMOR, CONSUMABLES, bagLabel, equip, rest, townMaxHp, transfer, useItem, type TownProfile } from '../economy/economy';
 import { Avatar } from '../town/avatar';
@@ -18,8 +17,8 @@ export class HouseScene extends Phaser.Scene {
   private leaving = false;
   private interact = '';
   private shopItem = '';
-  private hudText!: Phaser.GameObjects.Text;
-  private hint!: Phaser.GameObjects.Text;
+  private chrome!: HubChrome;
+  private frames = 0;
 
   constructor() {
     super('HouseScene');
@@ -29,6 +28,7 @@ export class HouseScene extends Phaser.Scene {
     this.leaving = false;
     this.interact = '';
     this.shopItem = '';
+    this.frames = 0;
     const profile = loadGame().town;
     const at = cellCenter(HOUSE.spawn);
     this.cameras.main.setBackgroundColor('#2a2018');
@@ -39,24 +39,25 @@ export class HouseScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, map.width, map.height);
     this.cameras.main.startFollow(this.avatar, true, 0.2, 0.2);
 
-    this.spot(HOUSE.bed, 0x4060c0, 'BED');
-    this.spot(HOUSE.chest, 0xc08040, 'CHEST');
-    this.spot(HOUSE.mirror, 0x80d0e0, 'MIRROR');
-    this.spot(HOUSE.rack, 0xb0b0c0, 'RACK');
-
-    this.hudText = this.add.text(8, 6, '', { ...textStyle('#383838'), lineSpacing: 3 }).setScrollFactor(0).setDepth(120);
-    this.hint = this.add.text(120, 154, '', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(120);
-    drawWindow(this, 2, 2, 112, 42).setScrollFactor(0).setDepth(110);
+    this.spot(HOUSE.bed, 0x4060c0);
+    this.spot(HOUSE.chest, 0xc08040);
+    this.spot(HOUSE.mirror, 0x80d0e0);
+    this.spot(HOUSE.rack, 0xb0b0c0);
+    this.chrome = new HubChrome(this, 'HOME');
 
     audio.playMusic('town');
     audio.setAmbience('rain');
-    const detach = onTouchControlsChange(() => this.paintHint());
-    this.paintHint();
-    const bridge = { x: () => this.avatar.x, y: () => this.avatar.y, place: () => 'house' };
+    const bridge = {
+      x: () => this.avatar.x,
+      y: () => this.avatar.y,
+      place: () => 'house',
+      frames: () => this.frames,
+      wound: (hp: number) => writeProfile({ ...loadGame().town, hp: Math.max(1, Math.floor(hp)) }),
+    };
     window.__hub = bridge;
     window.addEventListener('keydown', this.onKey);
     this.events.once('shutdown', () => {
-      detach();
+      this.chrome.destroy();
       this.menu.hide();
       this.speech.hide();
       window.removeEventListener('keydown', this.onKey);
@@ -67,6 +68,7 @@ export class HouseScene extends Phaser.Scene {
   }
 
   update() {
+    this.frames += 1;
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked && sameCell(cellOf(this.avatar.x, this.avatar.y), HOUSE.door)) {
       this.leaving = true;
@@ -78,12 +80,13 @@ export class HouseScene extends Phaser.Scene {
     this.publish();
   }
 
-  private spot(cell: Cell, color: number, name: string) {
+  private spot(cell: Cell, color: number) {
     const at = cellCenter(cell);
     const g = this.add.graphics().setDepth(3);
+    g.fillStyle(0x14121f, 1);
+    g.fillRect(at.x - 7, at.y - 7, 14, 12);
     g.fillStyle(color, 1);
     g.fillRect(at.x - 6, at.y - 6, 12, 10);
-    this.add.text(at.x, at.y - 10, name, { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 2 }).setOrigin(0.5, 1).setDepth(4);
   }
 
   private nearest(): string {
@@ -107,7 +110,7 @@ export class HouseScene extends Phaser.Scene {
   }
 
   private onKey = (event: KeyboardEvent) => {
-    if (this.leaving || this.menu.isOpen) return;
+    if (event.type !== 'keydown' || this.leaving || this.menu.isOpen) return;
     const key = event.key.toLowerCase();
     if (event.repeat && (key === ' ' || key === 'enter' || key === 'z')) return;
     if (this.speech.open && (key === ' ' || key === 'enter' || key === 'z' || key === 'escape')) {
@@ -117,6 +120,10 @@ export class HouseScene extends Phaser.Scene {
     if (key === 'escape') {
       this.leaving = true;
       this.scene.start('TownScene', { at: 'house' });
+      return;
+    }
+    if (key === 'i') {
+      this.openStatus();
       return;
     }
     if (key !== ' ' && key !== 'enter' && key !== 'z') return;
@@ -219,16 +226,44 @@ export class HouseScene extends Phaser.Scene {
     });
   }
 
-  private paintHint() {
-    const touch = document.documentElement.dataset.touchControls === '1';
-    const verb = this.interact === 'bed' ? 'REST' : this.interact === 'chest' ? 'OPEN' : this.interact === 'mirror' ? 'LOOK' : this.interact === 'rack' ? 'ARMOR' : 'MOVE';
-    this.hint.setText(touch ? `STICK MOVE   A ${verb}` : `ARROWS MOVE  SPACE ${verb}`);
+  private openStatus() {
+    const profile = loadGame().town;
+    const max = townMaxHp(profile.characterId, profile.armorId);
+    const rows: { id: string; label: string; value?: string }[] = [
+      { id: 'hp', label: 'HP', value: String(profile.hp) },
+      { id: 'max', label: 'MAX', value: String(max) },
+      { id: 'worn', label: profile.armorId ? `WORN ${profile.armorId.toUpperCase()}` : 'NO ARMOR' },
+    ];
+    for (const item of CONSUMABLES) {
+      const n = profile.bag[item.id] ?? 0;
+      if (n > 0) rows.push({ id: item.id, label: item.name, value: String(n) });
+    }
+    rows.push({ id: 'close', label: 'CLOSE' });
+    this.menu.show({
+      title: 'BAG',
+      titleValue: String(profile.coins),
+      rows,
+      hint: 'Held food. The chest stores more.',
+      onPick: (id) => {
+        if (id === 'close') this.menu.hide();
+      },
+      onClose: () => this.menu.hide(),
+    });
   }
 
   private publish() {
     const profile = loadGame().town;
     const max = townMaxHp(profile.characterId, profile.armorId);
-    this.hudText.setText(`HOME\n${profile.coins} DRIPS\nHP ${profile.hp}/${max}`);
+    this.chrome.setStats(profile.hp, max, profile.coins);
+    const spot = (
+      [
+        ['bed', HOUSE.bed],
+        ['chest', HOUSE.chest],
+        ['mirror', HOUSE.mirror],
+        ['rack', HOUSE.rack],
+      ] as [string, Cell][]
+    ).find(([id]) => id === this.interact);
+    this.chrome.setBubble(spot ? cellCenter(spot[1]) : null);
     publishHub({
       place: 'house',
       coins: profile.coins,
@@ -241,7 +276,6 @@ export class HouseScene extends Phaser.Scene {
       shopItem: this.shopItem,
       dialog: this.speech.open ? 'open' : '',
     });
-    this.paintHint();
   }
 }
 
