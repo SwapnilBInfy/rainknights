@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
+import { REGIONS } from '../src/config/regions';
 
 /**
  * Every e2e page gets a fixed, clear-weather reading instead of calling the live Open-Meteo API: the tests
@@ -20,7 +21,7 @@ export async function stubWeather(context: BrowserContext) {
  * New game wakes up in Mistford. Hold south to the road, then pick a city the way the old
  * title flow picked a region. Callers still `goto` first and wait until the title is up.
  */
-export async function beginCityRun(page: Page, region: 'nyc' | 'miami' = 'nyc') {
+export async function beginCityRun(page: Page, region: string = 'nyc') {
   const app = page.locator('#app');
   await expect(app).toHaveAttribute('data-scene', 'MenuScene');
   await page.keyboard.press('Space');
@@ -31,7 +32,9 @@ export async function beginCityRun(page: Page, region: 'nyc' | 'miami' = 'nyc') 
   } finally {
     await page.keyboard.up('ArrowDown');
   }
-  await page.keyboard.press(region === 'nyc' ? 'Digit1' : 'Digit2');
+  const slot = REGIONS.findIndex((r) => r.id === region) + 1;
+  expect(slot, `unknown city ${region}`).toBeGreaterThan(0);
+  await page.keyboard.press(`Digit${slot}`);
   await expect(app).toHaveAttribute('data-scene', 'GameScene');
 }
 

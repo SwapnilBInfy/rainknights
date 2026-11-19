@@ -53,7 +53,7 @@ const T = {
 const m = (root: number): Chord => ({ root, q: 'min' });
 const M = (root: number): Chord => ({ root, q: 'maj' });
 
-export type SongKey = 'title' | 'town' | 'nyc' | 'miami' | 'boss' | 'victory' | 'gameover';
+export type SongKey = 'title' | 'town' | 'nyc' | 'miami' | 'london' | 'tokyo' | 'mumbai' | 'boss' | 'victory' | 'gameover';
 
 const DEFS: Record<SongKey, SongDef> = {
   // "Rain on the Route" — A minor, wistful.
@@ -79,6 +79,24 @@ const DEFS: Record<SongKey, SongDef> = {
     bpm: 112, tonic: 43, chords: [M(0), m(9), M(5), M(7), M(0), m(9), m(2), M(7)],
     bass: 'funk', drums: 'funk', arp: 'eighth', leadVoice: 'square25', leadVol: 0.095, gate: 0.7,
     rhythms: [T.c, T.b, T.e, T.a], restChance: 0.14, bias: 0.05, seed: 37, loop: true,
+  },
+  // "The Soft Drizzle" — E minor, slow and hazy, like a rainy walk along the river.
+  london: {
+    bpm: 98, tonic: 40, chords: [m(0), M(8), M(3), M(10), m(0), m(5), M(8), M(7)],
+    bass: 'gentle', drums: 'light', arp: 'eighth', leadVoice: 'tri', leadVol: 0.15, gate: 0.9,
+    rhythms: [T.a, T.c, T.f, T.d], restChance: 0.16, bias: -0.15, seed: 53, loop: true, vibrato: 14,
+  },
+  // "The Neon Typhoon" — F# minor, bright and fast, city-pop on a stormy night.
+  tokyo: {
+    bpm: 138, tonic: 42, chords: [m(0), M(3), M(8), m(5), m(0), M(3), M(10), M(7)],
+    bass: 'funk', drums: 'basic', arp: 'sixteenth', leadVoice: 'saw', leadVol: 0.07, gate: 0.55,
+    rhythms: [T.e, T.g, T.b, T.d], restChance: 0.08, bias: 0.1, seed: 61, loop: true,
+  },
+  // "The Monsoon Tide" — A major, rolling and heavy, drums that sound like rain on a tin roof.
+  mumbai: {
+    bpm: 108, tonic: 45, chords: [M(0), M(5), m(9), M(7), M(0), M(5), m(2), M(7)],
+    bass: 'root8', drums: 'funk', arp: 'eighth', leadVoice: 'square12', leadVol: 0.1, gate: 0.65,
+    rhythms: [T.c, T.e, T.a, T.g], restChance: 0.12, bias: 0.0, seed: 71, loop: true, vibrato: 8,
   },
   // Tornado boss — E minor, fast.
   boss: {

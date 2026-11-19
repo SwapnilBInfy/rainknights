@@ -3,11 +3,13 @@
  * unit-tested: the same seed always makes the same map, every walkable tile
  * can be reached from the spawn, and each city has its own shape.
  *
- * New York is a street grid of city blocks (buildings, parks, empty lots)
- * with a river crossed by bridges. Miami is a beach with an ocean edge,
- * canals crossed by boardwalk bridges, resort buildings and lagoons.
+ * A region's `layout` picks the shape and its `tuning` sets the numbers. A 'city' is a street grid of
+ * blocks (buildings, parks, empty lots) with a river crossed by bridges: New York, London (a wide river,
+ * lots of parks) and Tokyo (tight blocks, a thin canal). A 'coast' is a beach with an ocean edge, canals
+ * crossed by boardwalk bridges, buildings and lagoons: Miami and Mumbai (a crowded seafront).
  */
 import { MAP_COLS, MAP_ROWS } from '../config/constants';
+import { getRegion, type CityTuning, type CoastTuning } from '../config/regions';
 
 /** Tile ids. The order is the order of the tileset strip (see gfx/tiles.ts). */
 export const TileType = {
@@ -25,11 +27,11 @@ export const TileType = {
   BUILDING: 7,
   /** A bridge deck over water: walkable and dry, with the water carrying on underneath. */
   BRIDGE: 8,
-  /** A tree (a palm in Miami): solid. The art on top is drawn by the decor layer. */
+  /** A tree (a palm on a beach): solid. The art on top is drawn by the decor layer. */
   TREE: 9,
   /** A parked car on the road's outer lane: solid. */
   CAR: 10,
-  /** A street lamp or hydrant (a beach umbrella in Miami): solid. */
+  /** A street lamp or hydrant (a beach umbrella on a beach): solid. */
   PROP: 11,
 } as const;
 
@@ -155,26 +157,32 @@ function carveWaterway(
   return { center, halfWidth: hws };
 }
 
-function nycLayout(grid: Grid, rng: Rng, spawn: Spawn) {
+const CITY_DEFAULTS: CityTuning = { river: [2, 3], built: 0.62, park: 0.18, gapX: [13, 17], gapY: [11, 15] };
+const COAST_DEFAULTS: CoastTuning = { canals: [2, 3], buildings: 16 };
+
+function cityLayout(grid: Grid, rng: Rng, spawn: Spawn, tuning: Partial<CityTuning> = {}) {
   const cols = grid[0].length;
   const rows = grid.length;
+  const t = { ...CITY_DEFAULTS, ...tuning };
 
-  // The river, not through the spawn.
+  // The river, not through the spawn. (River width [0, 0] means a city with no river.)
   const vertical = rng() < 0.5;
   const span = vertical ? cols : rows;
   const frac = rng() < 0.5 ? 0.17 + rng() * 0.1 : 0.73 + rng() * 0.1;
-  const river = carveWaterway(grid, rng, vertical, Math.round(span * frac), ri(rng, 2, 3), 2);
+  const riverWidth = ri(rng, t.river[0], t.river[1]);
+  const river = t.river[1] > 0 ? carveWaterway(grid, rng, vertical, Math.round(span * frac), riverWidth, 2) : null;
   const inRiverCorridor = (pos: number) => {
     // pos is a coordinate across the river's width; true if a road at that spot would run alongside the river
+    if (!river) return false;
     const c = river.center.reduce((a, b) => a + b, 0) / river.center.length;
     return Math.abs(pos - c) < 9;
   };
 
   // Street grid.
   const alongVert: number[] = [];
-  for (let x = 9 + ri(rng, 0, 3); x < cols - 8; x += ri(rng, 13, 17)) alongVert.push(x);
+  for (let x = 9 + ri(rng, 0, 3); x < cols - 8; x += ri(rng, t.gapX[0], t.gapX[1])) alongVert.push(x);
   const alongHorz: number[] = [];
-  for (let y = 8 + ri(rng, 0, 3); y < rows - 8; y += ri(rng, 11, 15)) alongHorz.push(y);
+  for (let y = 8 + ri(rng, 0, 3); y < rows - 8; y += ri(rng, t.gapY[0], t.gapY[1])) alongHorz.push(y);
   // Roads that run parallel to the river would sit in it; keep only those clear of it.
   const vroads = alongVert.filter((x) => vertical ? !inRiverCorridor(x) : true);
   const hroads = alongHorz.filter((y) => !vertical ? !inRiverCorridor(y) : true);
@@ -210,7 +218,7 @@ function nycLayout(grid: Grid, rng: Rng, spawn: Spawn) {
       if (bx1 - bx0 < 4 || by1 - by0 < 4) continue;
       const roll = rng();
       const dry = isGrass;
-      if (roll < 0.62) {
+      if (roll < t.built) {
         // buildings with a sidewalk around them
         fillRect(grid, bx0 + 1, by0 + 1, bx1 - 1, by1 - 1, TileType.BUILDING, dry);
         if (bx1 - bx0 >= 9) {
@@ -221,7 +229,7 @@ function nycLayout(grid: Grid, rng: Rng, spawn: Spawn) {
           const ay = ri(rng, by0 + 3, by1 - 3);
           fillRect(grid, bx0 + 1, ay, bx1 - 1, ay, TileType.PATH, (t) => t === TileType.BUILDING);
         }
-      } else if (roll < 0.8) {
+      } else if (roll < t.built + t.park) {
         // a park with a pond and a few boulders
         const cx = Math.round((bx0 + bx1) / 2);
         const cy = Math.round((by0 + by1) / 2);
@@ -240,9 +248,10 @@ function nycLayout(grid: Grid, rng: Rng, spawn: Spawn) {
   void spawn;
 }
 
-function miamiLayout(grid: Grid, rng: Rng, spawn: Spawn) {
+function coastLayout(grid: Grid, rng: Rng, spawn: Spawn, tuning: Partial<CoastTuning> = {}) {
   const cols = grid[0].length;
   const rows = grid.length;
+  const t = { ...COAST_DEFAULTS, ...tuning };
 
   // Ocean along one edge: deep water with a shallow surf line.
   const side = ri(rng, 0, 3); // 0 top, 1 bottom, 2 left, 3 right
@@ -260,7 +269,7 @@ function miamiLayout(grid: Grid, rng: Rng, spawn: Spawn) {
   }
 
   // Canals, avoiding the spawn.
-  const canalCount = ri(rng, 2, 3);
+  const canalCount = ri(rng, t.canals[0], t.canals[1]);
   const oceanVertical = side >= 2;
   for (let n = 0; n < canalCount; n++) {
     const vertical = rng() < 0.5 ? oceanVertical : !oceanVertical;
@@ -289,7 +298,7 @@ function miamiLayout(grid: Grid, rng: Rng, spawn: Spawn) {
 
   // Resort buildings on dry sand, away from the plaza and the boardwalks.
   let placed = 0;
-  for (let attempt = 0; attempt < 120 && placed < 16; attempt++) {
+  for (let attempt = 0; attempt < 120 * Math.ceil(t.buildings / 16) && placed < t.buildings; attempt++) {
     const w = ri(rng, 4, 7);
     const h = ri(rng, 3, 5);
     const x = ri(rng, FRAME + 2, cols - w - FRAME - 3);
@@ -322,13 +331,14 @@ function clearPlaza(grid: Grid, spawn: Spawn) {
 }
 
 function frame(grid: Grid, regionId: string) {
+  const beach = getRegion(regionId).dress === 'beach';
   const rows = grid.length;
   const cols = grid[0].length;
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const depth = Math.min(x, y, cols - 1 - x, rows - 1 - y);
       if (depth >= FRAME || grid[y][x] === TileType.WATER) continue;
-      if (regionId === 'miami') {
+      if (beach) {
         // a sea wall (outermost) with a row of palms inside it
         grid[y][x] = depth === 0 ? TileType.ROCK : (x + y) % 2 === 0 ? TileType.TREE : TileType.ROCK;
       } else {
@@ -355,11 +365,11 @@ const isWaterish = (t: number) => t === TileType.WATER || t === TileType.SHALLOW
 function placeProps(grid: Grid, rng: Rng, regionId: string) {
   const rows = grid.length;
   const cols = grid[0].length;
-  const miami = regionId === 'miami';
+  const beach = getRegion(regionId).dress === 'beach'; // palms, umbrellas and boardwalks instead of cars and lamps
   const edgeOk = (x: number, y: number) => x > FRAME + 1 && y > FRAME + 1 && x < cols - FRAME - 2 && y < rows - FRAME - 2;
 
   // parked cars (New York)
-  if (!miami) {
+  if (!beach) {
     for (let y = FRAME + 2; y < rows - FRAME - 2; y++) {
       for (let x = FRAME + 3; x < cols - FRAME - 3; x++) {
         if (grid[y][x] !== TileType.PATH || rng() > 0.05) continue;
@@ -393,7 +403,7 @@ function placeProps(grid: Grid, rng: Rng, regionId: string) {
       const byRoad = near(grid, x, y, 1, isRoad) && [grid[y - 1][x], grid[y + 1][x], grid[y][x - 1], grid[y][x + 1]].some(isRoad);
       const byWater = near(grid, x, y, 2, isWaterish);
       const open = !near(grid, x, y, 1, (t) => isSolid(t) || isWaterish(t) || isRoad(t));
-      if (miami) {
+      if (beach) {
         if (byWater && !near(grid, x, y, 3, (t) => t === TileType.PROP) && rng() < 0.05) grid[y][x] = TileType.PROP; // umbrella
         else if ((byRoad ? rng() < 0.12 : byWater ? rng() < 0.08 : open && rng() < 0.008) && !near(grid, x, y, 2, (t) => t === TileType.TREE)) grid[y][x] = TileType.TREE; // palm
       } else if (byRoad) {
@@ -519,8 +529,9 @@ export function generateMap(regionId: string, seed: number, cols = MAP_COLS, row
   const rng = mulberry32(seed);
   const grid = baseGrass(cols, rows, rng);
   const spawn: Spawn = { col: Math.floor(cols / 2), row: Math.floor(rows / 2) };
-  if (regionId === 'miami') miamiLayout(grid, rng, spawn);
-  else nycLayout(grid, rng, spawn);
+  const region = getRegion(regionId);
+  if (region.layout === 'coast') coastLayout(grid, rng, spawn, region.tuning);
+  else cityLayout(grid, rng, spawn, region.tuning);
   placeProps(grid, rng, regionId);
   clearPlaza(grid, spawn);
   frame(grid, regionId);

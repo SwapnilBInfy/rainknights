@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { TILE } from '../config/constants';
 import { computeDecor } from '../systems/decorRules';
 import type { Grid } from '../systems/mapGen';
-import { DECOR_MIAMI, DECOR_NYC } from './palette';
+import { DECOR_NYC, DECOR_PALETTES } from './palette';
 
 /**
  * The painted detail over the bare tiles (shorelines, curbs, lane markings, building walls and roofs,
@@ -24,7 +24,7 @@ export class DecorLayer {
 
   /** Paint the decor for this grid; returns how many pieces were drawn. */
   draw(grid: Grid): number {
-    const palette = this.regionId === 'miami' ? DECOR_MIAMI : DECOR_NYC;
+    const palette = DECOR_PALETTES[this.regionId] ?? DECOR_NYC;
     const g = this.scene.make.graphics({ x: 0, y: 0 }, false);
     const ops = computeDecor(grid, { regionId: this.regionId, seed: this.seed });
     for (const op of ops) {
