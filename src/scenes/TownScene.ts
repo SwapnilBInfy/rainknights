@@ -2,11 +2,10 @@ import Phaser from 'phaser';
 import { TILE } from '../config/constants';
 import { TEX } from '../gfx/spriteDefs';
 import { audio } from '../audio/engine';
-import { drawWindow, textStyle } from '../ui/Window';
 import { ListMenu } from '../ui/listMenu';
-import { onTouchControlsChange } from '../input/touchControls';
+import { HubChrome } from '../ui/hubChrome';
 import { arriveInTown, loadGame } from '../save/save';
-import { bagLabel, townMaxHp } from '../economy/economy';
+import { CONSUMABLES, bagLabel, townMaxHp } from '../economy/economy';
 import { Avatar } from '../town/avatar';
 import { mountMap } from '../town/mapView';
 import { Speech, clearHub, publishHub } from '../town/speech';
@@ -16,6 +15,9 @@ interface HubBridge {
   x: () => number;
   y: () => number;
   place: () => string;
+  frames: () => number;
+  wound?: (hp: number) => void;
+  keys?: () => { up: boolean; down: boolean; left: boolean; right: boolean };
 }
 
 declare global {
@@ -32,8 +34,8 @@ export class TownScene extends Phaser.Scene {
   private leaving = false;
   private interact = '';
   private drops: Phaser.GameObjects.Image[] = [];
-  private hudText!: Phaser.GameObjects.Text;
-  private hint!: Phaser.GameObjects.Text;
+  private chrome!: HubChrome;
+  private frames = 0;
   private talkables: { x: number; y: number; id: string; lines: readonly string[] }[] = [];
 
   constructor() {
@@ -43,6 +45,7 @@ export class TownScene extends Phaser.Scene {
   create(data: { at?: 'plaza' | 'house' | 'shop' } = {}) {
     this.leaving = false;
     this.interact = '';
+    this.frames = 0;
     this.drops = [];
     this.talkables = [];
     const profile = arriveInTown();
@@ -59,8 +62,7 @@ export class TownScene extends Phaser.Scene {
 
     this.paintDoor(TOWN.houseMat);
     this.paintDoor(TOWN.shopMat);
-    this.add.text(cellCenter({ col: 3, row: 3 }).x, cellCenter({ col: 3, row: 3 }).y, 'HOME', label()).setOrigin(0.5).setDepth(4);
-    this.add.text(cellCenter({ col: 13, row: 3 }).x, cellCenter({ col: 13, row: 3 }).y, 'MARKET', label()).setOrigin(0.5).setDepth(4);
+    this.chrome = new HubChrome(this, 'MISTFORD');
 
     for (const npc of TOWN_NPCS) {
       const pos = cellCenter(npc.at);
@@ -78,10 +80,6 @@ export class TownScene extends Phaser.Scene {
     this.physics.add.collider(this.avatar, sign);
     this.talkables.push({ x: signAt.x, y: signAt.y, id: 'sign', lines: TOWN_SIGN.lines });
 
-    this.hudText = this.add.text(8, 6, '', { ...textStyle('#383838'), lineSpacing: 3 }).setScrollFactor(0).setDepth(120);
-    this.hint = this.add.text(120, 154, '', { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 }).setOrigin(0.5, 1).setScrollFactor(0).setDepth(120);
-    drawWindow(this, 2, 2, 104, 42).setScrollFactor(0).setDepth(110);
-
     for (let i = 0; i < 16; i++) {
       const drop = this.add.image(Phaser.Math.Between(0, 240), Phaser.Math.Between(0, 160), TEX.rain).setScrollFactor(0).setDepth(90).setAlpha(0.45).setTint(0x88b8f0);
       this.drops.push(drop);
@@ -89,18 +87,17 @@ export class TownScene extends Phaser.Scene {
 
     audio.playMusic('town');
     audio.setAmbience('rain');
-    const detach = onTouchControlsChange(() => this.paintHint());
-    this.paintHint();
 
     const bridge: HubBridge = {
       x: () => this.avatar.x,
       y: () => this.avatar.y,
       place: () => 'town',
+      frames: () => this.frames,
     };
     window.__hub = bridge;
     window.addEventListener('keydown', this.onKey);
     this.events.once('shutdown', () => {
-      detach();
+      this.chrome.destroy();
       this.menu.hide();
       this.speech.hide();
       window.removeEventListener('keydown', this.onKey);
@@ -111,6 +108,7 @@ export class TownScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number) {
+    this.frames += 1;
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked) this.stepOn();
     this.interact = this.nearestTalk()?.id ?? '';
@@ -161,6 +159,13 @@ export class TownScene extends Phaser.Scene {
     this.scene.start(scene);
   }
 
+  private bubbleAt(): { x: number; y: number } | null {
+    if (this.near(TOWN.houseMat)) return cellCenter(TOWN.houseMat);
+    if (this.near(TOWN.shopMat)) return cellCenter(TOWN.shopMat);
+    const talk = this.nearestTalk();
+    return talk ? { x: talk.x, y: talk.y } : null;
+  }
+
   private nearestTalk() {
     let best: (typeof this.talkables)[number] | null = null;
     let bestDist = 26;
@@ -175,11 +180,15 @@ export class TownScene extends Phaser.Scene {
   }
 
   private onKey = (event: KeyboardEvent) => {
-    if (this.leaving || this.menu.isOpen) return;
+    if (event.type !== 'keydown' || this.leaving || this.menu.isOpen) return;
     const key = event.key.toLowerCase();
     if (event.repeat && (key === ' ' || key === 'enter' || key === 'z')) return;
     if (this.speech.open && (key === ' ' || key === 'enter' || key === 'z' || key === 'escape')) {
       this.speech.hide();
+      return;
+    }
+    if (key === 'i') {
+      this.openStatus();
       return;
     }
     if (key === 'escape') {
@@ -215,15 +224,36 @@ export class TownScene extends Phaser.Scene {
     });
   }
 
-  private paintHint() {
-    const touch = document.documentElement.dataset.touchControls === '1';
-    this.hint.setText(touch ? 'STICK MOVE   A TALK' : 'ARROWS MOVE  SPACE TALK');
+  private openStatus() {
+    const profile = loadGame().town;
+    const max = townMaxHp(profile.characterId, profile.armorId);
+    const rows: { id: string; label: string; value?: string }[] = [
+      { id: 'hp', label: 'HP', value: String(profile.hp) },
+      { id: 'max', label: 'MAX', value: String(max) },
+      { id: 'worn', label: profile.armorId ? `WORN ${profile.armorId.toUpperCase()}` : 'NO ARMOR' },
+    ];
+    for (const item of CONSUMABLES) {
+      const n = profile.bag[item.id] ?? 0;
+      if (n > 0) rows.push({ id: item.id, label: item.name, value: String(n) });
+    }
+    rows.push({ id: 'close', label: 'CLOSE' });
+    this.menu.show({
+      title: 'BAG',
+      titleValue: String(profile.coins),
+      rows,
+      hint: 'What you are carrying.',
+      onPick: (id) => {
+        if (id === 'close') this.menu.hide();
+      },
+      onClose: () => this.menu.hide(),
+    });
   }
 
   private publish() {
     const profile = loadGame().town;
     const max = townMaxHp(profile.characterId, profile.armorId);
-    this.hudText.setText(`MISTFORD\n${profile.coins} DRIPS\nHP ${profile.hp}/${max}`);
+    this.chrome.setStats(profile.hp, max, profile.coins);
+    this.chrome.setBubble(this.bubbleAt());
     publishHub({
       place: 'town',
       coins: profile.coins,
@@ -239,6 +269,3 @@ export class TownScene extends Phaser.Scene {
   }
 }
 
-function label() {
-  return { ...textStyle('#f8f8f8'), stroke: '#202030', strokeThickness: 3 };
-}

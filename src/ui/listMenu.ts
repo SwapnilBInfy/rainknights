@@ -1,10 +1,13 @@
 import Phaser from 'phaser';
 import { audio } from '../audio/engine';
 import { drawCursor, drawWindow, textStyle } from './Window';
+import { digitWidth, drawDigits } from './digits';
 
 export interface MenuRow {
   id: string;
   label: string;
+  /** Right-aligned pixel digits (a price or a count). Not drawn with the font, so 8 stays an 8. */
+  value?: string;
 }
 
 /**
@@ -20,6 +23,8 @@ export class ListMenu {
   private rows: MenuRow[] = [];
   private index = 0;
   private rowY: number[] = [];
+  private digits: Phaser.GameObjects.Graphics | null = null;
+  private titleValue = '';
   private onPick: (id: string) => void = () => {};
   private onClose: () => void = () => {};
   private onMove: (id: string) => void = () => {};
@@ -29,6 +34,8 @@ export class ListMenu {
 
   show(opts: {
     title: string;
+    /** Pixel-drawn number beside the title, typically the drips you are holding. */
+    titleValue?: string;
     rows: MenuRow[];
     hint?: string;
     onPick: (id: string) => void;
@@ -38,19 +45,23 @@ export class ListMenu {
     this.onPick = opts.onPick;
     this.onClose = opts.onClose;
     this.onMove = opts.onMove ?? (() => {});
+    this.titleValue = opts.titleValue ?? '';
     this.index = 0;
     this.isOpen = true;
+    // Drop keys that were held to walk up to this counter, or their keyup gets lost and the knight keeps going.
+    this.scene.input.keyboard?.resetKeys();
     this.render(opts.title, opts.rows, opts.hint ?? '');
     window.addEventListener('keydown', this.onKey, true);
     this.onMove(this.rows[0]?.id ?? '');
   }
 
-  refresh(title: string, rows: MenuRow[], hint: string) {
+  refresh(title: string, rows: MenuRow[], hint: string, titleValue = this.titleValue) {
     if (!this.isOpen) return;
+    this.titleValue = titleValue;
     const keep = this.rows[this.index]?.id;
     this.render(title, rows, hint);
     const next = this.rows.findIndex((row) => row.id === keep);
-    this.index = next >= 0 ? next : Math.min(this.index, this.rows.length - 1);
+    this.index = next >= 0 ? next : Math.min(this.index, Math.max(0, this.rows.length - 1));
     this.paint();
   }
 
@@ -67,6 +78,8 @@ export class ListMenu {
     this.labels = [];
     this.cursor = null;
     this.hintText = null;
+    this.digits = null;
+    this.scene.input.keyboard?.resetKeys();
   }
 
   private render(title: string, rows: MenuRow[], hint: string) {
@@ -85,6 +98,9 @@ export class ListMenu {
     const win = drawWindow(this.scene, x, y, winW, winH).setScrollFactor(0);
     root.add(win);
     root.add(this.scene.add.text(x + 10, y + 6, title, textStyle('#3078d8')).setScrollFactor(0));
+    this.digits = this.scene.add.graphics().setScrollFactor(0);
+    root.add(this.digits);
+    if (this.titleValue) drawDigits(this.digits, x + 10 + title.length * 8 + 6, y + 7, this.titleValue, 0xc07800);
 
     this.cursor = this.scene.add.graphics().setScrollFactor(0);
     root.add(this.cursor);
@@ -94,6 +110,10 @@ export class ListMenu {
       root.add(text);
       this.labels.push(text);
       this.rowY.push(ry);
+      if (row.value) {
+        const w = digitWidth(row.value);
+        drawDigits(this.digits, x + winW - 12 - w, ry, row.value, 0x383838);
+      }
       ry += rowH;
     }
     if (hint) {
@@ -116,9 +136,13 @@ export class ListMenu {
   }
 
   private onKey = (event: KeyboardEvent) => {
-    if (!this.isOpen) return;
+    // Keyup must reach Phaser. Swallowing it left the walk key stuck down, so the knight
+    // kept marching into the counter after the menu closed and the town looked frozen.
+    // A keyup of Space was also treated as a confirm, so opening the shop bought on release.
+    if (!this.isOpen || event.type !== 'keydown') return;
     const key = event.key.toLowerCase();
     if (key === 'arrowup' || key === 'arrowdown' || key === ' ' || key === 'enter') event.preventDefault();
+    // Keep the key from also leaving the building. Keyup is not listened for, so Phaser still hears the release.
     event.stopPropagation();
     if (event.repeat && (key === 'enter' || key === ' ' || key === 'z')) return;
     if (key === 'arrowup' || key === 'w') this.step(-1);

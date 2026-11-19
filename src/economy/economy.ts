@@ -254,19 +254,27 @@ export interface ShopRow {
   id: string;
   label: string;
   blurb: string;
+  /** Price, drawn as pixel digits so an 8 is not an S. */
+  value?: string;
 }
 
 export function shopRows(profile: TownProfile): ShopRow[] {
   const rows: ShopRow[] = [];
   for (const item of CONSUMABLES) {
     const owned = profile.bag[item.id] ?? 0;
-    rows.push({ id: item.id, label: padPrice(item.name, String(item.price)), blurb: owned > 0 ? `${item.blurb}  x${owned}` : item.blurb });
+    rows.push({
+      id: item.id,
+      label: item.name,
+      value: String(item.price),
+      blurb: owned > 0 ? `${item.blurb}  x${owned}` : item.blurb,
+    });
   }
   for (const piece of ARMOR) {
     const owned = profile.ownedArmor.includes(piece.id);
     rows.push({
       id: piece.id,
-      label: padPrice(piece.name, owned ? 'OWN' : String(piece.price)),
+      label: owned ? `${piece.name} OWN` : piece.name,
+      value: owned ? undefined : String(piece.price),
       blurb: owned && profile.armorId === piece.id ? `${piece.blurb}  WORN` : piece.blurb,
     });
   }
@@ -281,6 +289,3 @@ export function buyFailText(reason: BuyFail): string {
   return 'They do not sell that.';
 }
 
-function padPrice(name: string, price: string): string {
-  return `${name.padEnd(11, ' ')}${price}`;
-}
