@@ -352,6 +352,35 @@ New York's and Miami's maps are unchanged by this: they use the same defaults an
 so a given `?seed=` still makes the same map. London, Tokyo and Mumbai do not yet have signature enemies; they
 face the shared roster and a boss borrowed from the first two cities.
 
+### Flying between locations
+
+There is a **blue flight pad** on the plaza in Mistford, east of the pond. Stand on it and press A (the A bubble
+shows) to lift off and fly over the **world map**. It is the quick way to the cities; the south road and the city
+list still work.
+
+The world is the ground, seen in perspective from behind the knight, fading into haze at the horizon, with clouds
+overhead. Every location is a **star** hovering over its real latitude and longitude: Mistford is on an island in
+the mid-Atlantic, and each city is where it really is. A star is tinted to its city's live weather and has a faint
+beam of light so you can spot it from across the ocean. The world is round east to west.
+
+| Key | Touch | Does |
+| --- | --- | --- |
+| Left / Right (A / D) | D-pad | Steer |
+| Up (W) / Down (S) | D-pad | Boost / slow down. The knight is always flying. |
+| Space or Z | A | **Descend.** Held all the way down over a star, you land there. |
+| J, X, K or Shift | B | **Ascend** |
+| Esc | | Fly home to the pad |
+
+The top-left **radar** shows where the stars are relative to the way you are facing (stars beyond its range are pinned to
+the rim, dimmed). The **world sketched in the clouds**, top right, shows where you are in the world. A plate across the
+top names the nearest star and its weather, and the strip along the bottom says what A and B do (it reads "A: LAND
+LONDON" when you are low enough over a star). Landing on a city starts a run exactly as the city list does; landing on
+Mistford puts you back on the pad. Flying never touches your save.
+
+The ground is drawn in software, row by row (`GroundRenderer` in `src/gfx/flight.ts`): each screen row looks at one
+distance away, so a row is a straight line across the map. The flight maths and the continent outlines are in
+`src/systems/worldMap.ts` (no Phaser, unit-tested: every city must sit on land).
+
 ### City enemies and bosses
 
 Each city can have its own signature enemy and boss on top of the shared

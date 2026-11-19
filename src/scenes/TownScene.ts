@@ -9,7 +9,8 @@ import { CONSUMABLES, bagLabel, townMaxHp } from '../economy/economy';
 import { Avatar } from '../town/avatar';
 import { mountMap } from '../town/mapView';
 import { Speech, clearHub, publishHub } from '../town/speech';
-import { TOWN, TOWN_NPCS, TOWN_SIGN, cellCenter, cellOf, sameCell, townGrid, type Cell } from '../town/mistford';
+import { TOWN, TOWN_NPCS, TOWN_SIGN, cellCenter, cellOf, padCenter, sameCell, townGrid, type Cell } from '../town/mistford';
+import { drawFlightPad } from '../gfx/flight';
 
 interface HubBridge {
   x: () => number;
@@ -36,20 +37,21 @@ export class TownScene extends Phaser.Scene {
   private drops: Phaser.GameObjects.Image[] = [];
   private chrome!: HubChrome;
   private frames = 0;
+  private padGfx!: Phaser.GameObjects.Graphics;
   private talkables: { x: number; y: number; id: string; lines: readonly string[] }[] = [];
 
   constructor() {
     super('TownScene');
   }
 
-  create(data: { at?: 'plaza' | 'house' | 'shop' } = {}) {
+  create(data: { at?: 'plaza' | 'house' | 'shop' | 'pad' } = {}) {
     this.leaving = false;
     this.interact = '';
     this.frames = 0;
     this.drops = [];
     this.talkables = [];
     const profile = arriveInTown();
-    const spot = data.at === 'house' ? TOWN.houseExit : data.at === 'shop' ? TOWN.shopExit : TOWN.spawn;
+    const spot = data.at === 'house' ? TOWN.houseExit : data.at === 'shop' ? TOWN.shopExit : data.at === 'pad' ? TOWN.padSpawn : TOWN.spawn;
     const at = cellCenter(spot);
 
     this.cameras.main.setBackgroundColor('#1c2438');
@@ -60,6 +62,7 @@ export class TownScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, map.width, map.height);
     this.cameras.main.startFollow(this.avatar, true, 0.18, 0.18);
 
+    this.padGfx = this.add.graphics().setDepth(2);
     this.paintDoor(TOWN.houseMat);
     this.paintDoor(TOWN.shopMat);
     this.chrome = new HubChrome(this, 'MISTFORD');
@@ -112,7 +115,9 @@ export class TownScene extends Phaser.Scene {
     this.menu.pump(time);
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked) this.stepOn();
-    this.interact = this.nearestTalk()?.id ?? '';
+    this.interact = this.onPad() ? 'pad' : (this.nearestTalk()?.id ?? '');
+    const pad = padCenter();
+    drawFlightPad(this.padGfx, pad.x, pad.y, 30, time, this.onPad() ? 1 : 0);
     for (const drop of this.drops) {
       drop.y += (90 * delta) / 1000;
       drop.x -= (28 * delta) / 1000;
@@ -122,6 +127,23 @@ export class TownScene extends Phaser.Scene {
       }
     }
     this.publish();
+  }
+
+  /** Standing on the flight pad. */
+  private onPad() {
+    const here = cellOf(this.avatar.x, this.avatar.y);
+    return TOWN.pad.some((cell) => sameCell(cell, here));
+  }
+
+  /** Rise off the pad and out over the world map. */
+  private takeOff() {
+    if (this.leaving) return;
+    this.leaving = true;
+    audio.play('confirm');
+    this.avatar.locked = true;
+    this.tweens.add({ targets: this.avatar, y: this.avatar.y - 34, alpha: 0.15, duration: 520, ease: 'Sine.easeIn' });
+    this.cameras.main.fadeOut(480, 255, 255, 255);
+    this.time.delayedCall(560, () => this.scene.start('FlightScene'));
   }
 
   private paintDoor(mat: Cell) {
@@ -163,6 +185,7 @@ export class TownScene extends Phaser.Scene {
   private bubbleAt(): { x: number; y: number } | null {
     if (this.near(TOWN.houseMat)) return cellCenter(TOWN.houseMat);
     if (this.near(TOWN.shopMat)) return cellCenter(TOWN.shopMat);
+    if (this.onPad()) return { x: this.avatar.x, y: this.avatar.y };
     const talk = this.nearestTalk();
     return talk ? { x: talk.x, y: talk.y } : null;
   }
@@ -197,6 +220,10 @@ export class TownScene extends Phaser.Scene {
       return;
     }
     if (key === ' ' || key === 'enter' || key === 'z') {
+      if (this.onPad()) {
+        this.takeOff();
+        return;
+      }
       const talk = this.nearestTalk();
       if (talk) this.speech.show(talk.lines);
     }
