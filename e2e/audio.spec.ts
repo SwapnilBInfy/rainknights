@@ -1,10 +1,22 @@
+import * as esbuild from 'esbuild';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 
 /**
  * Music and effects are synthesized in src/audio. Phaser's own sound manager
  * is optional. This fails if that manager is a no-audio stub, or if the synth
  * stays silent after a real input when the player is not muted.
+ *
+ * The menu checks listen to the live bus. They do not call individual voices,
+ * so a later test renders the current voice table (including the status-effect
+ * sounds added after this guard was first written) and the title chiptune.
  */
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+/** Status-effect voices from the hazards work. Later combat voices are covered by rendering every key. */
+const STATUS_VOICES = ['warn', 'strike', 'zap', 'burn', 'freeze', 'shatter', 'steam', 'gust'] as const;
 interface ProbeLevel {
   contexts: number;
   state: string | null;
@@ -65,6 +77,64 @@ test('a legacy mute flag stays silent without becoming the default', async ({ pa
   expect(await page.evaluate(() => localStorage.getItem('rainknights:muted'))).toBeNull();
 
   expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
+});
+
+test('every current synth voice, including status effects, still makes a sound', async ({ page }) => {
+  const sfx = await esbuild.build({
+    absWorkingDir: ROOT,
+    entryPoints: [path.join(ROOT, 'src/audio/sfx.ts')],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    globalName: 'RKSfx',
+    platform: 'browser',
+  });
+  const music = await esbuild.build({
+    absWorkingDir: ROOT,
+    entryPoints: [path.join(ROOT, 'src/audio/music.ts')],
+    bundle: true,
+    write: false,
+    format: 'iife',
+    globalName: 'RKMusic',
+    platform: 'browser',
+  });
+  await page.setContent('<!doctype html><title>sfx</title>');
+  await page.addScriptTag({ content: sfx.outputFiles[0].text });
+  await page.addScriptTag({ content: music.outputFiles[0].text });
+
+  const rendered = await page.evaluate(async () => {
+    const w = window as unknown as {
+      RKSfx: { SFX: Record<string, (ctx: BaseAudioContext, out: AudioNode, t: number, arg?: string | number) => void> };
+      RKMusic: { renderSong: (key: string, bars: number, sampleRate: number) => Promise<AudioBuffer> };
+    };
+    const voices: Record<string, number> = {};
+    for (const name of Object.keys(w.RKSfx.SFX)) {
+      const ctx = new OfflineAudioContext(1, 44100, 44100);
+      const dest = ctx.createGain();
+      dest.connect(ctx.destination);
+      const fn = w.RKSfx.SFX[name];
+      if (name === 'swing' || name === 'beam') fn(ctx, dest, 0.02, 'sword');
+      else if (name === 'gem') fn(ctx, dest, 0.02, 3);
+      else fn(ctx, dest, 0.02);
+      const data = (await ctx.startRendering()).getChannelData(0);
+      let peak = 0;
+      for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+      voices[name] = peak;
+    }
+    const song = (await w.RKMusic.renderSong('title', 1, 22050)).getChannelData(0);
+    let songPeak = 0;
+    for (let i = 0; i < song.length; i++) songPeak = Math.max(songPeak, Math.abs(song[i]));
+    return { voices, songPeak };
+  });
+
+  for (const name of STATUS_VOICES) {
+    expect(rendered.voices, `missing status voice ${name}`).toHaveProperty(name);
+    expect(rendered.voices[name], `status voice ${name}`).toBeGreaterThan(0.02);
+  }
+  for (const [name, peak] of Object.entries(rendered.voices)) {
+    expect(peak, name).toBeGreaterThan(0.02);
+  }
+  expect(rendered.songPeak, 'title chiptune').toBeGreaterThan(0.05);
 });
 
 function collectErrors(page: Page) {
