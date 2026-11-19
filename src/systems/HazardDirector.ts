@@ -253,6 +253,7 @@ export class HazardDirector {
       player.applyStatus('shocked', STATUS_TUNING.shockedPlayerMs);
     }
     for (const enemy of this.host.enemies()) {
+      if (!enemy.isLive) continue; // a Static Charge chain from an earlier hit here may have killed it
       const reach = def.r + (enemy.body as Phaser.Physics.Arcade.Body).halfWidth;
       if (Phaser.Math.Distance.Between(enemy.x, enemy.y, zone.x, zone.y) <= reach) {
         this.host.hurtEnemy(enemy, LIGHTNING_ENEMY_DAMAGE, 'lightning');
@@ -274,6 +275,7 @@ export class HazardDirector {
       player.applyStatus('shocked', STATUS_TUNING.shockedPlayerMs);
     }
     for (const enemy of this.host.enemies()) {
+      if (!enemy.isLive) continue;
       if (Phaser.Math.Distance.Between(enemy.x, enemy.y, zone.x, zone.y) <= direct + (enemy.body as Phaser.Physics.Arcade.Body).halfWidth) continue;
       if (inWater(enemy.x, enemy.y)) this.host.hurtEnemy(enemy, CONDUCT_ENEMY_DAMAGE, 'lightning');
     }
@@ -292,6 +294,7 @@ export class HazardDirector {
       }
     }
     for (const enemy of this.host.enemies()) {
+      if (!enemy.isLive) continue;
       if (!touch(enemy.x, enemy.y, (enemy.body as Phaser.Physics.Arcade.Body).halfWidth)) continue;
       if (scorch) this.reactionPopup(enemy.x, enemy.y, enemy.applyStatus('burning', STATUS_TUNING.burnMs).reaction);
       else if (enemy.statuses.addChill(def.tickMs)) audio.play('freeze');

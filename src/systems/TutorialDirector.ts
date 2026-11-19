@@ -129,7 +129,6 @@ export class TutorialDirector {
   // --- per-step behaviour ---
 
   private enter(step: TutorialStep) {
-    const { x, y } = this.host.player;
     // The cab from the dodge step carries over to the strike step; every other step starts clean.
     if (step.id !== 'strike') {
       this.host.clearEnemies();
@@ -159,7 +158,7 @@ export class TutorialDirector {
         this.host.grantLevel();
         break;
       case 'dodge':
-        this.cab = this.host.spawnCab(x + 95, y - 25);
+        this.cab = this.spawnLinedCab();
         break;
       case 'strike':
         // The same cab is still the target (a fresh one is called in if it is gone).
@@ -197,6 +196,21 @@ export class TutorialDirector {
     const dy = Math.sin(chosen);
     p.faceToward(dx, dy);
     return distances.map((d) => this.host.spawnDummy(p.x + dx * d, p.y + dy * d));
+  }
+
+  /**
+   * A Cab Wraith needs a clear street line to the knight to wind up (a tree or a parked car in between is cover).
+   * The tutorial has to be completable wherever the knight happens to stand, so bring the cab in along whichever
+   * of the four street directions is open for a whole run-up.
+   */
+  private spawnLinedCab(): Enemy {
+    const p = this.host.player;
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      let clear = true;
+      for (let d = 12; d <= 104 && clear; d += 8) clear = this.host.isOpen(p.x + dx * d, p.y + dy * d);
+      if (clear) return this.host.spawnCab(p.x + dx * 100, p.y + dy * 100);
+    }
+    return this.host.spawnCab(p.x + 95, p.y - 25);
   }
 
   /**
@@ -286,12 +300,12 @@ export class TutorialDirector {
   /** Dodge: a charge counts when the cab reaches its stall without touching the knight. Strike: kill it. */
   private watchCab(s: TutorialState) {
     if (this.stepId === 'dodge' && (!this.cab || !this.cab.active)) {
-      this.cab = this.host.spawnCab(this.host.player.x + 95, this.host.player.y - 25);
+      this.cab = this.spawnLinedCab();
       this.lastCabPhase = '';
     }
     if (this.stepId === 'strike' && (!this.cab || !this.cab.active)) {
       if (this.cab && !this.cab.active) s.cabKilled = true;
-      else this.cab = this.host.spawnCab(this.host.player.x + 95, this.host.player.y - 25);
+      else this.cab = this.spawnLinedCab();
       return;
     }
     const cab = this.cab;

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WORLD, PLAYER_BASE, AUTO_ATTACK, BOSS_SUMMONS, BOSS_SPAWN_DISTANCE, frontIndexAt } from '../config/constants';
+import { WORLD, PLAYER_BASE, AUTO_ATTACK, BOSS_SUMMONS, BOSS_SPAWN_DISTANCE, MAX_LIVING_ENEMIES, frontIndexAt } from '../config/constants';
 import { MELEE, BEAM } from '../config/weapons';
 import { beamKey, SPARK_KEY } from '../gfx/weapons';
 import { TEX } from '../gfx/spriteDefs';
@@ -89,6 +89,12 @@ interface RunBridge {
   enemyAngles: () => number[];
   /** Where each living enemy is relative to the knight, [dx, dy] in px, in the same order as enemyTypes. */
   enemyOffsets: () => number[][];
+  /** Spawn this many of an enemy around the knight the way the storm does (so the cap applies) (debug / tests). */
+  spawnAround: (type: string, count: number) => void;
+  /** Give the knight a powerup level, e.g. ('staticCharge', 3) (debug / tests). */
+  givePowerup: (name: 'sunbeam' | 'rainbowShield' | 'gale' | 'frost' | 'staticCharge', level: number) => void;
+  /** Make the next frame throw, to prove one bad frame cannot freeze the game (debug / tests). */
+  throwNextFrame: () => void;
   /** Restore the knight to full health (debug / tests that are about something other than survival). */
   heal: () => void;
   /** Vehicle crashes so far this run. */
@@ -163,6 +169,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private tutorialBadge = '';
   private mapSeed = 0;
   private crashCount = 0;
+  /** Test hook: throw on the next update. */
+  private faultNextFrame = false;
   private terrainClock = 0;
   private wasWet = false;
 
@@ -343,6 +351,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       heal: () => {
         this.player.hp = this.player.maxHp;
       },
+      spawnAround: (type, count) => {
+        for (let i = 0; i < count; i++) this.spawnEnemyAroundPlayer(type);
+      },
+      givePowerup: (name, level) => {
+        this.player.powerups[name] = level;
+      },
+      throwNextFrame: () => {
+        this.faultNextFrame = true;
+      },
       crashes: () => this.crashCount,
       tpStreetEnd: (tilesBefore = 3) => {
         const end = this.terrain.field.findStreetEnd();
@@ -465,6 +482,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   update(time: number, delta: number) {
+    if (this.faultNextFrame) {
+      this.faultNextFrame = false;
+      throw new Error('test fault: a frame that throws');
+    }
     if (this.xpGrant > 0 && !this.ended && !this.paused && !this.userPaused) {
       const amount = this.xpGrant;
       this.xpGrant = 0;
@@ -500,6 +521,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   // --- WeatherHost ---
 
   spawnEnemyAroundPlayer(typeKey: string) {
+    if (this.enemyGroup.countActive(true) >= MAX_LIVING_ENEMIES) return; // see MAX_LIVING_ENEMIES
     const angle = Math.random() * Math.PI * 2;
     const dist = Phaser.Math.Between(130, 180);
     // On open ground: with city blocks and canals about, a random spot is often inside a building.
@@ -692,6 +714,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const cosHalf = Math.cos(Phaser.Math.DegToRad(stats.arcDeg / 2));
     const damage = Math.round(p.attackDamage * stats.damageMult);
     for (const enemy of this.getActiveEnemies()) {
+      if (!enemy.isLive) continue; // an earlier hit's Static Charge chain may have killed this one
       const dx = enemy.x - p.x;
       const dy = enemy.y - p.y;
       const dist = Math.hypot(dx, dy);
@@ -728,6 +751,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
     const damage = Math.round(p.attackDamage * stats.damageMult);
     for (const enemy of this.getActiveEnemies()) {
+      if (!enemy.isLive) continue;
       const t = Phaser.Math.Clamp(((enemy.x - ox) * abx + (enemy.y - oy) * aby) / (len * len), 0, 1);
       const dist = Math.hypot(enemy.x - (ox + abx * t), enemy.y - (oy + aby * t));
       const radius = (enemy.body as Phaser.Physics.Arcade.Body).halfWidth;
@@ -768,7 +792,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   private getActiveEnemies(): Enemy[] {
-    return this.enemyGroup.getChildren().filter((e) => e.active) as Enemy[];
+    return this.enemyGroup.getChildren().filter((e) => e.active && (e as Enemy).isLive) as Enemy[];
   }
 
   private updatePull() {
