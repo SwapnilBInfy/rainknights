@@ -15,6 +15,8 @@ interface GameOverData {
   time: number;
   kills: number;
   level: number;
+  /** Drips picked up during this run. */
+  drips?: number;
 }
 
 export class GameOverScene extends Phaser.Scene {
@@ -36,17 +38,18 @@ export class GameOverScene extends Phaser.Scene {
 
     const m = Math.floor(data.time / 60).toString().padStart(2, '0');
     const s = Math.floor(data.time % 60).toString().padStart(2, '0');
-    this.add.text(50, 60, `TIME     ${m}:${s}`, textStyle());
-    this.add.text(50, 76, `LEVEL    ${data.level}`, textStyle());
-    this.add.text(50, 92, `DEFEATED ${data.kills}`, textStyle());
-    this.add.text(50, 108, `BEST     ${clock(loadGame().meta.bestTime)}`, textStyle('#686868'));
+    this.add.text(50, 54, `TIME     ${m}:${s}`, textStyle());
+    this.add.text(50, 68, `LEVEL    ${data.level}`, textStyle());
+    this.add.text(50, 82, `DEFEATED ${data.kills}`, textStyle());
+    this.add.text(50, 96, `DRIPS    ${data.drips ?? 0}`, textStyle('#c07800'));
+    this.add.text(50, 110, `BEST     ${clock(loadGame().meta.bestTime)}`, textStyle('#686868'));
 
     const prompt = this.add.text(width / 2, 124, 'PRESS START', textStyle('#c07800')).setOrigin(0.5, 0);
     this.tweens.add({ targets: prompt, alpha: 0, duration: 500, yoyo: true, repeat: -1, hold: 200 });
 
     const restart = () => {
       audio.play('confirm');
-      this.scene.start('CharacterSelectScene');
+      this.scene.start('TownScene');
     };
     this.input.once('pointerdown', restart);
     this.input.keyboard?.once('keydown-SPACE', restart);

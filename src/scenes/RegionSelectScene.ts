@@ -25,7 +25,7 @@ export class RegionSelectScene extends Phaser.Scene {
     this.characterId = data.characterId;
     this.chosen = false;
     this.selected = 0;
-    audio.playMusic('title');
+    audio.playMusic('town');
     this.cameras.main.setBackgroundColor('#181c38');
 
     const weather: (RegionWeatherState | null)[] = REGIONS.map(() => null);
@@ -97,6 +97,10 @@ export class RegionSelectScene extends Phaser.Scene {
       if (this.selected !== before) audio.play('move');
       else if (k === 'enter' || k === ' ' || k === 'z') return this.choose(REGIONS[this.selected], weather[this.selected]);
       else if (k === '1' || k === '2') return this.choose(REGIONS[Number(k) - 1], weather[Number(k) - 1]);
+      else if (k === 'escape') {
+        if (!this.chosen) this.scene.start('TownScene', { at: 'plaza' });
+        return;
+      }
       highlight();
     });
   }

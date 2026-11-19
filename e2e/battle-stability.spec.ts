@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { beginCityRun, test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 
 // The game used to freeze for good during battle. Phaser's frame loop is `callback(); requestAnimationFrame(next)`,
@@ -14,14 +14,7 @@ async function begin(page: Page, query = '?seed=11') {
   page.on('pageerror', (e) => problems.push('pageerror: ' + e.message));
   page.on('console', (m) => m.type() === 'error' && problems.push('console: ' + m.text()));
   await page.goto('/' + query);
-  const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
-  await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'CharacterSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  await beginCityRun(page);
   return problems;
 }
 

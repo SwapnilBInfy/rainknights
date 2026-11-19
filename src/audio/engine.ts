@@ -29,6 +29,8 @@ class AudioEngine {
   private lastPlayed = new Map<string, number>();
   private gemCombo = 0;
   private lastGemAt = -1;
+  private coinCombo = 0;
+  private lastCoinAt = -1;
   private condition: string | null = null;
   private thunderTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -147,7 +149,7 @@ class AudioEngine {
     const ctx = this.ctx!;
     const now = ctx.currentTime;
     // Rapid-fire sounds (hits, pickups) are throttled so they can't pile up.
-    const minGap: Partial<Record<SfxName, number>> = { hit: 0.045, enemyDie: 0.05, gem: 0.03, move: 0.03, burn: 0.2, warn: 0.2, zap: 0.12, strike: 0.1, roll: 0.1, dodge: 0.15, honk: 0.4, skid: 0.3, splash: 0.25, crash: 0.3 };
+    const minGap: Partial<Record<SfxName, number>> = { hit: 0.045, enemyDie: 0.05, gem: 0.03, coin: 0.03, move: 0.03, burn: 0.2, warn: 0.2, zap: 0.12, strike: 0.1, roll: 0.1, dodge: 0.15, honk: 0.4, skid: 0.3, splash: 0.25, crash: 0.3 };
     const gap = minGap[name] ?? 0;
     if (gap && now - (this.lastPlayed.get(name) ?? -1) < gap) return;
     this.lastPlayed.set(name, now);
@@ -156,6 +158,12 @@ class AudioEngine {
       this.gemCombo = now - this.lastGemAt < 0.5 ? Math.min(6, this.gemCombo + 1) : 0;
       this.lastGemAt = now;
       SFX.gem(ctx, this.sfxBus, now, this.gemCombo);
+      return;
+    }
+    if (name === 'coin') {
+      this.coinCombo = now - this.lastCoinAt < 0.45 ? Math.min(6, this.coinCombo + 1) : 0;
+      this.lastCoinAt = now;
+      SFX.coin(ctx, this.sfxBus, now, this.coinCombo);
       return;
     }
     (SFX[name] as (c: BaseAudioContext, o: AudioNode, t: number, a?: string | number) => void)(ctx, this.sfxBus, now, arg);

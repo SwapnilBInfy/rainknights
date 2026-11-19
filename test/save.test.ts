@@ -87,6 +87,34 @@ describe('parseStored', () => {
     expect(result.save.settings.muted).toBe(true);
     expect(result.save.meta).toEqual({ bestTime: 12.5, bestLevel: 3, bestKills: 4, runs: 2, wins: 1 });
     expect(result.save.run).toBeNull();
+    expect(result.save.town.coins).toBe(0);
+    expect(result.save.town.fromLegacy).toBe(true);
+    expect(result.save.town.visited).toBe(false);
+  });
+
+  it('migrates a v1 run into Mistford with an empty purse and the run intact', () => {
+    const run = sampleRun();
+    run.characterId = 'hailWarden';
+    const raw = JSON.stringify({
+      version: 1,
+      settings: { muted: false },
+      meta: { bestTime: 40, bestLevel: 4, bestKills: 6, runs: 1, wins: 0 },
+      run,
+    });
+    const result = parseStored(raw, null);
+    expect(result.recovered).toBe(false);
+    expect(result.writable).toBe(true);
+    expect(result.save.version).toBe(SAVE_VERSION);
+    expect(result.save.run?.characterId).toBe('hailWarden');
+    expect(result.save.run?.player.level).toBe(4);
+    expect(result.save.run?.mapSeed).toBeUndefined();
+    expect(result.save.town.coins).toBe(0);
+    expect(result.save.town.fromLegacy).toBe(true);
+    expect(result.save.town.visited).toBe(false);
+    expect(result.save.town.characterId).toBe('hailWarden');
+    expect(result.save.town.armorId).toBeNull();
+    expect(result.save.town.bag).toEqual({});
+    expect(result.save.town.hp).toBeGreaterThan(100);
   });
 
   it('round-trips a v1 run', () => {

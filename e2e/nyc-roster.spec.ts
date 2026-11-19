@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { beginCityRun, test, expect } from './fixtures';
 import { type Page } from '@playwright/test';
 
 // New York's own roster: the Cab Wraith and the Phantom Bus. Miami keeps the Tornado.
@@ -8,14 +8,7 @@ async function beginRun(page: Page, region: 'nyc' | 'miami', weather?: string) {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto(weather ? `/?weather=${weather}` : '/');
-  const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
-  await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'CharacterSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
-  await page.keyboard.press(region === 'nyc' ? 'Digit1' : 'Digit2');
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  await beginCityRun(page, region);
   return errors;
 }
 

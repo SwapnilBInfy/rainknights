@@ -12,10 +12,15 @@ are AI-generated (via `npm run art:generate`).
 
 ## Play
 
-- **Choose a knight**: Rain Knight (balanced), Hail Warden (tanky), or Storm
-  Chaser (fast/fragile) — each with different stats
-- **Choose a city**: New York City or Miami. That city's current weather sets
-  which storm front the run starts on
+- **Start in Mistford**: a small rainy village. Your house is on the west
+  side of the street, the market is on the east, and the south road leaves
+  for the cities
+- **Choose a knight**: the mirror in your house switches Rain Knight
+  (balanced), Hail Warden (tanky), or Storm Chaser (fast/fragile)
+- **Choose a city**: walk south out of Mistford, then New York City or Miami.
+  That city's current weather sets which storm front the run starts on.
+  When the run ends you come home — rest in your bed to heal, and keep
+  whatever you picked up
 - **Move**: Arrow keys or WASD (blocked by lakes and rock clusters on the map)
 - **Swing**: hold **Space** to swing your weapon (sword / hammer / daggers) in an arc
   toward the way you're facing — strong, with knockback
@@ -41,6 +46,7 @@ Keyboard, the on-screen buttons on a touch screen, and a gamepad Start button.
 | Enter | Confirm a menu, start a run, or continue from game over. On the title menu, confirms Continue, New game, or Reset save. |
 | Esc or P | Pause or resume a live run. On the title's "Erase save?" question, backs out without erasing. |
 | M | Mute or unmute. The choice is remembered between visits, and M still works while paused. |
+| I | Open the bag during a fight and use a food item. |
 | 1–3, Z, mouse | Number keys pick a listed option. Z confirms, the same as Enter. Hover and click work on menus, the title, and game over. |
 
 Touch controls show up when the device has a touch screen (or after the first
@@ -132,13 +138,17 @@ and keeps the bests and the mute setting. The game-over screen shows your
 best time.
 
 Progress is stored only in this browser (`localStorage`, key
-`rainknights:save`, schema version 1). There is no account and no server.
+`rainknights:save`, schema version 2). There is no account and no server.
 The game writes that save when a fight starts, when you pick a level-up,
 when the weather front changes, when you pause, and when the tab is hidden
 or the page closes.
 
 A checkpoint keeps the knight, city, weather, storm clock, position, HP,
 level, XP, upgrades, and the tornado's HP if it is already on the field.
+Drips, the bag, the chest, and worn armor live beside the run, so they
+stay when a fight ends. A save from version 1 still loads: Continue
+resumes that fight, and the knight arrives in Mistford afterwards with
+an empty purse.
 Enemies, shots, and XP gems are not stored; the storm keeps spawning after
 you continue. A level-up menu that was open is opened again.
 
@@ -237,6 +247,37 @@ still. The roll is a dodge, not an attack: no swinging or firing while it lasts.
 - **Hit-stop**: a brief freeze-frame on kills and on hits you take (longer for
   the Tornado), rate limited so crowds do not stutter.
 - A yellow **"!"** appears over an enemy while it winds up a dash.
+
+### Mistford
+
+New games wake up in **Mistford**, not in a fight. The south edge of the
+village is the road to New York and Miami. Esc on the road's city screen
+walks you back. After a victory or a defeat, PRESS START returns you home.
+
+| Place | What you can do |
+| ----- | --------------- |
+| Your house (west) | The **bed** restores HP. The **chest** holds spare food. The **mirror** changes which knight you are. The **rack** swaps armor you own. |
+| The market (east) | Buy food and armor with **Drips**. Stand at the counter and press Space (or A). |
+| The street | Two neighbours and a sign. Space talks. |
+
+A new knight finds 20 drips in a jar — one Rain Bun, not a suit of armor.
+Enemies drop drips (and, sometimes, food). Bosses drop more, plus a Sun
+Bean. About eight foes is a short run; two of those pay for the Cloth Vest.
+
+| For sale | Cost | Effect |
+| -------- | ---- | ------ |
+| Rain Bun | 12 | Heal 40 |
+| Storm Tea | 28 | Heal 25, and for a few seconds you move faster in a fight |
+| Sun Bean | 55 | Full heal |
+| Cloth Vest | 60 | +18 HP |
+| Rain Cloak | 140 | +10% speed |
+| Storm Mail | 240 | +28 HP, +3 damage |
+
+Armor is worn into the next fight (a continued fight keeps the stats it
+already had). In a fight, **I** opens the bag. Food can also be used from
+the chest at home. A defeat walks you home at about 30% HP; the bed puts
+you back to full. Drips and items picked up during the optional tutorial
+are not saved.
 
 ### The world
 
@@ -408,7 +449,7 @@ The GitHub Pages copy is retired. **https://rainknights.vercel.app** is the only
 src/
   main.ts          Phaser game bootstrap, touch controls, pause overlay, exit save
   save/            versioned localStorage save, migration, run checkpoints
-  scenes/          Boot, Menu, CharacterSelect, RegionSelect, Game, GameOver, Overlay
+  scenes/          Boot, Menu, Town, House, Market, CharacterSelect, RegionSelect, Game, GameOver, Overlay
   entities/        Player, Projectile, enemy classes
   systems/         WeatherDirector, WeatherService, Terrain, LevelUpSystem, PowerupSystem
   gfx/             procedural pixel sprites, tiles, weapons, palette

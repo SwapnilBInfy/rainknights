@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { beginCityRun, test, expect } from './fixtures';
 import { type Page } from '@playwright/test';
 
 // Vehicles drive the streets: lanes follow the street directions, and a charge into a wall is a crash.
@@ -8,14 +8,7 @@ async function begin(page: Page, query = '?seed=11') {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto('/' + query);
-  const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
-  await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'CharacterSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  await beginCityRun(page);
   return errors;
 }
 

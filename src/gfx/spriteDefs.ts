@@ -6,6 +6,7 @@ import { generateTrainingDummyTexture } from './props';
 import { generateWeaponTextures } from './weapons';
 import { CHARACTERS } from '../config/characters';
 import { generateTerrainTileset, generateRainTexture } from './tiles';
+import { generateSignTexture, generateVillagerTexture } from './townFolk';
 import * as P from './palette';
 
 export const TEX = {
@@ -19,6 +20,11 @@ export const TEX = {
   phantomBus: 'phantomBus',
   trainingDummy: 'trainingDummy',
   xpGem: 'xpGem',
+  coin: 'coin',
+  supply: 'supply',
+  villagerBlue: 'villagerBlue',
+  villagerGreen: 'villagerGreen',
+  signpost: 'signpost',
   projectile: 'projectile',
   terrainTilesNyc: 'terrainTiles_nyc',
   terrainTilesMiami: 'terrainTiles_miami',
@@ -82,6 +88,11 @@ export async function generateAllTextures(scene: Phaser.Scene, afterBatch?: () =
   generateTrainingDummyTexture(scene, TEX.trainingDummy);
 
   generateBlobTexture(scene, TEX.xpGem, { radius: 2.4, shape: 'diamond', ...P.XP_GEM }, 1);
+  generateBlobTexture(scene, TEX.coin, { radius: 2.6, shape: 'circle', ...P.COIN }, 1);
+  generateBlobTexture(scene, TEX.supply, { radius: 2.5, shape: 'square', ...P.SUPPLY }, 1);
+  generateVillagerTexture(scene, TEX.villagerBlue, 0x3060c8, 0x4a3020);
+  generateVillagerTexture(scene, TEX.villagerGreen, 0x2e8a48, 0x6a4a28);
+  generateSignTexture(scene, TEX.signpost);
   generateBlobTexture(scene, TEX.projectile, { radius: 2, shape: 'diamond', ...P.PROJECTILE }, 1);
   await pause();
 

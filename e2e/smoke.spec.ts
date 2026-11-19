@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { test, expect } from './fixtures';
+import { beginCityRun, test, expect } from './fixtures';
 import { devices, type Page } from '@playwright/test';
 
 declare global {
@@ -273,7 +273,9 @@ test.describe('feel follow-ups', () => {
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
       await expect(page.locator('#app')).toHaveAttribute('data-scene', 'MenuScene');
-      await expect(page.locator('#app')).toHaveAttribute('data-title-menu', 'start');
+      await expect(page.locator('#app')).toHaveAttribute('data-title-menu', 'town');
+      const abandoned = await page.evaluate(() => JSON.parse(localStorage.getItem('rainknights:save') || 'null'));
+      expect(abandoned.run).toBeNull();
 
       expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
     });
@@ -335,7 +337,7 @@ test('a run and the mute setting survive reload and Continue', async ({ page }) 
     };
   });
   expect(before.level).toBe(2);
-  expect(before.save.version).toBe(1);
+  expect(before.save.version).toBe(2);
   expect(before.save.settings.muted).toBe(true);
   expect(before.save.run.player.level).toBe(2);
   expect(before.save.run.characterId).toBe('rainKnight');
@@ -558,12 +560,5 @@ function overlaps(
 
 async function beginRun(page: Page) {
   await page.goto('/');
-  const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
-  await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'CharacterSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  await beginCityRun(page);
 }

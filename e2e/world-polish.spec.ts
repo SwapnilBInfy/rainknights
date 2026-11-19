@@ -1,4 +1,4 @@
-import { test, expect, stubWeather } from './fixtures';
+import { beginCityRun, test, expect, stubWeather } from './fixtures';
 import { type Browser, type Page } from '@playwright/test';
 
 // The painted world: street furniture and greenery that block the way, decor that repaints when the flood rises.
@@ -14,14 +14,7 @@ async function begin(page: Page, query: string, city: 'Digit1' | 'Digit2' = 'Dig
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto('/' + query);
-  const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
-  await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'CharacterSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
-  await page.keyboard.press(city);
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  await beginCityRun(page, city === 'Digit2' ? 'miami' : 'nyc');
   return errors;
 }
 const terrain = (page: Page) => page.evaluate(`window.__rk.terrain()`) as Promise<Terrain>;

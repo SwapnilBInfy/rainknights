@@ -12,10 +12,11 @@ test('feel follow-ups demo', async ({ page }) => {
   await page.waitForTimeout(1400);
 
   await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'CharacterSelectScene');
+  await expect(app).toHaveAttribute('data-scene', 'TownScene');
   await page.waitForTimeout(700);
-  await page.keyboard.press('Digit1');
+  await page.keyboard.down('ArrowDown');
   await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
+  await page.keyboard.up('ArrowDown');
   await page.waitForTimeout(700);
   await page.keyboard.press('Digit1');
   await expect(app).toHaveAttribute('data-scene', 'GameScene');
