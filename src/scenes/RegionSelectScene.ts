@@ -5,6 +5,7 @@ import { UI } from '../gfx/palette';
 import { drawWindow, textStyle } from '../ui/Window';
 import { drawWeatherIcon, WEATHER_SHORT } from '../ui/weatherIcons';
 import { audio } from '../audio/engine';
+import { runStartData } from '../systems/runStart';
 
 interface RegionSelectData {
   characterId: string;
@@ -119,15 +120,6 @@ export class RegionSelectScene extends Phaser.Scene {
     if (this.chosen) return;
     this.chosen = true;
     audio.play('confirm');
-    const resolved: RegionWeatherState =
-      weather ?? { frontIndex: 0, label: 'Unknown skies', glyph: '', tint: 0x8fe0ff, condition: 'clear', temp: 20, source: 'fallback' };
-    this.scene.start('GameScene', {
-      characterId: this.characterId,
-      regionId: region.id,
-      startFrontIndex: resolved.frontIndex,
-      weatherLabel: resolved.label,
-      weatherCondition: resolved.condition,
-      weatherTint: resolved.tint,
-    });
+    this.scene.start('GameScene', runStartData(this.characterId, region, weather));
   }
 }

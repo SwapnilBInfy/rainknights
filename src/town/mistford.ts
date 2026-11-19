@@ -25,8 +25,8 @@ const TOWN_ART = [
   '#================#',
   '#.......==.......#',
   '#.......==..~~...#',
-  '#.......==..~~...#',
-  '#.......==.......#',
+  '#.......==..~~FF.#',
+  '#.......==....FF.#',
   '#....********....#',
   '##################',
 ];
@@ -99,6 +99,10 @@ export const TOWN = {
   houseMat: doorMats[0],
   shopMat: doorMats[1],
   gates: cells(TOWN_ART, '*'),
+  /** The blue flight pad: a 2x2 plate. Stand on it and press A to fly. */
+  pad: cells(TOWN_ART, 'F'),
+  /** Where you land when you come back from a flight: on the pad. */
+  padSpawn: { col: 14, row: 11 } as Cell,
   /** Where you land outside a door, on the street, so the mat does not immediately pull you back in. */
   houseExit: { col: doorMats[0].col, row: doorMats[0].row + 1 } as Cell,
   shopExit: { col: doorMats[1].col, row: doorMats[1].row + 1 } as Cell,
@@ -148,8 +152,15 @@ export const TOWN_NPCS: TownNpc[] = [
 
 export const TOWN_SIGN: { at: Cell; lines: [string, string] } = {
   at: { col: 6, row: 10 },
-  lines: ['South road: the cities.', 'Come home between runs.'],
+  lines: ['South road: the cities.', 'Or fly from the blue pad.'],
 };
+
+/** The middle of the flight pad, in pixels. */
+export function padCenter(): { x: number; y: number } {
+  const cols = TOWN.pad.map((c) => c.col);
+  const rows = TOWN.pad.map((c) => c.row);
+  return { x: (Math.min(...cols) + Math.max(...cols) + 1) * (TILE / 2), y: (Math.min(...rows) + Math.max(...rows) + 1) * (TILE / 2) };
+}
 
 export function sameCell(a: Cell, b: Cell): boolean {
   return a.col === b.col && a.row === b.row;

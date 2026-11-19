@@ -53,7 +53,7 @@ const T = {
 const m = (root: number): Chord => ({ root, q: 'min' });
 const M = (root: number): Chord => ({ root, q: 'maj' });
 
-export type SongKey = 'title' | 'town' | 'nyc' | 'miami' | 'london' | 'tokyo' | 'mumbai' | 'boss' | 'victory' | 'gameover';
+export type SongKey = 'title' | 'town' | 'nyc' | 'miami' | 'london' | 'tokyo' | 'mumbai' | 'flight' | 'boss' | 'victory' | 'gameover';
 
 const DEFS: Record<SongKey, SongDef> = {
   // "Rain on the Route" — A minor, wistful.
@@ -97,6 +97,12 @@ const DEFS: Record<SongKey, SongDef> = {
     bpm: 108, tonic: 45, chords: [M(0), M(5), m(9), M(7), M(0), M(5), m(2), M(7)],
     bass: 'root8', drums: 'funk', arp: 'eighth', leadVoice: 'square12', leadVol: 0.1, gate: 0.65,
     rhythms: [T.c, T.e, T.a, T.g], restChance: 0.12, bias: 0.0, seed: 71, loop: true, vibrato: 8,
+  },
+  // "Above the Clouds" — D major, open and floating, for flying between the cities.
+  flight: {
+    bpm: 118, tonic: 38, chords: [M(0), M(7), m(9), M(5), M(0), M(7), M(5), M(7)],
+    bass: 'gentle', drums: 'light', arp: 'eighth', leadVoice: 'tri', leadVol: 0.15, gate: 0.92,
+    rhythms: [T.a, T.f, T.c, T.d], restChance: 0.1, bias: 0.2, seed: 83, loop: true, vibrato: 16,
   },
   // Tornado boss — E minor, fast.
   boss: {
