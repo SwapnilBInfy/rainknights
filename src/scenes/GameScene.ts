@@ -101,6 +101,8 @@ interface RunBridge {
   heal: () => void;
   /** Hurt the knight (debug / tests). A lethal hit ends the run. */
   hurt: (amount: number) => void;
+  /** Grant XP. Enough to level up heals to full and opens the level-up menu. */
+  addXp: (amount: number) => void;
   /** End the run as a defeat without a damage popup (debug / tests). */
   defeat: () => void;
   /** Drips in the purse right now. */
@@ -159,6 +161,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private terrain!: TerrainResult;
   private lastFrontIndex = 0;
   private pendingLevelUps = 0;
+  private levelCue = false;
   private ended = false;
   private xpGrant = 0;
   private detachTouch: (() => void) | null = null;
@@ -370,6 +373,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       },
       hurt: (amount) => {
         this.player.takeDamage(amount, this.time.now);
+      },
+      addXp: (amount: number) => {
+        this.xpGrant += Math.max(0, amount);
       },
       /** End the run the way a defeat does, without a damage number (debug / tests). */
       defeat: () => {
@@ -949,8 +955,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   private pauseForLevelUp() {
     this.pendingLevelUps += 1;
-    if (this.paused) return; // a menu is already open — this level is queued behind it
-    this.showLevelUpMenu();
+    if (this.paused || this.levelCue) return; // a menu is already open — this level is queued behind it
+    this.levelCue = true;
+    audio.play('sunbeam');
+    // Leave the HP bar up for a moment so the full heal reads before the menu covers it.
+    window.setTimeout(() => {
+      this.levelCue = false;
+      if (!this.ended && this.pendingLevelUps > 0 && !this.levelUpOpen) this.showLevelUpMenu();
+    }, 480);
   }
 
   private showLevelUpMenu() {

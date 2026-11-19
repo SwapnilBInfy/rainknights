@@ -8,6 +8,7 @@ import { Avatar } from '../town/avatar';
 import { mountMap } from '../town/mapView';
 import { Speech, clearHub, publishHub } from '../town/speech';
 import { HOUSE, cellCenter, cellOf, houseGrid, sameCell, type Cell } from '../town/mistford';
+import { FURNITURE, placeExit, placeProp } from '../gfx/furniture';
 
 /** The knight's house: a bed, a chest, a mirror, and a rack for armor. */
 export class HouseScene extends Phaser.Scene {
@@ -39,10 +40,11 @@ export class HouseScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, map.width, map.height);
     this.cameras.main.startFollow(this.avatar, true, 0.2, 0.2);
 
-    this.spot(HOUSE.bed, 0x4060c0);
-    this.spot(HOUSE.chest, 0xc08040);
-    this.spot(HOUSE.mirror, 0x80d0e0);
-    this.spot(HOUSE.rack, 0xb0b0c0);
+    placeProp(this, FURNITURE.bed, HOUSE.bed);
+    placeProp(this, FURNITURE.chest, HOUSE.chest);
+    placeProp(this, FURNITURE.mirror, HOUSE.mirror);
+    placeProp(this, FURNITURE.rack, HOUSE.rack);
+    placeExit(this, HOUSE.door);
     this.chrome = new HubChrome(this, 'HOME');
 
     audio.playMusic('town');
@@ -72,22 +74,18 @@ export class HouseScene extends Phaser.Scene {
     this.menu.pump(time);
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked && sameCell(cellOf(this.avatar.x, this.avatar.y), HOUSE.door)) {
-      this.leaving = true;
-      audio.play('confirm');
-      this.scene.start('TownScene', { at: 'house' });
+      this.leaveHouse();
       return;
     }
     this.interact = this.nearest();
     this.publish();
   }
 
-  private spot(cell: Cell, color: number) {
-    const at = cellCenter(cell);
-    const g = this.add.graphics().setDepth(3);
-    g.fillStyle(0x14121f, 1);
-    g.fillRect(at.x - 7, at.y - 7, 14, 12);
-    g.fillStyle(color, 1);
-    g.fillRect(at.x - 6, at.y - 6, 12, 10);
+  private leaveHouse() {
+    if (this.leaving) return;
+    this.leaving = true;
+    audio.play('confirm');
+    this.scene.start('TownScene', { at: 'house' });
   }
 
   private nearest(): string {
@@ -96,9 +94,10 @@ export class HouseScene extends Phaser.Scene {
       ['chest', HOUSE.chest],
       ['mirror', HOUSE.mirror],
       ['rack', HOUSE.rack],
+      ['door', HOUSE.door],
     ];
     let best = '';
-    let bestDist = 20;
+    let bestDist = 22;
     for (const [id, cell] of spots) {
       const at = cellCenter(cell);
       const dist = Phaser.Math.Distance.Between(this.avatar.x, this.avatar.y, at.x, at.y);
@@ -128,6 +127,10 @@ export class HouseScene extends Phaser.Scene {
       return;
     }
     if (key !== ' ' && key !== 'enter' && key !== 'z') return;
+    if (this.interact === 'door') {
+      this.leaveHouse();
+      return;
+    }
     if (this.interact === 'bed') this.openRest();
     else if (this.interact === 'chest') this.openChest();
     else if (this.interact === 'mirror') {
@@ -264,7 +267,8 @@ export class HouseScene extends Phaser.Scene {
         ['rack', HOUSE.rack],
       ] as [string, Cell][]
     ).find(([id]) => id === this.interact);
-    this.chrome.setBubble(spot ? cellCenter(spot[1]) : null);
+    const door = this.interact === 'door';
+    this.chrome.setBubble(spot ? { x: cellCenter(spot[1]).x, y: cellCenter(spot[1]).y - (door ? 4 : 0) } : null);
     publishHub({
       place: 'house',
       coins: profile.coins,
