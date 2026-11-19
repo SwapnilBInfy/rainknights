@@ -39,6 +39,72 @@ export const MIAMI_TERRAIN: TerrainTheme = {
   roofVent: 0x78d0c8,
 };
 
+
+/** London: damp slate pavement, brick-red roofs, a wide grey-green Thames. */
+export const LONDON_TERRAIN: TerrainTheme = {
+  style: 'pavement',
+  groundA: 0x8fa088,
+  groundB: 0x84967e,
+  pathA: 0x5a5e66,
+  pathB: 0xd8d0b0,
+  water: 0x4f7a8a,
+  waterLight: 0x8cb6c0,
+  waterDark: 0x2e5260,
+  rock: 0x7a7c78,
+  rockLight: 0xa8aaa4,
+  rockDark: 0x3a3c3a,
+  roof: 0x8a4a42,
+  roofLight: 0xb8726a,
+  roofDark: 0x4a2622,
+  roofVent: 0x5e5a5a,
+};
+
+/** Tokyo: dark asphalt, cool lilac concrete, neon-bright canal and roofs. */
+export const TOKYO_TERRAIN: TerrainTheme = {
+  style: 'pavement',
+  groundA: 0x8c88a8,
+  groundB: 0x817da0,
+  pathA: 0x3c3a52,
+  pathB: 0xf0e8f8,
+  water: 0x4a68d0,
+  waterLight: 0x8aa8f8,
+  waterDark: 0x2a3c8c,
+  rock: 0x6c6a84,
+  rockLight: 0x9a98b4,
+  rockDark: 0x32304a,
+  roof: 0x4a4668,
+  roofLight: 0x7a74a8,
+  roofDark: 0x24223a,
+  roofVent: 0xe05890,
+};
+
+/** Mumbai: terracotta ground, monsoon-green shallows, a heavy teal sea. */
+export const MUMBAI_TERRAIN: TerrainTheme = {
+  style: 'sand',
+  groundA: 0xd8b078,
+  groundB: 0xcea468,
+  pathA: 0x9a6a40,
+  pathB: 0x6a4428,
+  water: 0x2f9a98,
+  waterLight: 0x7ad8c8,
+  waterDark: 0x1a6068,
+  rock: 0xb87a58,
+  rockLight: 0xe0a888,
+  rockDark: 0x6a3c2a,
+  roof: 0xd86c48,
+  roofLight: 0xf8a078,
+  roofDark: 0x8a3c28,
+  roofVent: 0x58b8a0,
+};
+
+export const TERRAIN_THEMES: Record<string, TerrainTheme> = {
+  nyc: NYC_TERRAIN,
+  miami: MIAMI_TERRAIN,
+  london: LONDON_TERRAIN,
+  tokyo: TOKYO_TERRAIN,
+  mumbai: MUMBAI_TERRAIN,
+};
+
 /** Colours for the decor layer (shorelines, curbs, buildings, props), by city. */
 export type DecorPalette = Record<import('../systems/decorRules').Role, number>;
 
@@ -105,6 +171,78 @@ export const DECOR_MIAMI: DecorPalette = {
   railDark: 0x6a4222,
   railLight: 0xe8c890,
   leaf: 0x3aa84c,
+};
+
+export const DECOR_LONDON: DecorPalette = {
+  ...DECOR_COMMON,
+  curb: 0xb8b4a8,
+  curbShade: 0x34322e,
+  lane: 0xf0e8a0,
+  parapetLight: 0xa88a80,
+  parapetDark: 0x3a2a28,
+  wallFace: 0x9a4a40,
+  wallShade: 0x4a2220,
+  window: 0x4a5870,
+  windowLit: 0xf8dc88,
+  carBody: 0x1c1c24,
+  carBody2: 0xd83028,
+  carBody3: 0x3a5a8a,
+  umbrellaA: 0x1c1c24,
+  umbrellaB: 0x1c1c24,
+  lampLight: 0xffe49a,
+  hydrant: 0xe8d048,
+};
+
+export const DECOR_TOKYO: DecorPalette = {
+  ...DECOR_COMMON,
+  curb: 0xc8c4e0,
+  curbShade: 0x24223a,
+  lane: 0xffffff,
+  parapetLight: 0x8c88b8,
+  parapetDark: 0x24223a,
+  wallFace: 0x58548c,
+  wallShade: 0x2c2a4c,
+  window: 0x2c3a68,
+  windowLit: 0xff78c8,
+  carBody: 0xf0f0f8,
+  carBody2: 0x28283c,
+  carBody3: 0x58d8e8,
+  umbrellaA: 0xff78c8,
+  umbrellaB: 0x58d8e8,
+  lampLight: 0xff9ad8,
+  hydrant: 0xff4a8a,
+  leaf: 0x58a878,
+  leafLight: 0xf8a8c8,
+  leafDark: 0x2e7a58,
+};
+
+export const DECOR_MUMBAI: DecorPalette = {
+  ...DECOR_COMMON,
+  curb: 0xe8cc98,
+  curbShade: 0x6a4428,
+  lane: 0xf0d860,
+  parapetLight: 0xf0b890,
+  parapetDark: 0x8a3c28,
+  wallFace: 0xe89058,
+  wallShade: 0xa85a38,
+  window: 0x2f6a78,
+  windowLit: 0xffe890,
+  carBody: 0xf0c830,
+  carBody2: 0x28282c,
+  carBody3: 0xf0c830,
+  umbrellaA: 0xf06848,
+  umbrellaB: 0xffe8a0,
+  railDark: 0x5a3820,
+  railLight: 0xe0b888,
+  leaf: 0x2e9a48,
+};
+
+export const DECOR_PALETTES: Record<string, DecorPalette> = {
+  nyc: DECOR_NYC,
+  miami: DECOR_MIAMI,
+  london: DECOR_LONDON,
+  tokyo: DECOR_TOKYO,
+  mumbai: DECOR_MUMBAI,
 };
 
 export const RAIN_IMP = { main: 0x3aa0e0, highlight: 0x9fd8ff, shadow: 0x1c5f8f };

@@ -6,8 +6,10 @@ import { generateTrainingDummyTexture } from './props';
 import { generateWeaponTextures } from './weapons';
 import { CHARACTERS } from '../config/characters';
 import { generateTerrainTileset, generateRainTexture } from './tiles';
+import { generateEmblem } from './emblems';
 import { generateSignTexture, generateVillagerTexture } from './townFolk';
 import { generateFurnitureTextures } from './furniture';
+import { REGIONS } from '../config/regions';
 import * as P from './palette';
 
 export const TEX = {
@@ -46,9 +48,11 @@ export async function generateAllTextures(scene: Phaser.Scene, afterBatch?: () =
     if (afterBatch) await afterBatch();
   };
 
-  generateTerrainTileset(scene, TEX.terrainTilesNyc, P.NYC_TERRAIN);
-  await pause();
-  generateTerrainTileset(scene, TEX.terrainTilesMiami, P.MIAMI_TERRAIN);
+  for (const region of REGIONS) {
+    generateTerrainTileset(scene, region.terrainTilesKey, P.TERRAIN_THEMES[region.id] ?? P.NYC_TERRAIN);
+    generateEmblem(scene, region.emblemKey, region.id);
+    await pause();
+  }
   generateRainTexture(scene, TEX.rain);
   await pause();
 

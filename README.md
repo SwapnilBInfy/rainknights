@@ -17,7 +17,7 @@ are AI-generated (via `npm run art:generate`).
   for the cities
 - **Choose a knight**: the mirror in your house switches Rain Knight
   (balanced), Hail Warden (tanky), or Storm Chaser (fast/fragile)
-- **Choose a city**: walk south out of Mistford, then New York City or Miami.
+- **Choose a city**: walk south out of Mistford, then pick New York, Miami, London, Tokyo or Mumbai.
   That city's current weather sets which storm front the run starts on.
   When the run ends you come home — rest in your bed to heal, and keep
   whatever you picked up
@@ -40,7 +40,7 @@ Keyboard, the on-screen buttons on a touch screen, and a gamepad Start button.
 
 | Input | What it does |
 | ----- | ------------ |
-| Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. On the city screen, Left/A selects New York and Right/D selects Miami. |
+| Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. On the city screen, Up/Down (or W/S, A/D) moves down the list, Enter picks, and 1-5 pick a city directly. |
 | Space | Swing (hold). Also confirms menus, starts a run, and continues from game over. |
 | J or X | Energy beam (hold). |
 | Shift or K | Dodge roll: a quick tumble in the direction you are moving (or facing). You cannot be hit mid-roll. |
@@ -179,7 +179,7 @@ Browsers only allow sound after your first key press, click, or touch.
 
 ### City weather
 
-The two cities have fixed coordinates. Before the run starts, the game asks
+Each city has fixed coordinates. Before the run starts, the game asks
 the free [Open-Meteo](https://open-meteo.com/) API (no key) for that city's
 current conditions and uses them to choose the starting row in the table
 below — a storm already over the city starts you further in. If the request
@@ -252,7 +252,7 @@ still. The roll is a dodge, not an attack: no swinging or firing while it lasts.
 ### Mistford
 
 New games wake up in **Mistford**, not in a fight. The south edge of the
-village is the road to New York and Miami. Esc on the road's city screen
+village is the road to the five cities. Esc on the road's city screen
 walks you back. After a victory or a defeat, PRESS START returns you home.
 
 | Place | What you can do |
@@ -327,6 +327,30 @@ And the weather changes the map:
 | Rain, thunderstorm | **Puddles** appear on the streets. |
 | Tropical downpour, hurricane | The streets **flood** inland, one more ring of shallow water each storm front. |
 | Thunderstorm, downpour, hurricane | **Water carries lightning**: a strike on water shocks everyone standing in the same water, nearby. The water lights up while it is coming, and strikes like to land in it. Stay on dry ground or a bridge. |
+
+### Cities
+
+A city is one entry in `src/config/regions.ts`; nothing else is hard-coded to a particular city. Each has a
+layout, a way of dressing the world, a forecast rule, and a palette and song of its own.
+
+| City | World | Forecast rules | Boss |
+| --- | --- | --- | --- |
+| New York | A street grid of blocks, a river, parked cars and lamps | Cold front at 5 C or below, Urban Wind at 30 km/h | Phantom Bus |
+| Miami | A beach with an ocean edge, canals, palms and umbrellas | Tropical set; a storm over 60 km/h is a hurricane | Tornado |
+| London | The same grid with a **wider river** and **more parks**, wet green pavement and brick roofs | Hardier: cold front at 3 C, wind at 35 km/h | Phantom Bus (the Night Bus) |
+| Tokyo | **Tight, dense blocks** (the most buildings of any city), a thin canal, lilac concrete and neon roof trim | A storm over 55 km/h is a **typhoon** (the hurricane front) | Tornado |
+| Mumbai | A **crowded seafront**: a beach layout with far more buildings, terracotta ground, teal sea | Tropical set, hotter before Heat (34 C), storms turn severe at 50 km/h (the **monsoon**) | Tornado |
+
+To add a city: add an entry to `REGIONS` (name, coordinates, `layout` of `city` or `coast`, `dress` of
+`street` or `beach`, `tuning`, `climate`, `fallback`), a terrain theme and a decor palette in
+`src/gfx/palette.ts`, a song in `src/audio/music.ts`, and an emblem. The emblem is either a PNG
+(`npm run art:generate`, needs an OpenAI key) or drawn in code in `src/gfx/emblems.ts`, as London, Tokyo and
+Mumbai are. `test/mapGen.test.ts` and `test/weatherService.test.ts` then check that the city's maps are
+connected and distinct, that its forecast rules map to fronts the game knows, and that it has everything.
+
+New York's and Miami's maps are unchanged by this: they use the same defaults and the same random sequence,
+so a given `?seed=` still makes the same map. London, Tokyo and Mumbai do not yet have signature enemies; they
+face the shared roster and a boss borrowed from the first two cities.
 
 ### City enemies and bosses
 

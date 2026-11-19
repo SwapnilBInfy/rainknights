@@ -1,4 +1,4 @@
-import type { RegionDef } from '../config/regions';
+import type { Climate, RegionDef } from '../config/regions';
 
 export interface RegionWeatherState {
   condition: string;
@@ -13,7 +13,7 @@ export interface RegionWeatherState {
 const THUNDER_CODES = [95, 96, 99];
 const RAINY_CODES = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82];
 
-interface Reading {
+export interface Reading {
   code: number;
   temp: number;
   wind: number;
@@ -35,20 +35,25 @@ export const CONDITION_PRESETS: Record<string, Classified> = {
   humid: { condition: 'humid', label: 'Humid', glyph: '💧', frontIndex: 0, tint: 0x5fae9a },
 };
 
-function classifyNYC({ code, temp, wind }: Reading): Classified {
-  if (THUNDER_CODES.includes(code)) return CONDITION_PRESETS.thunderstorm;
-  if (temp <= 5) return CONDITION_PRESETS.cold_front;
-  if (wind >= 30) return CONDITION_PRESETS.windy;
-  if (RAINY_CODES.includes(code)) return CONDITION_PRESETS.rain;
-  return CONDITION_PRESETS.clear;
-}
+const isStormy = (code: number) => THUNDER_CODES.includes(code);
+const isWet = (code: number) => RAINY_CODES.includes(code);
 
-function classifyMiami({ code, temp, wind, humidity }: Reading): Classified {
-  if (THUNDER_CODES.includes(code) && wind >= 60) return CONDITION_PRESETS.hurricane;
-  if (THUNDER_CODES.includes(code) || RAINY_CODES.includes(code)) return CONDITION_PRESETS.tropical_downpour;
-  if (temp >= 30) return CONDITION_PRESETS.heat;
-  if (humidity >= 70) return CONDITION_PRESETS.humid;
-  return { ...CONDITION_PRESETS.clear, tint: 0xffe9b3 };
+/** Turn a live reading into a front, using the city's own cut-offs. Pure, so it is unit-tested. */
+export function classifyReading(reading: Reading, climate: Climate): Classified {
+  const { code, temp, wind, humidity } = reading;
+  if (climate.kind === 'tropical') {
+    if (isStormy(code) && wind >= (climate.stormWindAt ?? 60)) return CONDITION_PRESETS.hurricane;
+    if (isStormy(code) || isWet(code)) return CONDITION_PRESETS.tropical_downpour;
+    if (temp >= (climate.heatAt ?? 30)) return CONDITION_PRESETS.heat;
+    if (humidity >= (climate.humidAt ?? 70)) return CONDITION_PRESETS.humid;
+    return { ...CONDITION_PRESETS.clear, tint: 0xffe9b3 };
+  }
+  if (isStormy(code) && climate.stormWindAt !== undefined && wind >= climate.stormWindAt) return CONDITION_PRESETS.hurricane;
+  if (isStormy(code)) return CONDITION_PRESETS.thunderstorm;
+  if (temp <= (climate.coldAt ?? 5)) return CONDITION_PRESETS.cold_front;
+  if (wind >= (climate.windyAt ?? 30)) return CONDITION_PRESETS.windy;
+  if (isWet(code)) return CONDITION_PRESETS.rain;
+  return CONDITION_PRESETS.clear;
 }
 
 /**
@@ -63,10 +68,15 @@ function forcedWeather(): RegionWeatherState | null {
 }
 
 function fallbackFor(region: RegionDef): RegionWeatherState {
-  const base = region.id === 'miami'
-    ? { condition: 'clear', label: 'Unknown skies', glyph: '☀', frontIndex: 0, tint: 0xffe9b3, temp: 28 }
-    : { condition: 'clear', label: 'Unknown skies', glyph: '☀', frontIndex: 0, tint: 0x8fe0ff, temp: 15 };
-  return { ...base, source: 'fallback' };
+  return {
+    condition: 'clear',
+    label: 'Unknown skies',
+    glyph: '☀',
+    frontIndex: 0,
+    tint: region.fallback.tint,
+    temp: region.fallback.temp,
+    source: 'fallback',
+  };
 }
 
 export async function fetchRegionWeather(region: RegionDef): Promise<RegionWeatherState> {
@@ -85,7 +95,7 @@ export async function fetchRegionWeather(region: RegionDef): Promise<RegionWeath
       humidity: json.current?.relative_humidity_2m ?? 50,
     };
 
-    const classified = region.id === 'miami' ? classifyMiami(reading) : classifyNYC(reading);
+    const classified = classifyReading(reading, region.climate);
     return { ...classified, temp: reading.temp, source: 'live' };
   } catch {
     return fallbackFor(region);

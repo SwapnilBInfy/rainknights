@@ -3,6 +3,7 @@ import { generateAllTextures } from '../gfx/spriteDefs';
 import { REGIONS } from '../config/regions';
 import { CHARACTERS } from '../config/characters';
 import { chibiKey, FACINGS } from '../gfx/chibi';
+import { hasDrawnEmblem } from '../gfx/emblems';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -11,11 +12,12 @@ export class BootScene extends Phaser.Scene {
 
   preload() {
     // AI-generated region emblems are optional — RegionSelectScene falls back
-    // to emoji glyphs if a file is missing.
+    // to a plain block if a file is missing. Cities with a drawn emblem have no file.
     this.load.on('loaderror', (file: Phaser.Loader.File) => {
       console.warn(`Optional generated asset missing, using fallback: ${file.key}`);
     });
     for (const region of REGIONS) {
+      if (hasDrawnEmblem(region.id)) continue;
       this.load.image(region.emblemKey, `assets/generated/${region.emblemKey}.png`);
     }
   }

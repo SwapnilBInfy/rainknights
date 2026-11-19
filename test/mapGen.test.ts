@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ensureConnected, generateMap, isSolid, PLAZA_RADIUS, TileType, TILE_TYPE_COUNT, unreachableWalkable, type Grid } from '../src/systems/mapGen';
 import { MAP_COLS, MAP_ROWS } from '../src/config/constants';
+import { REGIONS as REGION_DEFS } from '../src/config/regions';
 
 const SEEDS = Array.from({ length: 40 }, (_, i) => 1000 + i * 7919);
-const REGIONS = ['nyc', 'miami'];
+const REGIONS = REGION_DEFS.map((region) => region.id);
 
 const count = (grid: Grid, t: number) => grid.flat().filter((v) => v === t).length;
 const fraction = (grid: Grid, pred: (t: number) => boolean) => grid.flat().filter(pred).length / (grid.length * grid[0].length);
@@ -86,6 +87,31 @@ describe('generateMap', () => {
       nyc += count(generateMap('nyc', seed).grid, TileType.BUILDING);
     }
     expect(miami).toBeLessThan(nyc / 2);
+  });
+
+  it('every city has its own shape: London is wetter and greener, Tokyo tighter, Mumbai more crowded', () => {
+    const total = (region: string, t: number) => SEEDS.slice(0, 20).reduce((n, seed) => n + count(generateMap(region, seed).grid, t), 0);
+    const water = (region: string) => total(region, TileType.WATER) + total(region, TileType.SHALLOW);
+    // London's river is wider than New York's, and it has fewer buildings and more park
+    expect(water('london')).toBeGreaterThan(water('nyc') * 1.15);
+    expect(total('london', TileType.BUILDING)).toBeLessThan(total('nyc', TileType.BUILDING) * 0.9);
+    // Tokyo is built up far more than New York or London, and has a thinner river than New York
+    expect(total('tokyo', TileType.BUILDING)).toBeGreaterThan(total('nyc', TileType.BUILDING) * 1.15);
+    expect(total('tokyo', TileType.BUILDING)).toBeGreaterThan(total('london', TileType.BUILDING) * 1.4);
+    expect(total('tokyo', TileType.WATER)).toBeLessThan(total('nyc', TileType.WATER));
+    // Mumbai packs far more buildings onto its seafront than Miami does
+    expect(total('mumbai', TileType.BUILDING)).toBeGreaterThan(total('miami', TileType.BUILDING) * 1.6);
+    expect(total('mumbai', TileType.WATER)).toBeGreaterThan(10000);
+  });
+
+  it('street cities have cars and lamps; beach cities have palms and umbrellas, no cars', () => {
+    for (const def of REGION_DEFS) {
+      const grid = generateMap(def.id, 33).grid;
+      expect(count(grid, TileType.TREE), `${def.id} trees`).toBeGreaterThan(40);
+      expect(count(grid, TileType.PROP), `${def.id} props`).toBeGreaterThan(5);
+      if (def.dress === 'beach') expect(count(grid, TileType.CAR), `${def.id} cars`).toBe(0);
+      else expect(count(grid, TileType.CAR), `${def.id} cars`).toBeGreaterThan(5);
+    }
   });
 
   it('roads carry across water on bridge decks', () => {

@@ -7,6 +7,7 @@
  * Deterministic for a given grid and seed, so it can be unit-tested.
  */
 import { TILE } from '../config/constants';
+import { getRegion } from '../config/regions';
 import { TileType, type Grid } from './mapGen';
 
 export type Role =
@@ -89,7 +90,7 @@ function edge(x: number, y: number, side: Side, thick: number, role: Role, a?: n
 }
 
 export interface DecorOptions {
-  /** 'nyc' paints lane markings; 'miami' has boardwalk planks instead. */
+  /** A 'street' region paints lane markings; a 'beach' one has boardwalk planks instead. */
   regionId: string;
   seed: number;
 }
@@ -99,7 +100,8 @@ export function computeDecor(grid: Grid, opts: DecorOptions): Op[] {
   const cols = grid[0].length;
   const ops: Op[] = [];
   const props: { c: number; r: number; t: number }[] = [];
-  const lanes = opts.regionId !== 'miami';
+  const beach = getRegion(opts.regionId).dress === 'beach';
+  const lanes = !beach;
 
   /** A neighbour's tile type; off the map counts as the same as the tile itself (no edge at the world's rim). */
   const at = (c: number, r: number, self: number) => grid[r]?.[c] ?? self;
@@ -208,9 +210,9 @@ export function computeDecor(grid: Grid, opts: DecorOptions): Op[] {
     const x = p.c * TILE;
     const y = p.r * TILE;
     const h = tileHash(p.c, p.r, opts.seed);
-    if (p.t === TileType.TREE) opts.regionId === 'miami' ? palm(ops, x, y, h) : tree(ops, x, y, h);
+    if (p.t === TileType.TREE) beach ? palm(ops, x, y, h) : tree(ops, x, y, h);
     else if (p.t === TileType.CAR) car(ops, x, y, h, isRoad(at(p.c - 1, p.r, p.t)) || isRoad(at(p.c + 1, p.r, p.t)) || at(p.c - 1, p.r, p.t) === TileType.CAR || at(p.c + 1, p.r, p.t) === TileType.CAR);
-    else opts.regionId === 'miami' ? umbrella(ops, x, y, h) : lamp(ops, x, y, h);
+    else beach ? umbrella(ops, x, y, h) : lamp(ops, x, y, h);
   }
   return ops;
 }
