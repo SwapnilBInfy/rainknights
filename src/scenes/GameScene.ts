@@ -5,6 +5,8 @@ import { beamKey, SPARK_KEY } from '../gfx/weapons';
 import { TEX } from '../gfx/spriteDefs';
 import { getCharacter } from '../config/characters';
 import { getRegion, type RegionDef } from '../config/regions';
+import { drawFlightPad } from '../gfx/flight';
+import { onPad, padCenterFor, PAD_SIZE, stepPadCharge } from '../systems/flightPad';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import type { Enemy } from '../entities/enemies/Enemy';
@@ -117,6 +119,12 @@ interface RunBridge {
   enemiesInSolid: () => number;
   /** Teleport the knight onto a tile of this type that has `run` more of it to its right (debug / tests). */
   tpToTile: (type: number, run?: number, offCols?: number, offRows?: number) => boolean;
+  /** Take hit points off the knight, leaving at least 1 (debug / tests). */
+  wound: (amount: number) => void;
+  /** The flight pad: where it is, how full its ring is (0..1), and a way onto it. */
+  padAt: () => { x: number; y: number };
+  padCharge: () => number;
+  tpToPad: () => void;
   /** Current tutorial step id, or null outside the tutorial. */
   tutorialStep: () => TutorialStepId | null;
   /** Skip the current tutorial step (debug / tests). */
@@ -187,6 +195,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   /** Test hook: throw on the next update. */
   private faultNextFrame = false;
   private terrainClock = 0;
+  private padGfx: Phaser.GameObjects.Graphics | null = null;
+  private padCharge = 0;
+  private padHinted = 0;
   private wasWet = false;
   private runDrips = 0;
   private bagMenu: ListMenu | null = null;
@@ -250,6 +261,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.player.applyBattleGear(battleGear(this.runCharacterId, town.armorId, town.hp));
     }
     this.player.onDied = () => this.endRun(false);
+    this.padCharge = 0;
+    this.padHinted = -1e9;
+    this.padGfx = data.tutorial ? null : this.add.graphics().setDepth(0.6);
     this.player.onLevelUp = () => this.pauseForLevelUp();
     this.player.on('hurt', (amount: number) => {
       this.tutorial?.note('hurt');
@@ -416,6 +430,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         this.player.setPosition(spot.x + offCols * 16, spot.y + offRows * 16);
         return true;
       },
+      wound: (amount) => {
+        this.player.hp = Math.max(1, this.player.hp - amount);
+      },
+      padAt: () => padCenterFor(this.terrain.spawn),
+      padCharge: () => this.padCharge,
+      tpToPad: () => {
+        const at = padCenterFor(this.terrain.spawn);
+        this.player.setPosition(at.x, at.y);
+      },
       tutorialStep: () => this.tutorial?.stepId ?? null,
       skipTutorialStep: () => this.tutorial?.skip(),
       bossRaging: () => !!(this.boss?.active && (this.boss as unknown as { raging?: boolean }).raging),
@@ -541,6 +564,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.paused || this.userPaused) return;
 
     this.tickHitStop(delta);
+    this.updateFlightPad(time, delta);
+    if (this.ended) return; // flew out
     if (!this.tutorial) this.weather.update(delta); // the tutorial has no storm clock
     this.updateAmbientWeather(delta);
     this.updateWeatherEffects(delta);
@@ -1032,6 +1057,52 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.setMuffled(false);
     this.hud.setVisible(true);
     this.paused = false;
+  }
+
+  /** The blue pad on the plaza: stand still on it and the ring fills; full, and the knight flies out. */
+  private updateFlightPad(time: number, delta: number) {
+    if (!this.padGfx) return;
+    const at = padCenterFor(this.terrain.spawn);
+    const standing = onPad(this.player, at) && this.player.active;
+    const before = this.padCharge;
+    this.padCharge = stepPadCharge(this.padCharge, standing, delta);
+    if (standing && before === 0 && time - this.padHinted > 8000) {
+      this.padHinted = time;
+      this.hud.showMessage('Stay on the pad to fly out.\nThe run ends.', 2400);
+    }
+    drawFlightPad(this.padGfx, at.x, at.y, PAD_SIZE, time, this.padCharge);
+    if (this.padCharge > 0) {
+      // the ring: a bar above the pad that fills
+      this.padGfx.fillStyle(0x14121f, 0.85).fillRect(at.x - 13, at.y - 24, 26, 6);
+      this.padGfx.fillStyle(0xffffff, 1).fillRect(at.x - 12, at.y - 23, Math.round(24 * this.padCharge), 4);
+    }
+    if (this.padCharge >= 1) this.flyOut();
+  }
+
+  /** Leave the run by air: it ends as a retreat (not a win), the knight's HP carries home, and the flight map opens here. */
+  private flyOut() {
+    if (this.tutorial || this.ended) return;
+    this.ended = true;
+    this.levelUpOpen = false;
+    this.userPaused = false;
+    closePauseMenu();
+    this.levelUpSystem.close();
+    if (this.sys.isPaused()) this.sys.resume();
+    audio.setMuffled(false);
+    audio.play('confirm');
+    this.paused = true;
+    this.physics.pause();
+    this.bossSummonEvent?.remove(false);
+    const town = loadGame().town;
+    const max = townMaxHp(town.characterId, town.armorId);
+    const ratio = this.player.maxHp > 0 ? Math.max(0, this.player.hp) / this.player.maxHp : 0;
+    recordRunResult(
+      { won: false, time: this.weather.elapsedSeconds, kills: this.player.kills, level: this.player.level },
+      Math.max(1, Math.round(max * ratio))
+    );
+    this.tweens.add({ targets: this.player, y: this.player.y - 30, alpha: 0.2, duration: 500, ease: 'Sine.easeIn' });
+    this.cameras.main.fadeOut(480, 255, 255, 255);
+    this.time.delayedCall(560, () => this.scene.start('FlightScene', { from: this.runRegionId }));
   }
 
   private quitToTitle() {

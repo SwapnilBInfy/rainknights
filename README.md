@@ -355,31 +355,46 @@ face the shared roster and a boss borrowed from the first two cities.
 ### Flying between locations
 
 There is a **blue flight pad** on the plaza in Mistford, east of the pond. Stand on it and press A (the A bubble
-shows) to lift off and fly over the **world map**. It is the quick way to the cities; the south road and the city
-list still work.
+shows) to lift off. Every city has one too, on the plaza east of where you start (see below), so you can fly from any
+city to any other. The south road and the city list still work.
 
-The world is the ground, seen in perspective from behind the knight, fading into haze at the horizon, with clouds
-overhead. Every location is a **star** hovering over its real latitude and longitude: Mistford is on an island in
-the mid-Atlantic, and each city is where it really is. A star is tinted to its city's live weather and has a faint
-beam of light so you can spot it from across the ocean. The world is round east to west.
+The world is a **sphere**. You fly over a globe seen from behind and above the knight: the horizon curves away, an
+atmosphere glows at the edge of the planet, and the higher you climb the more of the ball you see and the darker the
+sky gets. There are no edges: fly over a pole and you come out the other side, fly far enough and you are home again.
+Every location is a **star** hovering over its real latitude and longitude (Mistford is on an island in the
+mid-Atlantic), tinted to its city's live weather, with a faint beam of light so you can spot it from across the ocean.
+
+**The knight only flies forward while you hold Up (or W).** Let go and they hover, and the speed fades out over a
+fraction of a second; left and right turn on the spot. Flying **higher is faster**: at the top of the climb you cover
+about four times the ground per second, so go high to cross an ocean and come down to land.
 
 | Key | Touch | Does |
 | --- | --- | --- |
-| Left / Right (A / D) | D-pad | Steer |
-| Up (W) / Down (S) | D-pad | Boost / slow down. The knight is always flying. |
+| Up (W) | D-pad | **Fly forward** (nothing else moves you forward) |
+| Down (S) | D-pad | Back up, slowly |
+| Left / Right (A / D) | D-pad | Turn |
 | Space or Z | A | **Descend.** Held all the way down over a star, you land there. |
 | J, X, K or Shift | B | **Ascend** |
 | Esc | | Fly home to the pad |
 
 The top-left **radar** shows where the stars are relative to the way you are facing (stars beyond its range are pinned to
 the rim, dimmed). The **world sketched in the clouds**, top right, shows where you are in the world. A plate across the
-top names the nearest star and its weather, and the strip along the bottom says what A and B do (it reads "A: LAND
+top names the nearest star and its weather, and the strip along the bottom says what the buttons do (it reads "A: LAND
 LONDON" when you are low enough over a star). Landing on a city starts a run exactly as the city list does; landing on
 Mistford puts you back on the pad. Flying never touches your save.
 
-The ground is drawn in software, row by row (`GroundRenderer` in `src/gfx/flight.ts`): each screen row looks at one
-distance away, so a row is a straight line across the map. The flight maths and the continent outlines are in
-`src/systems/worldMap.ts` (no Phaser, unit-tested: every city must sit on land).
+**The pad in each city.** A pad sits 56 px east of where you start. In a run A swings your weapon, so the pad works by
+standing still on it instead: a ring fills over 1.5 seconds, and stepping off drains it quickly, so running across it
+mid-fight does nothing. When it fills the knight flies out and the flight map opens over that city. Leaving that way
+ends the run as a **retreat**: nothing to continue, it counts as a run (not a win), and your HP comes home with you.
+The tutorial has no pad.
+
+The planet is drawn in software (`GroundRenderer` in `src/gfx/flight.ts`): every pixel is a ray from the camera, tested
+against a sphere; a hit's longitude and latitude pick a pixel of the world texture, a miss is sky (pale where it grazes
+the atmosphere). The knight is a point on the unit sphere with a direction of travel, moved by rotation, so there are no
+flat-map edge cases. That maths and the continent outlines are in `src/systems/worldMap.ts` (no Phaser, unit-tested:
+every city must sit on land, a flight along the equator covers a great circle, over a pole comes out the other side, and
+round the world comes back to the start). The pad's rules are in `src/systems/flightPad.ts`.
 
 ### City enemies and bosses
 

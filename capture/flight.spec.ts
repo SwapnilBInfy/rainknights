@@ -53,25 +53,55 @@ test('a flight pad lifts the knight over a world map: steer, climb, descend and 
   await page.waitForTimeout(1600);
   await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}.png`) });
 
-  // climb, turn, and look around
+  // the horizon curves more the higher you go: the same place from four heights
+  for (const [name, alt] of [['a', 0.03], ['b', 0.08], ['c', 0.16], ['d', 0.3]] as const) {
+    await page.evaluate(`window.__flight.teleportTo('london', ${alt})`);
+    await page.keyboard.down('ArrowDown');
+    await page.waitForTimeout(500);
+    await page.keyboard.up('ArrowDown');
+    await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-alt-${name}.png`) });
+  }
+
+  // fly forward (only while Up is held), turn, and climb
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(1400);
+  await page.keyboard.up('ArrowUp');
+  await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-low.png`) });
   await page.keyboard.down('KeyJ');
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1500);
   await page.keyboard.up('KeyJ');
-  await page.keyboard.down('ArrowLeft');
-  await page.waitForTimeout(900);
-  await page.keyboard.up('ArrowLeft');
   await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-high.png`) });
 
   // over a city: the star, the radar and the landing prompt
   await page.evaluate(`window.__flight.teleportTo('london', 12)`);
-  await page.evaluate(`window.__flight.state()`);
   await page.waitForTimeout(250);
   await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-star.png`) });
 
-  // a star on the horizon, with its beam: fly toward Tokyo from the Atlantic at a safe height
+  // a star on the horizon, with its beam
   await page.evaluate(`window.__flight.teleportTo('mistford', 34)`);
   await page.waitForTimeout(250);
   await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-beacon.png`) });
+
+  // over the pole: there is no edge to the world
+  await page.evaluate(`window.__flight.teleportTo('mistford', 60)`);
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(2600);
+  await page.keyboard.up('ArrowUp');
+  await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-round.png`) });
+
+  // land in New York: the pad is on the plaza, and standing on it fills a ring that flies the knight out
+  await page.evaluate(`window.__flight.teleportTo('nyc', 0.02)`);
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, raf);
+  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-city-pad.png`) });
+  await page.evaluate(`window.__rk.tpToPad()`);
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-city-charging.png`) });
+  await page.waitForFunction(() => (window as any).__flight?.frames() > 5, undefined, raf);
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-city-out.png`) });
 
   // how fast does it run? frames in two seconds
   const fps = await page.evaluate(async () => {
