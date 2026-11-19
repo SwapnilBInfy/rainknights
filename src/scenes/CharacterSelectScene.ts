@@ -6,6 +6,7 @@ import { drawCursor, drawWindow, textStyle } from '../ui/Window';
 import { audio } from '../audio/engine';
 import { chooseKnight } from '../economy/economy';
 import { loadGame, writeProfile } from '../save/save';
+import { eachKeyEventOnce } from '../input/keyEvents';
 
 /** Maps a stat multiplier to 1-5 filled segments (1.0 = 3). */
 function segments(mult: number, invert = false): number {
@@ -53,14 +54,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     const detail = this.add.container(0, 0);
     this.select(0, cursor, names, detail);
 
-    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
+    this.input.keyboard?.on('keydown', eachKeyEventOnce((e) => {
       const k = e.key.toLowerCase();
       if (k === 'arrowup' || k === 'w') this.select((this.selected + 2) % 3, cursor, names, detail);
       else if (k === 'arrowdown' || k === 's') this.select((this.selected + 1) % 3, cursor, names, detail);
       else if (k === 'enter' || k === ' ' || k === 'z') this.choose(CHARACTERS[this.selected]);
       else if (k >= '1' && k <= '3') this.choose(CHARACTERS[Number(k) - 1]);
       else if (k === 'escape' && this.wardrobe && !this.chosen) this.scene.start('HouseScene');
-    });
+    }));
   }
 
   private select(
