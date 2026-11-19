@@ -18,18 +18,23 @@ import { runStartData } from '../systems/runStart';
 import { textStyle } from '../ui/Window';
 import { drawWeatherIcon, WEATHER_SHORT } from '../ui/weatherIcons';
 import {
+  add,
   ALT_MIN,
   atLandingHeight,
   CAM_BACK,
-  CAM_LIFT,
-  FOCAL,
-  HORIZON,
+  dot,
+  faceToward,
   groundDistance,
-  headingTo,
+  HORIZON,
+  knightPoint,
+  lonLatOf,
+  project,
   projectToScreen,
   radarPoint,
+  scale,
   starNear,
   starsFor,
+  startFlight,
   stepFlight,
   VIEW_H,
   VIEW_W,
@@ -54,17 +59,19 @@ const STAR_UNKNOWN = 0xffe14a;
 const HOME_COLOUR = 0xff9ad8;
 
 const KNIGHT_X = VIEW_W / 2;
-/** Where the knight sits on the screen: fixed, because the camera rides along behind them. */
-const KNIGHT_Y = HORIZON + Math.round((CAM_LIFT * FOCAL) / CAM_BACK);
+const KNIGHT_Y = 75;
 const BAR_Y = 138;
-const RADAR = { x: 24, y: 24, r: 17, range: 380 };
+/** The radar's edge, in radians of the planet. */
+const RADAR = { x: 24, y: 24, r: 17, range: 1.2 };
 const MINI = { x: 172, y: 5 };
 /** How long (ms) the knight climbs out of Mistford on takeoff, before the controls are theirs. */
 const TAKEOFF_MS = 900;
+/** ...or until they reach this height, whichever comes first. */
+const TAKEOFF_ALT = 0.07;
 
 interface FlightBridge {
-  state: () => FlightState;
-  stars: () => { id: string; x: number; y: number }[];
+  state: () => { lon: number; lat: number; alt: number; speed: number; yaw: number; p: { x: number; y: number; z: number } };
+  stars: () => { id: string; lon: number; lat: number }[];
   near: () => string;
   low: () => boolean;
   frames: () => number;
@@ -80,8 +87,9 @@ declare global {
 }
 
 /**
- * Flying between locations. The world map is the ground, seen in perspective from behind the knight, and every
- * location is a star hovering over it. Steer with left and right, A descends (and lands, over a star), B ascends.
+ * Flying between locations. The world is a sphere, seen from behind and above the knight, and every location is a
+ * star hovering over it. The knight only moves forward while Up (or W) is held; left and right turn, A descends
+ * (and lands, over a star), B ascends.
  */
 export class FlightScene extends Phaser.Scene {
   private characterId = 'rainKnight';
@@ -112,7 +120,7 @@ export class FlightScene extends Phaser.Scene {
     super('FlightScene');
   }
 
-  create() {
+  create(data: { from?: string } = {}) {
     this.characterId = loadGame().town.characterId;
     this.stars = starsFor(REGIONS);
     this.frames = 0;
@@ -126,9 +134,10 @@ export class FlightScene extends Phaser.Scene {
     this.starImages = new Map();
     this.clouds = [];
 
-    const home = this.stars[0];
-    // The first flight faces the first city, so there is somewhere to head for right away.
-    this.state = { x: home.x, y: home.y, heading: headingTo(home.x, home.y, this.stars[1]), alt: ALT_MIN };
+    // Start over the place you left, facing the nearest other star, so there is somewhere to head for right away.
+    const origin = this.stars.find((st) => st.id === data.from) ?? this.stars[0];
+    const others = this.stars.filter((st) => st !== origin).sort((a, b) => dot(b.v, origin.v) - dot(a.v, origin.v));
+    this.state = startFlight(origin.v, (origin.home ? this.stars[1] : others[0]).v);
 
     this.cameras.main.setBackgroundColor('#2f7fe0');
     this.cameras.main.fadeIn(350, 255, 255, 255);
@@ -193,31 +202,37 @@ export class FlightScene extends Phaser.Scene {
     audio.setAmbience('windy');
 
     const bridge: FlightBridge = {
-      state: () => ({ ...this.state }),
-      stars: () => this.stars.map((s) => ({ id: s.id, x: s.x, y: s.y })),
+      state: () => ({ ...lonLatOf(this.state), alt: this.state.alt, speed: this.state.speed, yaw: this.state.yaw, p: { ...this.state.p } }),
+      stars: () => this.stars.map((st) => ({ id: st.id, lon: Math.atan2(st.v.x, st.v.z) * (180 / Math.PI), lat: Math.asin(st.v.y) * (180 / Math.PI) })),
       near: () => this.nearId,
       low: () => this.lowNow,
       frames: () => this.frames,
       landing: () => this.isLanding,
       weatherReady: () => this.weather.size,
       teleportTo: (id, alt = ALT_MIN) => {
-        const star = this.stars.find((s) => s.id === id);
-        if (star) this.state = { ...this.state, x: star.x, y: star.y, alt };
+        const star = this.stars.find((st) => st.id === id);
+        if (star) this.state = { ...this.state, p: star.v, f: faceToward(star.v, add(star.v, this.state.f)), alt, speed: 0 };
         this.flying = TAKEOFF_MS;
       },
     };
     window.__flight = bridge;
   }
 
+  /** The climb out of the pad: up to a low cruising height (or a second, whichever comes first), and then the controls are theirs. */
+  private inTakeoff(): boolean {
+    return this.flying < TAKEOFF_MS && this.state.alt < TAKEOFF_ALT;
+  }
+
   private readInput(): FlightInput {
     const c = this.cursors;
     const k = this.keys;
-    const climbing = this.flying < TAKEOFF_MS;
+    // the climb out of the pad: up to a low cruising height, and then the controls are theirs
+    const climbing = this.inTakeoff();
     return {
       left: !!(c.left?.isDown || k.a.isDown),
       right: !!(c.right?.isDown || k.d.isDown),
-      up: !!(c.up?.isDown || k.w.isDown),
-      down: !!(c.down?.isDown || k.s.isDown),
+      forward: !!(c.up?.isDown || k.w.isDown),
+      back: !!(c.down?.isDown || k.s.isDown),
       descend: !climbing && !!(c.space?.isDown || k.z.isDown),
       ascend: climbing || !!(k.x.isDown || k.j.isDown || k.k.isDown || k.shift.isDown),
     };
@@ -228,24 +243,34 @@ export class FlightScene extends Phaser.Scene {
     if (!this.isLanding) {
       this.flying += delta;
       const input = this.readInput();
-      const before = this.state.heading;
+      const before = this.state.yaw;
       this.state = stepFlight(this.state, input, delta);
       // A both descends and lands: hold it all the way down over a star and you touch down there.
       const below = starNear(this.stars, this.state);
-      if (input.descend && below && this.state.alt <= ALT_MIN + 0.001 && this.flying >= TAKEOFF_MS) this.land(below);
-      this.tilt += (Phaser.Math.Clamp((this.state.heading - before) * 70, -0.35, 0.35) - this.tilt) * 0.2;
+      if (input.descend && below && this.state.alt <= ALT_MIN + 0.001 && !this.inTakeoff()) this.land(below);
+      this.tilt += (Phaser.Math.Clamp((this.state.yaw - before) * 70, -0.35, 0.35) - this.tilt) * 0.2;
     }
 
     this.ground.render(this.state);
     this.moveClouds(time);
-    this.knight.setPosition(KNIGHT_X, KNIGHT_Y + Math.sin(time / 170) * 1.5).setRotation(this.tilt);
+    const at = projectToScreen(this.state, knightPoint(this.state));
+    const ky = at ? Phaser.Math.Clamp(at.sy, 60, 92) : KNIGHT_Y;
+    this.knight.setPosition(KNIGHT_X, ky + Math.sin(time / 170) * 1.5).setRotation(this.tilt);
+    // flapping only while they fly
+    if (this.state.speed > 0.05 && this.anims.exists(`walk_${this.characterId}_up`)) {
+      if (!this.knight.anims.isPlaying) this.knight.play(`walk_${this.characterId}_up`);
+    } else {
+      this.knight.anims.stop();
+      this.knight.setTexture(chibiKey(this.characterId, 'up', 'stand'));
+    }
 
     const near = starNear(this.stars, this.state);
     this.nearId = near?.id ?? '';
     this.lowNow = atLandingHeight(this.state);
 
     this.overlay.clear();
-    this.shadow(this.overlay, KNIGHT_X, HORIZON + ((this.state.alt + CAM_LIFT) * FOCAL) / CAM_BACK, 12 - Math.round((this.state.alt - ALT_MIN) / 12));
+    const under = projectToScreen(this.state, this.state.p);
+    if (under) this.shadow(this.overlay, under.sx, under.sy, 12 - Math.round(((this.state.alt - ALT_MIN) / 0.28) * 7));
     this.placeStars(time, near);
     this.drawRadar();
     this.drawPlate();
@@ -253,10 +278,11 @@ export class FlightScene extends Phaser.Scene {
   }
 
   private moveClouds(time: number) {
-    const turn = this.state.heading * 140;
+    const turn = this.state.yaw * 140;
+    const open = 1 - Math.min(1, (this.state.alt - ALT_MIN) / 0.28) * 0.6; // the higher you are, the thinner the cloud
     for (const cloud of this.clouds) {
       const x = ((((cloud.base - turn + (time / 1000) * cloud.speed) % 330) + 330) % 330) - 45;
-      cloud.img.setPosition(x, cloud.y);
+      cloud.img.setPosition(x, cloud.y).setAlpha(0.85 * open);
     }
   }
 
@@ -280,36 +306,37 @@ export class FlightScene extends Phaser.Scene {
   private placeStars(time: number, near: Star | null) {
     for (const star of this.stars) {
       const img = this.starImages.get(star.id)!;
-      const float = 14 + Math.sin(time / 260 + star.x) * 1.6;
-      const top = projectToScreen(this.state, star.x, star.y, float);
-      const base = projectToScreen(this.state, star.x, star.y, 0);
-      if (!top || !base || top.sy > BAR_Y + 12) {
+      const float = 0.03 + Math.sin(time / 260 + star.x) * 0.004;
+      const top = projectToScreen(this.state, scale(star.v, 1 + float));
+      const base = projectToScreen(this.state, star.v);
+      if (!top || !base || top.sy > BAR_Y + 12 || top.sx < -20 || top.sx > VIEW_W + 20) {
         img.setVisible(false);
         continue;
       }
-      const scale = Phaser.Math.Clamp(Math.round((FOCAL / top.depth) * 3 * 2) / 2, 1, 2.5);
-      const haze = Phaser.Math.Clamp(1.1 - top.depth / 1900, 0.55, 1);
+      const size = Phaser.Math.Clamp(Math.round((0.25 / top.depth) * 2) / 2, 1, 2.5);
+      const haze = Phaser.Math.Clamp(1.1 - top.depth * 0.7, 0.5, 1);
       img
         .setVisible(true)
         .setPosition(Math.round(top.sx), Math.round(top.sy))
-        .setScale(scale)
+        .setScale(size)
         .setTint(this.colourOf(star))
-        .setAlpha(haze * (0.82 + 0.18 * Math.sin(time / 140 + star.y)))
-        .setDepth(top.depth < CAM_BACK ? 30 : 10 + Math.max(0, 4 - top.depth / 400));
-      this.shadow(this.overlay, base.sx, base.sy, Math.round(6 * scale));
-      if (top.depth > 90) {
+        .setAlpha(haze * (0.82 + 0.18 * Math.sin(time / 140 + star.x)))
+        .setDepth(top.depth < CAM_BACK ? 30 : 10 + Math.max(0, 4 - top.depth * 4));
+      this.shadow(this.overlay, base.sx, base.sy, Math.round(6 * size));
+      if (top.depth > 0.3) {
         // a faint beam of light: stars can be seen from across the ocean
         const bx = Math.round(top.sx);
-        this.overlay.fillStyle(this.colourOf(star), 0.28 * haze).fillRect(bx, 0, 1, Math.max(0, Math.round(top.sy - 6 * scale)));
-        this.overlay.fillStyle(0xffffff, 0.16 * haze).fillRect(bx - 1, 0, 3, Math.max(0, Math.round(top.sy - 6 * scale)));
+        const h = Math.max(0, Math.round(top.sy - 6 * size));
+        this.overlay.fillStyle(this.colourOf(star), 0.28 * haze).fillRect(bx, 0, 1, h);
+        this.overlay.fillStyle(0xffffff, 0.16 * haze).fillRect(bx - 1, 0, 3, h);
       }
       if (near && near.id === star.id && this.lowNow && base.sy < BAR_Y) {
         // a pulsing ring on the ground says "land here"
-        const r = Math.round(7 * scale + 1.5 * Math.sin(time / 120));
+        const r = Math.round(7 * size + 1.5 * Math.sin(time / 120));
         this.overlay.lineStyle(1, 0xffffff, 0.9).strokeRect(Math.round(base.sx - r), Math.round(base.sy - r / 3), r * 2, Math.round((r * 2) / 3));
       }
       const w = this.weather.get(star.id);
-      if (w && top.depth < 330) drawWeatherIcon(this.overlay, Math.round(top.sx) - 4, Math.round(top.sy - 7 * scale - 10), w.condition);
+      if (w && top.depth < 0.9) drawWeatherIcon(this.overlay, Math.round(top.sx) - 4, Math.round(top.sy - 7 * size - 10), w.condition);
     }
   }
 
@@ -346,8 +373,10 @@ export class FlightScene extends Phaser.Scene {
     g.fillRect(cx - 2, cy, 5, 1);
 
     // the world in the clouds, with a blinking dot for where you are
-    const mx = MINI.x + (this.state.x / OUTLINE_CELL) % OUTLINE_W;
-    const my = MINI.y + Math.min(OUTLINE_H - 1, this.state.y / OUTLINE_CELL);
+    const here = lonLatOf(this.state);
+    const spot = project(here.lon, here.lat);
+    const mx = MINI.x + Math.min(OUTLINE_W - 1, spot.x / OUTLINE_CELL);
+    const my = MINI.y + Math.min(OUTLINE_H - 1, spot.y / OUTLINE_CELL);
     if (Math.floor(this.frames / 20) % 2 === 0) g.fillStyle(0xff4a4a, 1).fillRect(Math.round(mx) - 1, Math.round(my) - 1, 3, 3);
     for (const star of this.stars) {
       g.fillStyle(this.colourOf(star), 1).fillRect(MINI.x + Math.floor(star.x / OUTLINE_CELL), MINI.y + Math.floor(star.y / OUTLINE_CELL), 1, 1);
@@ -357,7 +386,7 @@ export class FlightScene extends Phaser.Scene {
   /** The nearest star's name and weather, across the top, once it is close enough to matter. */
   private drawPlate() {
     let best: Star | null = null;
-    let bestD = 300;
+    let bestD = 0.9;
     for (const star of this.stars) {
       const d = groundDistance(this.state, star);
       if (d < bestD) {
@@ -391,7 +420,7 @@ export class FlightScene extends Phaser.Scene {
       ? [{ t: 'A:', c: '#ffffff' }, { t: ' LAND ', c: '#ffd85a' }, { t: name, c: '#58e0b0' }]
       : near
         ? [{ t: 'A:', c: '#ffffff' }, { t: ' DESCEND TO LAND', c: '#58e0b0' }]
-        : [{ t: 'A:', c: '#ffffff' }, { t: ' DESCEND ', c: '#58e0b0' }, { t: 'B:', c: '#ffffff' }, { t: ' ASCEND', c: '#58e0b0' }];
+        : [{ t: 'UP:', c: '#ffffff' }, { t: ' FLY ', c: '#58e0b0' }, { t: 'A:', c: '#ffffff' }, { t: ' DESCEND ', c: '#58e0b0' }, { t: 'B:', c: '#ffffff' }, { t: ' ASCEND', c: '#58e0b0' }];
     const key = parts.map((p) => p.t).join('|');
     if (key === this.barKey) return;
     this.barKey = key;
@@ -410,7 +439,7 @@ export class FlightScene extends Phaser.Scene {
 
   /** A tapped over a star, low enough: land. Held, A descends (in `readInput`) and lands once it reaches the ground. */
   private pressA() {
-    if (this.isLanding || this.flying < TAKEOFF_MS) return;
+    if (this.isLanding || this.inTakeoff()) return;
     const near = starNear(this.stars, this.state);
     if (near && atLandingHeight(this.state)) this.land(near);
   }

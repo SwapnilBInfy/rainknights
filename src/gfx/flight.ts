@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { cameraOf, FOCAL, HORIZON, landMask, MAP_H, MAP_W, PX_PER_DEG, VIEW_H, VIEW_W, type FlightState } from '../systems/worldMap';
+import { ALT_MAX, ALT_MIN, cameraOf, FOCAL, HORIZON, landMask, MAP_H, MAP_W, PX_PER_DEG, VIEW_H, VIEW_W, type FlightState } from '../systems/worldMap';
 import { OUTLINE } from './palette';
 
 /** Texture keys for the flight map. */
@@ -219,16 +219,16 @@ export function generateOutlineTexture(scene: Phaser.Scene): void {
   g.destroy();
 }
 
-const SKY_TOP = rgb(0x2f7fe0);
-const SKY_LOW = rgb(0xa8d4f6);
+const SKY_LOW = rgb(0x2f7fe0);
+const SPACE = rgb(0x0a1640);
 const HAZE = rgb(0xd4e8f8);
-const POLE = rgb(0xe8f0f8);
 
 /**
- * Draws the sky and the ground, one frame at a time, into a 240x160 canvas. The ground is the world texture
- * seen in perspective: each screen row looks at one distance away, so a row is a straight line across the map.
- * The farther the row, the more it is washed out toward the haze colour, like the horizon in the old
- * pseudo-3D flying games.
+ * Draws the planet, one frame at a time, into a 240x160 canvas. Every pixel is a ray from the camera: if it hits
+ * the sphere, the hit point's longitude and latitude pick a pixel of the world texture; if it misses, it is sky,
+ * pale where it grazes the atmosphere and deepening toward space (and the higher you fly, the darker the sky).
+ * That is what makes the horizon curve, and curve more the higher the camera goes. Distant ground is washed out
+ * toward the haze colour, like the horizon in the old pseudo-3D flying games.
  */
 export class GroundRenderer {
   private readonly src: Uint32Array;
@@ -246,70 +246,70 @@ export class GroundRenderer {
     this.dst = new Uint32Array(this.image.data.buffer);
   }
 
-  private static pack(c: readonly [number, number, number]): number {
-    return (0xff000000 | (c[2] << 16) | (c[1] << 8) | c[0]) >>> 0;
-  }
-
-  render(f: FlightState): void {
+  render(state: FlightState): void {
     const dst = this.dst;
-    // sky: deep blue overhead to pale near the horizon
-    for (let y = 0; y < HORIZON; y++) {
-      const t = Math.pow(y / HORIZON, 1.6);
-      const c: [number, number, number] = [
-        SKY_TOP[0] + (SKY_LOW[0] - SKY_TOP[0]) * t,
-        SKY_TOP[1] + (SKY_LOW[1] - SKY_TOP[1]) * t,
-        SKY_TOP[2] + (SKY_LOW[2] - SKY_TOP[2]) * t,
-      ];
-      dst.fill(GroundRenderer.pack(c.map(Math.round) as [number, number, number]), y * VIEW_W, (y + 1) * VIEW_W);
-    }
-    // the ground, row by row
-    const cam = cameraOf(f);
-    const sin = Math.sin(f.heading);
-    const cos = Math.cos(f.heading);
     const src = this.src;
-    const hazeInt = GroundRenderer.pack(HAZE);
-    const poleInt = GroundRenderer.pack(POLE);
-    for (let y = HORIZON; y < VIEW_H; y++) {
+    const { c, fc, r, up } = cameraOf(state);
+    const cc = c.x * c.x + c.y * c.y + c.z * c.z - 1; // > 0: the camera is outside the planet
+    const camR2 = cc + 1;
+    // the haze is measured against how far the horizon is, so it washes out the far half of the view at any height
+    const horizon = Math.sqrt(cc);
+    const hazeFrom = 0.3 * horizon;
+    const hazeSpan = 0.7 * horizon;
+    const climb = Math.min(1, Math.max(0, (state.alt - ALT_MIN) / (ALT_MAX - ALT_MIN)));
+    // the sky darkens toward space as you climb
+    const deep: [number, number, number] = [
+      SKY_LOW[0] + (SPACE[0] - SKY_LOW[0]) * climb * 0.75,
+      SKY_LOW[1] + (SPACE[1] - SKY_LOW[1]) * climb * 0.75,
+      SKY_LOW[2] + (SPACE[2] - SKY_LOW[2]) * climb * 0.75,
+    ];
+    const halfW = VIEW_W / 2;
+    for (let y = 0; y < VIEW_H; y++) {
+      const up_k = HORIZON - y;
+      const bx = fc.x * FOCAL + up.x * up_k - r.x * halfW;
+      const by = fc.y * FOCAL + up.y * up_k - r.y * halfW;
+      const bz = fc.z * FOCAL + up.z * up_k - r.z * halfW;
       const row = y * VIEW_W;
-      const k = y - HORIZON;
-      if (k === 0) {
-        dst.fill(hazeInt, row, row + VIEW_W);
-        continue;
-      }
-      const dist = (cam.height * FOCAL) / k;
-      const stepX = (cos * dist) / FOCAL;
-      const stepY = (sin * dist) / FOCAL;
-      let u = cam.x + sin * dist - stepX * (VIEW_W / 2);
-      let v = cam.y - cos * dist - stepY * (VIEW_W / 2);
-      const haze = Math.min(1, Math.max(0, (dist - 230) / 760));
-      const hz = Math.round(haze * 256);
-      for (let x = 0; x < VIEW_W; x++, u += stepX, v += stepY) {
-        const iy = Math.floor(v);
-        let c: number;
-        if (iy < 0 || iy >= MAP_H) c = poleInt;
-        else {
-          const ix = ((Math.floor(u) % MAP_W) + MAP_W) % MAP_W;
-          c = src[iy * MAP_W + ix];
-        }
-        if (hz > 0) {
-          const r = c & 255;
-          const g = (c >> 8) & 255;
-          const b = (c >> 16) & 255;
-          c = (0xff000000 | ((b + (((HAZE[2] - b) * hz) >> 8)) << 16) | ((g + (((HAZE[1] - g) * hz) >> 8)) << 8) | (r + (((HAZE[0] - r) * hz) >> 8))) >>> 0;
-        }
-        dst[row + x] = c;
-      }
-    }
-    // a soft white band where the sky meets the ground
-    for (let y = HORIZON - 7; y < HORIZON; y++) {
-      const a = ((y - (HORIZON - 7)) / 7) * 0.8;
       for (let x = 0; x < VIEW_W; x++) {
-        const c = dst[y * VIEW_W + x];
-        const r = c & 255;
-        const g = (c >> 8) & 255;
-        const b = (c >> 16) & 255;
-        dst[y * VIEW_W + x] =
-          (0xff000000 | (Math.round(b + (HAZE[2] - b) * a) << 16) | (Math.round(g + (HAZE[1] - g) * a) << 8) | Math.round(r + (HAZE[0] - r) * a)) >>> 0;
+        const dx = bx + r.x * x;
+        const dy = by + r.y * x;
+        const dz = bz + r.z * x;
+        const a = dx * dx + dy * dy + dz * dz;
+        const b = c.x * dx + c.y * dy + c.z * dz;
+        const disc = b * b - a * cc;
+        let R: number;
+        let G: number;
+        let B: number;
+        if (disc < 0 || b >= 0) {
+          // sky: pale where the ray grazes the atmosphere, deep where it does not
+          const closest2 = b < 0 ? camR2 - (b * b) / a : camR2;
+          const glow = Math.min(1, Math.max(0, (Math.sqrt(closest2) - 1) / 0.1));
+          const g = Math.pow(glow, 0.7);
+          R = HAZE[0] + (deep[0] - HAZE[0]) * g;
+          G = HAZE[1] + (deep[1] - HAZE[1]) * g;
+          B = HAZE[2] + (deep[2] - HAZE[2]) * g;
+        } else {
+          const t = (-b - Math.sqrt(disc)) / a;
+          const hx = c.x + t * dx;
+          const hy = c.y + t * dy;
+          const hz = c.z + t * dz;
+          const lat = Math.asin(hy > 1 ? 1 : hy < -1 ? -1 : hy);
+          const lon = Math.atan2(hx, hz);
+          const ix = Math.min(MAP_W - 1, Math.floor((lon / (2 * Math.PI) + 0.5) * MAP_W));
+          const iy = Math.min(MAP_H - 1, Math.floor((0.5 - lat / Math.PI) * MAP_H));
+          const px = src[iy * MAP_W + ix];
+          R = px & 255;
+          G = (px >> 8) & 255;
+          B = (px >> 16) & 255;
+          // wash distant ground out toward the haze
+          const haze = Math.min(1, Math.max(0, (t * FOCAL - hazeFrom) / hazeSpan));
+          if (haze > 0) {
+            R += (HAZE[0] - R) * haze;
+            G += (HAZE[1] - G) * haze;
+            B += (HAZE[2] - B) * haze;
+          }
+        }
+        dst[row + x] = 0xff000000 | (Math.round(B) << 16) | (Math.round(G) << 8) | Math.round(R);
       }
     }
     this.canvas.getContext().putImageData(this.image, 0, 0);

@@ -8,7 +8,7 @@
  */
 
 /** Map pixels per degree. The world is 360 x 180 degrees, equirectangular. */
-export const PX_PER_DEG = 3;
+export const PX_PER_DEG = 4;
 export const MAP_W = 360 * PX_PER_DEG;
 export const MAP_H = 180 * PX_PER_DEG;
 
@@ -134,26 +134,24 @@ const MISTFORD_OUTLINE: LonLat[] = [[-41, 34], [-37, 35.2], [-34, 33.6], [-35, 3
 
 // ---- Rasterising -----------------------------------------------------------------------------------------
 
-function inside(poly: readonly LonLat[], lon: number, lat: number): boolean {
-  let hit = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i];
-    const [xj, yj] = poly[j];
-    if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) hit = !hit;
-  }
-  return hit;
-}
-
+/** Fill a polygon into the mask a row at a time: find where each row's edges cross it, and fill between pairs. */
 function fillPolygon(mask: Uint8Array, poly: readonly LonLat[], value: number) {
   const pts = poly.map(([lon, lat]) => project(lon, lat));
   const minY = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.y))));
   const maxY = Math.min(MAP_H - 1, Math.ceil(Math.max(...pts.map((p) => p.y))));
-  const minX = Math.max(0, Math.floor(Math.min(...pts.map((p) => p.x))));
-  const maxX = Math.min(MAP_W - 1, Math.ceil(Math.max(...pts.map((p) => p.x))));
   for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      const { lon, lat } = unproject(x + 0.5, y + 0.5);
-      if (inside(poly, lon, lat)) mask[y * MAP_W + x] = value;
+    const yc = y + 0.5;
+    const xs: number[] = [];
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const a = pts[i];
+      const b = pts[j];
+      if (a.y > yc !== b.y > yc) xs.push(a.x + ((yc - a.y) / (b.y - a.y)) * (b.x - a.x));
+    }
+    xs.sort((m, n) => m - n);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const x0 = Math.max(0, Math.ceil(xs[k] - 0.5));
+      const x1 = Math.min(MAP_W - 1, Math.floor(xs[k + 1] - 0.5));
+      for (let x = x0; x <= x1; x++) mask[y * MAP_W + x] = value;
     }
   }
 }
@@ -181,11 +179,47 @@ export function isLandAt(lon: number, lat: number): boolean {
 
 // ---- Stars -----------------------------------------------------------------------------------------------
 
+/** A point or direction in 3D. The planet is a sphere of radius 1; +y is the north pole, +z is lon 0. */
+export interface V3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export const dot = (a: V3, b: V3): number => a.x * b.x + a.y * b.y + a.z * b.z;
+export const cross = (a: V3, b: V3): V3 => ({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x });
+export const scale = (a: V3, k: number): V3 => ({ x: a.x * k, y: a.y * k, z: a.z * k });
+export const add = (a: V3, b: V3): V3 => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+export const sub = (a: V3, b: V3): V3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+export const length = (a: V3): number => Math.hypot(a.x, a.y, a.z);
+export const normalize = (a: V3): V3 => {
+  const l = length(a) || 1;
+  return { x: a.x / l, y: a.y / l, z: a.z / l };
+};
+
+const RAD = Math.PI / 180;
+
+/** Longitude and latitude (degrees) to a point on the unit sphere. */
+export function lonLatToVec(lon: number, lat: number): V3 {
+  const la = lat * RAD;
+  const lo = lon * RAD;
+  return { x: Math.cos(la) * Math.sin(lo), y: Math.sin(la), z: Math.cos(la) * Math.cos(lo) };
+}
+
+/** A point on (or above) the sphere to longitude and latitude, in degrees. */
+export function vecToLonLat(v: V3): { lon: number; lat: number } {
+  const l = length(v) || 1;
+  return { lon: Math.atan2(v.x, v.z) / RAD, lat: Math.asin(Math.max(-1, Math.min(1, v.y / l))) / RAD };
+}
+
 export interface Star {
   id: string;
   name: string;
+  /** Where it is on the flat map (pixels), for the sketch of the world in the sky. */
   x: number;
   y: number;
+  /** Where it is on the planet. */
+  v: V3;
   /** The home star: Mistford. */
   home: boolean;
 }
@@ -201,111 +235,162 @@ export const MISTFORD_ID = 'mistford';
 
 /** One star per location: Mistford first, then every city at its real coordinates. */
 export function starsFor(cities: readonly StarSource[]): Star[] {
-  const home = project(MISTFORD_LONLAT[0], MISTFORD_LONLAT[1]);
-  return [
-    { id: MISTFORD_ID, name: 'Mistford', x: home.x, y: home.y, home: true },
-    ...cities.map((c) => ({ id: c.id, name: c.name, ...project(c.lon, c.lat), home: false })),
-  ];
+  const make = (id: string, name: string, lon: number, lat: number, home: boolean): Star => ({ id, name, ...project(lon, lat), v: lonLatToVec(lon, lat), home });
+  return [make(MISTFORD_ID, 'Mistford', MISTFORD_LONLAT[0], MISTFORD_LONLAT[1], true), ...cities.map((c) => make(c.id, c.name, c.lon, c.lat, false))];
 }
 
 // ---- Flying ----------------------------------------------------------------------------------------------
 //
-// The view is a tilted ground plane (the world texture) seen from behind and above the knight, like the
-// flying sections of a GBA action game. Heading 0 is north (up the map) and turns clockwise, in radians.
+// The knight is a point on a sphere with a direction of travel. Flying turns that direction (about the local
+// "up") and rotates the point along it, so the world really is round: you can fly over the poles, round the
+// world, and the horizon curves away below you, more the higher you go. The camera rides behind and above.
+// All distances are in planet radii; all angles in radians.
 
 export const VIEW_W = 240;
 export const VIEW_H = 160;
-/** Screen row of the horizon. */
-export const HORIZON = 50;
+/** Screen row where the camera's level gaze falls (the "geometric" horizon; the real one sits lower, with the curve). */
+export const HORIZON = 36;
 /** Focal length, in pixels. */
 export const FOCAL = 90;
-/** The camera sits this far behind the knight and this far above them. */
-export const CAM_BACK = 50;
-export const CAM_LIFT = 14;
-/** Lowest and highest the knight flies. At the lowest, they can land. */
-export const ALT_MIN = 12;
-export const ALT_MAX = 46;
-export const ALT_RATE = 26;
-export const CRUISE = 95;
-export const BOOST = 165;
-export const SLOW = 42;
+/** The camera sits this far behind the knight (along the ground) and this far above them. */
+export const CAM_BACK = 0.07;
+export const CAM_LIFT = 0.03;
+/** Lowest and highest the knight flies, above the surface. At the lowest, they can land. */
+export const ALT_MIN = 0.02;
+export const ALT_MAX = 0.3;
+export const ALT_RATE = 0.14;
+/** Forward speed, in radians of the planet per second (the whole way round is 2 pi), and how fast it builds. */
+export const CRUISE = 0.16;
+export const REVERSE = 0.06;
+/** Seconds to reach full speed from a standstill, at any height. */
+export const RAMP_S = 0.3;
+/** Flying high is faster: at the top of the climb the knight covers ground this many times quicker than at the bottom. */
+export const HIGH_SPEED_BONUS = 3;
 export const TURN_RATE = 1.9;
-/** Map pixels from a star the knight must be (and no higher than ALT_MIN + this) to land on it. */
-export const LAND_RADIUS = 26;
-export const LAND_ALT_SLACK = 3;
+/** Landing: within this angle of a star, and no higher than ALT_MIN + the slack. */
+export const LAND_RADIUS = 0.05;
+export const LAND_ALT_SLACK = 0.01;
 
 export interface FlightState {
-  x: number;
-  y: number;
-  heading: number;
+  /** Where the knight is, a point on the unit sphere. */
+  p: V3;
+  /** Which way they face: a unit vector along the ground at `p` (perpendicular to it). */
+  f: V3;
   alt: number;
+  /** Signed forward speed (radians per second). Zero when the knight hovers. */
+  speed: number;
+  /** All the turning so far, for the clouds to slide by. */
+  yaw: number;
 }
 
 export interface FlightInput {
   left: boolean;
   right: boolean;
-  /** Boost and brake. */
-  up: boolean;
-  down: boolean;
+  /** Fly forward. The knight only moves while this is held. */
+  forward: boolean;
+  /** Back up slowly. */
+  back: boolean;
   /** A, B. */
   descend: boolean;
   ascend: boolean;
 }
 
-export const NO_INPUT: FlightInput = { left: false, right: false, up: false, down: false, descend: false, ascend: false };
+export const NO_INPUT: FlightInput = { left: false, right: false, forward: false, back: false, descend: false, ascend: false };
 
-/** Wrap a longitude difference (in map px) into [-MAP_W/2, MAP_W/2]: the world is round east to west. */
-export function wrapDx(dx: number): number {
-  const w = MAP_W;
-  return ((((dx + w / 2) % w) + w) % w) - w / 2;
+/** The facing at `from` that points along the ground toward `to`. */
+export function faceToward(from: V3, to: V3): V3 {
+  const d = sub(to, scale(from, dot(to, from)));
+  if (length(d) < 1e-9) return fallbackTangent(from);
+  return normalize(d);
 }
 
-export const wrapX = (x: number): number => ((x % MAP_W) + MAP_W) % MAP_W;
+/** Some direction along the ground at `p` (north, or east at the poles). */
+function fallbackTangent(p: V3): V3 {
+  const north = sub({ x: 0, y: 1, z: 0 }, scale(p, p.y));
+  return length(north) > 1e-6 ? normalize(north) : { x: 1, y: 0, z: 0 };
+}
 
-/** Move one frame. The poles stop you; going far enough east or west brings you round again. */
-export function stepFlight(f: FlightState, input: FlightInput, deltaMs: number): FlightState {
+/** A new flight: hovering low over `at`, facing `toward` (or north). */
+export function startFlight(at: V3, toward?: V3): FlightState {
+  const p = normalize(at);
+  return { p, f: toward ? faceToward(p, toward) : fallbackTangent(p), alt: ALT_MIN, speed: 0, yaw: 0 };
+}
+
+/** Keep `p` on the sphere and `f` along the ground, after the small errors rotation adds up. */
+function tidy(p: V3, f: V3): { p: V3; f: V3 } {
+  const np = normalize(p);
+  const nf = sub(f, scale(np, dot(f, np)));
+  return { p: np, f: length(nf) < 1e-9 ? fallbackTangent(np) : normalize(nf) };
+}
+
+/** How much faster than the base speed the knight flies at this altitude: 1 at the bottom, 1 + HIGH_SPEED_BONUS at the top. */
+export const cruiseFactor = (alt: number): number => 1 + HIGH_SPEED_BONUS * Math.min(1, Math.max(0, (alt - ALT_MIN) / (ALT_MAX - ALT_MIN)));
+
+/** Move one frame. The knight turns on the spot, and only travels while `forward` (or `back`) is held. */
+export function stepFlight(s: FlightState, input: FlightInput, deltaMs: number): FlightState {
   const dt = deltaMs / 1000;
-  const heading = f.heading + ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * TURN_RATE * dt;
-  const speed = input.up ? BOOST : input.down ? SLOW : CRUISE;
-  const x = wrapX(f.x + Math.sin(heading) * speed * dt);
-  const y = Math.min(MAP_H - 6, Math.max(6, f.y - Math.cos(heading) * speed * dt));
+  // turn about the local up: right is clockwise seen from above
+  const psi = ((input.right ? 1 : 0) - (input.left ? 1 : 0)) * TURN_RATE * dt;
+  let f = s.f;
+  if (psi !== 0) f = add(scale(s.f, Math.cos(psi)), scale(cross(s.f, s.p), Math.sin(psi)));
+  // speed builds and fades rather than jumping
+  const factor = cruiseFactor(s.alt);
+  const target = (input.forward ? CRUISE : input.back ? -REVERSE : 0) * factor;
+  const accel = (CRUISE * factor) / RAMP_S;
+  const speed = s.speed + Math.max(-accel * dt, Math.min(accel * dt, target - s.speed));
+  // travel along the great circle
+  const delta = speed * dt;
+  const c = Math.cos(delta);
+  const n = Math.sin(delta);
+  const moved = tidy(add(scale(s.p, c), scale(f, n)), sub(scale(f, c), scale(s.p, n)));
   const climb = ((input.ascend ? 1 : 0) - (input.descend ? 1 : 0)) * ALT_RATE * dt;
-  const alt = Math.min(ALT_MAX, Math.max(ALT_MIN, f.alt + climb));
-  return { x, y, heading, alt };
+  return { p: moved.p, f: moved.f, alt: Math.min(ALT_MAX, Math.max(ALT_MIN, s.alt + climb)), speed, yaw: s.yaw + psi };
 }
 
-/** Where the camera is: behind the knight, and above them. */
-export function cameraOf(f: FlightState): { x: number; y: number; height: number } {
-  return { x: f.x - Math.sin(f.heading) * CAM_BACK, y: f.y + Math.cos(f.heading) * CAM_BACK, height: f.alt + CAM_LIFT };
+export interface Camera {
+  /** Where the camera is. */
+  c: V3;
+  /** Level forward, right, and up at the camera. */
+  fc: V3;
+  r: V3;
+  up: V3;
 }
+
+/** The camera: behind the knight along the way they face, and above them, looking forward and slightly down. */
+export function cameraOf(s: FlightState): Camera {
+  const c = sub(scale(s.p, 1 + s.alt + CAM_LIFT), scale(s.f, CAM_BACK));
+  const up = normalize(c);
+  const fc = normalize(sub(s.f, scale(up, dot(s.f, up))));
+  return { c, fc, r: cross(fc, up), up };
+}
+
+/** The knight's own position in space (on the sphere, at their altitude). */
+export const knightPoint = (s: FlightState): V3 => scale(s.p, 1 + s.alt);
 
 /**
- * Project a point on the map (at `z` above the ground) to the screen. `depth` is how far ahead of the camera
- * it is; null if it is behind the camera. Used for the stars; the ground itself is drawn row by row.
+ * Project a point in space to the screen. `depth` is how far ahead of the camera it is; null if it is behind
+ * it, or if the planet is in the way (it is over the horizon).
  */
-export function projectToScreen(f: FlightState, wx: number, wy: number, z: number): { sx: number; sy: number; depth: number } | null {
-  const cam = cameraOf(f);
-  const dx = wrapDx(wx - cam.x);
-  const dy = wy - cam.y;
-  const fx = Math.sin(f.heading);
-  const fy = -Math.cos(f.heading);
-  const depth = dx * fx + dy * fy;
-  if (depth < 6) return null;
-  const side = dx * Math.cos(f.heading) + dy * Math.sin(f.heading);
-  return { sx: VIEW_W / 2 + (side * FOCAL) / depth, sy: HORIZON + ((cam.height - z) * FOCAL) / depth, depth };
+export function projectToScreen(s: FlightState, point: V3): { sx: number; sy: number; depth: number } | null {
+  const cam = cameraOf(s);
+  if (dot(cam.c, point) < 1) return null; // over the horizon: the planet is in the way
+  const v = sub(point, cam.c);
+  const depth = dot(v, cam.fc);
+  if (depth < 0.04) return null;
+  return { sx: VIEW_W / 2 + (dot(v, cam.r) * FOCAL) / depth, sy: HORIZON - (dot(v, cam.up) * FOCAL) / depth, depth };
 }
 
-/** Straight-line distance over the ground from the knight to a star (the world wraps east-west). */
-export function groundDistance(f: FlightState, star: Star): number {
-  return Math.hypot(wrapDx(star.x - f.x), star.y - f.y);
+/** The angle (radians) along the ground from the knight to a star. */
+export function groundDistance(s: FlightState, star: Star): number {
+  return Math.acos(Math.max(-1, Math.min(1, dot(s.p, star.v))));
 }
 
-/** The star the knight is above (within `radius`), nearest first, or null. */
-export function starNear(stars: readonly Star[], f: FlightState, radius = LAND_RADIUS): Star | null {
+/** The star the knight is over (within `radius`), nearest first, or null. */
+export function starNear(stars: readonly Star[], s: FlightState, radius = LAND_RADIUS): Star | null {
   let best: Star | null = null;
   let bestD = radius;
   for (const star of stars) {
-    const d = groundDistance(f, star);
+    const d = groundDistance(s, star);
     if (d <= bestD) {
       best = star;
       bestD = d;
@@ -315,23 +400,20 @@ export function starNear(stars: readonly Star[], f: FlightState, radius = LAND_R
 }
 
 /** Low enough to land? */
-export const atLandingHeight = (f: FlightState): boolean => f.alt <= ALT_MIN + LAND_ALT_SLACK;
+export const atLandingHeight = (s: FlightState): boolean => s.alt <= ALT_MIN + LAND_ALT_SLACK;
 
 /**
- * Where a star shows on the radar: the radar's up is the way the knight is facing. `range` (map px) is the
- * radar's edge; farther stars are pinned to the rim. Returns offsets in [-1, 1].
+ * Where a star shows on the radar: the radar's up is the way the knight is facing. `range` (radians of the planet)
+ * is the radar's edge; farther stars are pinned to the rim. Returns offsets in [-1, 1].
  */
-export function radarPoint(f: FlightState, star: Star, range: number): { x: number; y: number; far: boolean } {
-  const dx = wrapDx(star.x - f.x);
-  const dy = star.y - f.y;
-  const forward = dx * Math.sin(f.heading) - dy * Math.cos(f.heading);
-  const right = dx * Math.cos(f.heading) + dy * Math.sin(f.heading);
-  const d = Math.hypot(forward, right);
-  const k = d > range ? range / d : 1;
-  return { x: (right * k) / range, y: (-forward * k) / range, far: d > range };
+export function radarPoint(s: FlightState, star: Star, range: number): { x: number; y: number; far: boolean } {
+  const angle = groundDistance(s, star);
+  const forward = dot(star.v, s.f);
+  const right = dot(star.v, cross(s.f, s.p));
+  const bearing = Math.atan2(right, forward);
+  const k = Math.min(1, angle / range);
+  return { x: Math.sin(bearing) * k, y: -Math.cos(bearing) * k, far: angle > range };
 }
 
-/** The bearing from a point to a star, as a heading (so the flight can start facing a city). */
-export function headingTo(fromX: number, fromY: number, star: Star): number {
-  return Math.atan2(wrapDx(star.x - fromX), -(star.y - fromY));
-}
+/** Where the knight is, as longitude and latitude. */
+export const lonLatOf = (s: FlightState): { lon: number; lat: number } => vecToLonLat(s.p);
