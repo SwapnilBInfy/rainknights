@@ -8,7 +8,7 @@ export function applyFrostAura(player: Player, enemies: Enemy[]) {
   if (radius <= 0) return;
   const slowFactor = 1 - Math.min(0.7, 0.2 + 0.12 * player.powerups.frost);
   for (const enemy of enemies) {
-    if (!enemy.active) continue;
+    if (!enemy.isLive) continue;
     const dist = Phaser.Math.Distance.Between(player.x, player.y, enemy.x, enemy.y);
     if (dist <= radius) {
       const body = enemy.body as Phaser.Physics.Arcade.Body;
@@ -35,7 +35,7 @@ export function applySunbeamPulse(
     onComplete: () => ring.destroy(),
   });
   for (const enemy of enemies) {
-    if (!enemy.active) continue;
+    if (!enemy.isLive) continue;
     const dist = Phaser.Math.Distance.Between(player.x, player.y, enemy.x, enemy.y);
     if (dist <= radius) {
       enemy.takeDamage(damage);
@@ -54,7 +54,7 @@ export function applyStaticChain(
   onDamage: (enemy: Enemy) => void
 ) {
   const candidates = enemies
-    .filter((e) => e.active && e !== origin)
+    .filter((e) => e.isLive && e !== origin)
     .map((e) => ({ e, dist: Phaser.Math.Distance.Between(origin.x, origin.y, e.x, e.y) }))
     .filter((c) => c.dist <= 70)
     .sort((a, b) => a.dist - b.dist)
@@ -62,6 +62,7 @@ export function applyStaticChain(
 
   let from = origin;
   for (const { e } of candidates) {
+    if (!e.isLive) continue; // (an earlier link in this chain may have killed it)
     const line = scene.add.line(0, 0, from.x, from.y, e.x, e.y, 0xfff066, 0.9).setLineWidth(2).setDepth(6);
     scene.tweens.add({ targets: line, alpha: 0, duration: 150, onComplete: () => line.destroy() });
     e.takeDamage(damage);

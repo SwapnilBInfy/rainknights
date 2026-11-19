@@ -338,6 +338,25 @@ npm run test:unit   # save/load/migration tests (vitest, no build)
 npm run test:smoke  # Playwright smoke tests against a vite preview of dist/
 ```
 
+### Keeping the game loop alive
+
+Phaser's frame loop is `callback(); requestAnimationFrame(next)`, so a single
+uncaught error in a single frame means the next frame is never scheduled and
+the game is frozen for good (the page itself stays responsive). Two things
+guard against that:
+
+- `src/main.ts` wraps Phaser's step: an error is reported to the console
+  (`data-frame-errors` on `#app` counts them), that frame is skipped, and the
+  game carries on.
+- Code that loops over a snapshot of enemies must check `enemy.isLive` before
+  touching an enemy: an earlier hit in the same loop (a Static Charge chain, a
+  lightning strike) may already have destroyed it, and a destroyed enemy has no
+  physics body. `e2e/battle-stability.spec.ts` pins this for swings, the beam
+  and lightning.
+
+Living enemies are capped (`MAX_LIVING_ENEMIES`) so a knight who cannot keep up
+does not let hundreds pile up.
+
 `npm run test:smoke` serves the production build, so run `npm run build`
 first. Install Chromium once with `npx playwright install chromium`. The
 smoke config (`playwright.smoke.config.ts`) starts `vite preview` on

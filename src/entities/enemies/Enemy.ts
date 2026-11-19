@@ -72,6 +72,15 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
     return 1;
   }
 
+  /**
+   * Still in the world. A destroyed enemy is inactive and has no physics body, so code that loops over a snapshot
+   * of enemies must check this before touching `body`: an earlier hit in the same loop (a Static Charge chain, a
+   * lightning strike) may have killed a later one.
+   */
+  get isLive(): boolean {
+    return this.active && !!this.body;
+  }
+
   /** Damage dealt on contact; a charging vehicle hits harder than a cruising one. */
   get contactDamage(): number {
     return this.stats.damage;

@@ -31,6 +31,29 @@ function setupAudioInput() {
   });
 }
 
+/**
+ * Phaser's frame loop is `callback(); requestAnimationFrame(next)`, so one uncaught error in one frame means the next
+ * frame is never scheduled: the game loop is dead and the game is frozen for good (the page itself stays responsive).
+ * That turns any rare bug into a permanent freeze, so each step is guarded: the error is reported, that frame is
+ * skipped, and the game carries on. Anything that is genuinely broken still shows up in the console.
+ */
+function guardFrameLoop(PhaserLib: typeof Phaser) {
+  const proto = PhaserLib.Game.prototype as unknown as { step: (this: Phaser.Game, time: number, delta: number) => void };
+  const original = proto.step;
+  let failures = 0;
+  proto.step = function guardedStep(this: Phaser.Game, time: number, delta: number) {
+    try {
+      original.call(this, time, delta);
+    } catch (error) {
+      failures += 1;
+      // The first few in full, then occasionally, so a fault that repeats every frame cannot flood the console.
+      if (failures <= 5 || failures % 200 === 0) console.error(`Rainknights: a frame threw (${failures} so far); it was skipped and the game carries on.`, error);
+      const app = document.getElementById('app');
+      if (app) app.dataset.frameErrors = String(failures);
+    }
+  };
+}
+
 function dismissBootSplash() {
   document.getElementById('boot-splash')?.remove();
 }
@@ -50,6 +73,7 @@ async function start() {
   await yieldToMain();
 
   const PhaserLib = phaserMod.default;
+  guardFrameLoop(PhaserLib);
   const game = new PhaserLib.Game({
     type: PhaserLib.AUTO,
     parent: 'app',
