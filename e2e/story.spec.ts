@@ -260,7 +260,8 @@ test('Brent gives three Rain Buns in stage 3, once', async ({ page }) => {
   await goto(page, 'brent');
   const bag = () => page.evaluate(() => JSON.parse(localStorage.getItem('rainknights:save') ?? '{}').town?.bag ?? {}) as Promise<Record<string, number>>;
   expect((await bag()).rainBun).toBe(3);
-  await expect(app(page)).toHaveAttribute('data-scene', /TownScene|CutsceneScene/);
+  // the gift completes stage 3, so its story card follows the conversation: wait for it rather than race it
+  await expect(app(page)).toHaveAttribute('data-cutscene', 'stage3', { timeout: 8_000 });
   await arrive(page);
   await goto(page, 'brent');
   expect((await bag()).rainBun, 'only once').toBe(3);
