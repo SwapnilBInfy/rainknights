@@ -53,7 +53,7 @@ const T = {
 const m = (root: number): Chord => ({ root, q: 'min' });
 const M = (root: number): Chord => ({ root, q: 'maj' });
 
-export type SongKey = 'title' | 'town' | 'nyc' | 'miami' | 'london' | 'tokyo' | 'mumbai' | 'flight' | 'boss' | 'victory' | 'gameover';
+export type SongKey = 'title' | 'town' | 'nyc' | 'miami' | 'london' | 'tokyo' | 'mumbai' | 'flight' | 'stormhold' | 'boss' | 'victory' | 'gameover';
 
 const DEFS: Record<SongKey, SongDef> = {
   // "Rain on the Route" — A minor, wistful.
@@ -103,6 +103,12 @@ const DEFS: Record<SongKey, SongDef> = {
     bpm: 118, tonic: 38, chords: [M(0), M(7), m(9), M(5), M(0), M(7), M(5), M(7)],
     bass: 'gentle', drums: 'light', arp: 'eighth', leadVoice: 'tri', leadVol: 0.15, gate: 0.92,
     rhythms: [T.a, T.f, T.c, T.d], restChance: 0.1, bias: 0.2, seed: 83, loop: true, vibrato: 16,
+  },
+  // "The Black Storm" — D minor, heavy and driving, for the Tempest Regent's island.
+  stormhold: {
+    bpm: 150, tonic: 38, chords: [m(0), M(8), m(5), M(7), m(0), M(10), M(8), M(7)],
+    bass: 'drive', drums: 'boss', arp: 'sixteenth', leadVoice: 'saw', leadVol: 0.075, gate: 0.6,
+    rhythms: [T.e, T.g, T.b], restChance: 0.06, bias: -0.1, seed: 97, loop: true,
   },
   // Tornado boss — E minor, fast.
   boss: {

@@ -1,6 +1,7 @@
 import { CHARACTERS } from '../config/characters';
 import { WEATHER_FRONTS, WORLD } from '../config/constants';
 import { REGIONS } from '../config/regions';
+import { freshStory, sanitizeStory, type StoryState } from '../story/story';
 import {
   ARMOR,
   BAG_CAP,
@@ -100,6 +101,8 @@ export interface SaveData {
   run: RunSnapshot | null;
   /** Mistford: coins, bag, armor, and the HP you walk home with. */
   town: TownProfile;
+  /** Story mode. Absent until the story is first started (older saves have none). */
+  story?: StoryState;
 }
 
 export type { TownProfile };
@@ -300,6 +303,17 @@ export function loadGame(): SaveData {
   return gameSave.load();
 }
 
+/** The story, or a story that has not started. */
+export function loadStory(): StoryState {
+  return gameSave.load().story ?? freshStory();
+}
+
+export function writeStory(story: StoryState): boolean {
+  return gameSave.update((save) => {
+    save.story = story;
+  });
+}
+
 export function writeMuted(muted: boolean): boolean {
   return gameSave.update((save) => {
     save.settings.muted = muted;
@@ -413,7 +427,7 @@ function normalizeSave(doc: Record<string, unknown>): SaveData | null {
   const meta = readMeta(doc.meta) ?? defaultSave().meta;
   const run = doc.run == null ? null : readRun(doc.run);
   const town = readTown(doc.town);
-  return { version: 2, settings, meta, run, town };
+  return { version: 2, settings, meta, run, town, ...(doc.story === undefined ? {} : { story: sanitizeStory(doc.story) }) };
 }
 
 const CONSUMABLE_IDS = new Set(CONSUMABLES.map((item) => item.id));

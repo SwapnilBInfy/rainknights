@@ -4,13 +4,16 @@ import { TEX } from '../gfx/spriteDefs';
 import { audio } from '../audio/engine';
 import { ListMenu } from '../ui/listMenu';
 import { HubChrome } from '../ui/hubChrome';
-import { arriveInTown, loadGame } from '../save/save';
+import { arriveInTown, loadGame, loadStory, writeStory } from '../save/save';
+import { clearPending } from '../story/story';
 import { CONSUMABLES, bagLabel, townMaxHp } from '../economy/economy';
 import { Avatar } from '../town/avatar';
 import { mountMap } from '../town/mapView';
 import { Speech, clearHub, publishHub } from '../town/speech';
 import { TOWN, TOWN_NPCS, TOWN_SIGN, cellCenter, cellOf, padCenter, sameCell, townGrid, type Cell } from '../town/mistford';
 import { drawFlightPad } from '../gfx/flight';
+import { StoryTown } from '../town/storyTown';
+import type { StoryState } from '../story/story';
 
 interface HubBridge {
   x: () => number;
@@ -19,6 +22,11 @@ interface HubBridge {
   frames: () => number;
   wound?: (hp: number) => void;
   keys?: () => { up: boolean; down: boolean; left: boolean; right: boolean };
+  /** Put the knight on the middle of a tile (tests). */
+  tp?: (col: number, row: number) => void;
+  /** Story mode: the state, and which dialogue page is showing (-1 when none). */
+  story?: () => StoryState;
+  page?: () => number;
 }
 
 declare global {
@@ -38,6 +46,7 @@ export class TownScene extends Phaser.Scene {
   private chrome!: HubChrome;
   private frames = 0;
   private padGfx!: Phaser.GameObjects.Graphics;
+  private storyTown!: StoryTown;
   private talkables: { x: number; y: number; id: string; lines: readonly string[] }[] = [];
 
   constructor() {
@@ -51,10 +60,18 @@ export class TownScene extends Phaser.Scene {
     this.drops = [];
     this.talkables = [];
     const profile = arriveInTown();
+    // A cutscene is waiting (the prologue, or a stage was completed): play it, then come back here.
+    const waiting = loadStory();
+    if (waiting.started && waiting.pending) {
+      writeStory(clearPending(waiting));
+      this.scene.start('CutsceneScene', { id: waiting.pending, next: { scene: 'TownScene', data } });
+      return;
+    }
     const spot = data.at === 'house' ? TOWN.houseExit : data.at === 'shop' ? TOWN.shopExit : data.at === 'pad' ? TOWN.padSpawn : TOWN.spawn;
     const at = cellCenter(spot);
 
-    this.cameras.main.setBackgroundColor('#1c2438');
+    const sunny = waiting.started && waiting.complete;
+    this.cameras.main.setBackgroundColor(sunny ? '#5a8fd0' : '#1c2438');
     const map = mountMap(this, townGrid, 11);
     this.physics.world.setBounds(0, 0, map.width, map.height);
     this.avatar = new Avatar(this, at.x, at.y, profile.characterId);
@@ -83,19 +100,34 @@ export class TownScene extends Phaser.Scene {
     this.physics.add.collider(this.avatar, sign);
     this.talkables.push({ x: signAt.x, y: signAt.y, id: 'sign', lines: TOWN_SIGN.lines });
 
-    for (let i = 0; i < 16; i++) {
-      const drop = this.add.image(Phaser.Math.Between(0, 240), Phaser.Math.Between(0, 160), TEX.rain).setScrollFactor(0).setDepth(90).setAlpha(0.45).setTint(0x88b8f0);
-      this.drops.push(drop);
+    // The story's props and people, if the story has begun
+    this.storyTown = new StoryTown(this, this.avatar, this.talkables);
+    this.storyTown.mount();
+
+    if (sunny) {
+      // The rain has stopped. A warm light over everything.
+      this.add.rectangle(0, 0, 240, 160, 0xffd070, 0.24).setOrigin(0, 0).setScrollFactor(0).setDepth(89);
+    } else {
+      for (let i = 0; i < 16; i++) {
+        const drop = this.add.image(Phaser.Math.Between(0, 240), Phaser.Math.Between(0, 160), TEX.rain).setScrollFactor(0).setDepth(90).setAlpha(0.45).setTint(0x88b8f0);
+        this.drops.push(drop);
+      }
     }
 
     audio.playMusic('town');
-    audio.setAmbience('rain');
+    audio.setAmbience(sunny ? null : 'rain');
 
     const bridge: HubBridge = {
       x: () => this.avatar.x,
       y: () => this.avatar.y,
       place: () => 'town',
       frames: () => this.frames,
+      tp: (col, row) => {
+        const at = cellCenter({ col, row });
+        this.avatar.setPosition(at.x, at.y);
+      },
+      story: () => this.storyTown.story,
+      page: () => this.speech.page,
     };
     window.__hub = bridge;
     window.addEventListener('keydown', this.onKey);
@@ -103,6 +135,7 @@ export class TownScene extends Phaser.Scene {
       this.chrome.destroy();
       this.menu.hide();
       this.speech.hide();
+      this.storyTown.destroy();
       window.removeEventListener('keydown', this.onKey);
       if (window.__hub === bridge) delete window.__hub;
       clearHub();
@@ -113,7 +146,9 @@ export class TownScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.frames += 1;
     this.menu.pump(time);
-    this.avatar.locked = this.menu.isOpen || this.speech.open;
+    this.avatar.locked = this.menu.isOpen || this.speech.open || this.storyTown.journalOpen;
+    this.storyTown.update(time);
+    this.storyTown.setHidden(this.speech.open);
     if (!this.leaving && !this.avatar.locked) this.stepOn();
     this.interact = this.onPad() ? 'pad' : (this.nearestTalk()?.id ?? '');
     const pad = padCenter();
@@ -207,8 +242,16 @@ export class TownScene extends Phaser.Scene {
     if (event.type !== 'keydown' || this.leaving || this.menu.isOpen) return;
     const key = event.key.toLowerCase();
     if (event.repeat && (key === ' ' || key === 'enter' || key === 'z')) return;
+    if (this.storyTown.journalOpen) {
+      if (key === 'q' || key === 'escape' || key === ' ' || key === 'enter' || key === 'z' || key === 'j') this.storyTown.closeJournal();
+      return;
+    }
     if (this.speech.open && (key === ' ' || key === 'enter' || key === 'z' || key === 'escape')) {
-      this.speech.hide();
+      if (!this.speech.advance()) this.afterSpeech();
+      return;
+    }
+    if (key === 'q' && this.storyTown.active) {
+      this.storyTown.toggleJournal();
       return;
     }
     if (key === 'i') {
@@ -225,9 +268,19 @@ export class TownScene extends Phaser.Scene {
         return;
       }
       const talk = this.nearestTalk();
-      if (talk) this.speech.show(talk.lines);
+      if (talk && this.storyTown.handles(talk.id)) this.speech.showPages(this.storyTown.talk(talk.id).pages);
+      else if (talk) this.speech.show(talk.lines);
     }
   };
+
+  /** A conversation is over. If it completed a stage, the story card for it plays now. */
+  private afterSpeech() {
+    const pending = this.storyTown.takePending();
+    if (!pending || this.leaving) return;
+    this.leaving = true;
+    audio.play('confirm');
+    this.time.delayedCall(250, () => this.scene.start('CutsceneScene', { id: pending, next: { scene: 'TownScene', data: { at: 'plaza' } } }));
+  }
 
   private openTitleAsk() {
     this.avatar.locked = true;

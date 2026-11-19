@@ -11,14 +11,17 @@ export class WeatherDirector {
   private elapsed: number;
   private spawnTimer = 0;
   private tornadoSpawned = false;
+  private readonly bossAt: number;
   currentFrontIndex: number;
 
   /** `signature` is the region's own enemy, mixed into the front's roster. */
-  constructor(host: WeatherHost, startFrontIndex = 0, private readonly signature?: string) {
+  constructor(host: WeatherHost, startFrontIndex = 0, private readonly signature?: string, bossAfter?: number) {
     this.host = host;
     const clamped = Math.max(0, Math.min(WEATHER_FRONTS.length - 1, startFrontIndex));
     this.currentFrontIndex = clamped;
     this.elapsed = WEATHER_FRONTS[clamped].start;
+    // `bossAfter` is seconds after the run begins (the finale's boss comes early); otherwise the usual 5:00 mark
+    this.bossAt = bossAfter === undefined ? TORNADO_SPAWN_TIME : this.elapsed + bossAfter;
   }
 
   update(delta: number) {
@@ -41,7 +44,7 @@ export class WeatherDirector {
       }
     }
 
-    if (!this.tornadoSpawned && this.elapsed >= TORNADO_SPAWN_TIME) {
+    if (!this.tornadoSpawned && this.elapsed >= this.bossAt) {
       this.tornadoSpawned = true;
       this.host.spawnBoss();
     }

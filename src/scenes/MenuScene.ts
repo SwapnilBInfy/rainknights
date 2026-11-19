@@ -5,7 +5,8 @@ import { FONT, drawCursor, drawWindow, textStyle } from '../ui/Window';
 import { audio } from '../audio/engine';
 import { menuHint } from '../input/prompts';
 import { onTouchControlsChange } from '../input/touchControls';
-import { loadGame, resetGameSave, type SaveData } from '../save/save';
+import { loadGame, loadStory, resetGameSave, writeStory, type SaveData } from '../save/save';
+import { startStory } from '../story/story';
 
 const ANIMATED = ['down', 'side', 'down'] as const;
 
@@ -155,10 +156,21 @@ export class MenuScene extends Phaser.Scene {
     link.on('pointerover', () => link.setColor('#f8f8f8'));
     link.on('pointerout', () => link.setColor('#a8e0ff'));
     link.on('pointerdown', () => this.startTutorial());
+    // Story mode: "The Long Rain". Beside the tutorial link (under it on a saved game's menu).
+    const story = loadStory();
+    const storyLabel = (touch: boolean) => {
+      const name = !story.started ? 'STORY MODE' : story.complete ? 'STORY (DONE)' : 'CONTINUE STORY';
+      return touch ? `TAP: ${name}` : `G: ${name}`;
+    };
+    const storyLink = this.add.text(4, choices ? 14 : 4, storyLabel(false), linkStyle).setOrigin(0, 0).setDepth(8).setInteractive({ useHandCursor: true });
+    storyLink.on('pointerover', () => storyLink.setColor('#f8f8f8'));
+    storyLink.on('pointerout', () => storyLink.setColor('#a8e0ff'));
+    storyLink.on('pointerdown', () => this.startStoryMode());
     const detachTouch = onTouchControlsChange((touch) => {
       const hint = menuHint(touch);
       controls.setText(hint);
       link.setText(touch ? 'TAP: TUTORIAL' : 'T: TUTORIAL');
+      storyLink.setText(storyLabel(touch));
       const app = document.getElementById('app');
       if (app) {
         app.dataset.menuHint = hint;
@@ -177,6 +189,7 @@ export class MenuScene extends Phaser.Scene {
       this.input.keyboard?.once('keydown-SPACE', go);
       this.input.keyboard?.once('keydown-ENTER', go);
       this.input.keyboard?.once('keydown-T', () => this.startTutorial());
+      this.input.keyboard?.once('keydown-G', () => this.startStoryMode());
     } else {
       this.add.rectangle(0, 0, width, height, 0x080810, 0.55).setOrigin(0, 0).setDepth(4);
       this.showPage();
@@ -316,6 +329,7 @@ export class MenuScene extends Phaser.Scene {
     else if (key === 'arrowdown' || key === 's') this.step(1);
     else if (key === 'enter' || key === ' ' || key === 'z') this.activate();
     else if (key === 't') this.startTutorial();
+    else if (key === 'g') this.startStoryMode();
     else if (key >= '1' && key <= String(this.choices.length)) this.pick(Number(key) - 1);
   };
 
@@ -433,6 +447,15 @@ export class MenuScene extends Phaser.Scene {
       weatherLabel: 'Tutorial',
       weatherTint: 0x8fe0ff,
     });
+  }
+
+  /** Story mode: "The Long Rain". Starts it the first time (the prologue plays in Mistford), then carries on. */
+  private startStoryMode() {
+    if (this.leaving) return;
+    this.leaving = true;
+    audio.play('confirm');
+    writeStory(startStory(loadStory()));
+    this.scene.start('TownScene');
   }
 
   private enterTown() {

@@ -1,6 +1,6 @@
 import { beginCityRun, test, expect } from './fixtures';
 import { type Page } from '@playwright/test';
-import { REGIONS } from '../src/config/regions';
+import { CITIES as REGIONS } from '../src/config/regions';
 
 // London, Tokyo and Mumbai join New York and Miami: a five-city picker, and each city runs with its own map,
 // forecast rules and boss.

@@ -228,7 +228,37 @@ const MUMBAI: Spec = {
   },
 };
 
-const EMBLEMS: Record<string, Spec> = { london: LONDON, tokyo: TOKYO, mumbai: MUMBAI };
+const STORMHOLD: Spec = {
+  sky: [0x0a0818, 0x1a1038, 0x3a1c5c, 0x5a2c7c],
+  far: 0x241a44,
+  near: 0x120c2c,
+  windows: [0xfff06a, 0xb070ff],
+  rain: 0xb8a8f8,
+  rainCount: 110,
+  seed: 13,
+  landmark: (p) => {
+    // The eye of the storm: rings of cloud round a bright pupil.
+    p.disc(48, 22, 17, 0x2a1c58);
+    p.disc(48, 22, 12, 0x14102c);
+    p.disc(48, 22, 5, 0xfff06a);
+    p.disc(48, 22, 2, 0xffffff);
+    // lightning from the eye
+    const bolt: [number, number][] = [[48, 27], [45, 33], [49, 33], [44, 42]];
+    for (let i = 0; i + 1 < bolt.length; i++) {
+      const [x0, y0] = bolt[i];
+      const [x1, y1] = bolt[i + 1];
+      for (let k = 0; k <= 8; k++) p.dot(x0 + ((x1 - x0) * k) / 8, y0 + ((y1 - y0) * k) / 8, 0xfff8b0);
+    }
+    // a spire on the island
+    p.spire(48, 38, 4, 12, 0x24204a);
+    p.rect(44, 48, 9, 3, 0x1a1630);
+    // a dark sea with white caps
+    p.rect(0, 52, EMBLEM_W, 12, 0x14183c);
+    for (let x = 3; x < EMBLEM_W; x += 8) p.rect(x, 54 + (x % 3) * 3, 4, 1, 0x8a98e8);
+  },
+};
+
+const EMBLEMS: Record<string, Spec> = { london: LONDON, tokyo: TOKYO, mumbai: MUMBAI, stormhold: STORMHOLD };
 
 /** True for cities whose emblem is drawn here instead of loaded from a PNG. */
 export const hasDrawnEmblem = (regionId: string): boolean => regionId in EMBLEMS;
