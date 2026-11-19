@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync } from 'node:fs';
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 
 /**
@@ -42,3 +43,14 @@ export const test = base.extend({
 });
 
 export { expect };
+
+/**
+ * Where a test writes a screenshot. Cursor's agents collect them from /opt/cursor/artifacts when that folder exists;
+ * everywhere else (a laptop, CI) they go to the git-ignored e2e-artifacts folder, so the tests never fail just
+ * because a path from one particular sandbox is missing.
+ */
+export function artifactPath(name: string): string {
+  const dir = existsSync('/opt/cursor/artifacts') ? '/opt/cursor/artifacts' : 'e2e-artifacts';
+  mkdirSync(dir, { recursive: true });
+  return `${dir}/${name}`;
+}

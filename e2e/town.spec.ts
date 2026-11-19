@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures';
+import { test, expect, artifactPath } from './fixtures';
 import type { Page } from '@playwright/test';
 import { HOUSE, MARKET, TOWN, cellCenter } from '../src/town/mistford';
 
@@ -66,7 +66,7 @@ test('start in Mistford, buy a bun, collect drips, and come home', async ({ page
   await expect(app).toHaveAttribute('data-scene', 'TownScene');
   await expect(app).toHaveAttribute('data-place', 'town');
   await expect(app).toHaveAttribute('data-coins', '20');
-  await page.screenshot({ path: '/opt/cursor/artifacts/town_plaza.png' });
+  await page.screenshot({ path: artifactPath('town_plaza.png') });
 
   const shop = cellCenter(TOWN.shopMat);
   await steer(page, cellCenter(TOWN.shopExit));
@@ -78,7 +78,7 @@ test('start in Mistford, buy a bun, collect drips, and come home', async ({ page
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-shop', 'open');
   await expect(app).toHaveAttribute('data-shop-item', 'rainBun');
-  await page.screenshot({ path: '/opt/cursor/artifacts/market_shop.png' });
+  await page.screenshot({ path: artifactPath('market_shop.png') });
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-coins', '8');
   await expect(app).toHaveAttribute('data-bag', /rainBun:1/);
@@ -97,7 +97,7 @@ test('start in Mistford, buy a bun, collect drips, and come home', async ({ page
   await page.evaluate(() => (window as unknown as { __rk: { spawnEnemy: (t: string, x: number, y: number) => void } }).__rk.spawnEnemy('rainImp', 18, 0));
   await page.evaluate(() => (window as unknown as { __rk: { killNearest: () => void } }).__rk.killNearest());
   await expect.poll(async () => page.evaluate(() => (window as unknown as { __rk: { coins: () => number } }).__rk.coins()), { timeout: 5_000 }).toBeGreaterThanOrEqual(12);
-  await page.screenshot({ path: '/opt/cursor/artifacts/coin_drop.png' });
+  await page.screenshot({ path: artifactPath('coin_drop.png') });
 
   await page.evaluate(() => (window as unknown as { __rk: { defeat: () => void } }).__rk.defeat());
   await expect(app).toHaveAttribute('data-scene', 'GameOverScene');
@@ -115,7 +115,7 @@ test('start in Mistford, buy a bun, collect drips, and come home', async ({ page
   await steer(page, cellCenter(TOWN.houseExit));
   await steer(page, { ...door, scene: 'HouseScene' });
   await expect(app).toHaveAttribute('data-place', 'house');
-  await page.screenshot({ path: '/opt/cursor/artifacts/safe_house.png' });
+  await page.screenshot({ path: artifactPath('safe_house.png') });
   const bed = cellCenter(HOUSE.bed);
   await steer(page, { ...bed, interact: 'bed' });
   await page.keyboard.press('Space');

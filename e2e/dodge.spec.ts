@@ -14,9 +14,14 @@ async function beginRun(page: Page, weather?: string) {
 }
 
 const rk = <T>(page: Page, fn: string) => page.evaluate(`window.__rk.${fn}`) as Promise<T>;
-/** Resolves in the first frame that sees the knight rolling (a 220ms roll is easy to miss with a slow poll). */
-const seeRoll = (page: Page) =>
-  page.waitForFunction(() => (window as any).__rk.rolling(), undefined, { polling: 'raf', timeout: 5000 });
+/**
+ * Resolves once a roll has started since `before` (see `rollsStarted`). A roll is over in 220ms, which a slow CI
+ * runner's polling can miss entirely, so count them instead of trying to catch one in the act.
+ */
+const rollsStarted = (page: Page) => page.evaluate(`window.__rk.rolls()`) as Promise<number>;
+const seeRollSince = (page: Page, before: number) =>
+  page.waitForFunction((n) => (window as any).__rk.rolls() > n, before, { polling: 'raf', timeout: 8000 });
+
 /**
  * Start from a quiet moment: how long the scene has been running when a test begins varies (a slower
  * CI runner starts later), so ambient enemies may already be near and may have just hit the knight.
@@ -64,8 +69,9 @@ test('K rolls in the held direction, untouchable, then recharges', async ({ page
 
   // Once recharged, Shift rolls too.
   await expect.poll(() => rk<number>(page, 'rollCharge()'), { timeout: 3000 }).toBe(1);
+  const rollsBefore = await rollsStarted(page);
   await page.keyboard.press('ShiftLeft');
-  await seeRoll(page);
+  await seeRollSince(page, rollsBefore);
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
@@ -162,8 +168,9 @@ test.describe('touch', () => {
     const r = page.getByRole('button', { name: /dodge roll/i });
     await expect(r).toBeVisible();
     await expect(page.locator('#app')).toHaveAttribute('data-roll-key', 'R');
+    const rollsBefore = await rollsStarted(page);
     await r.click();
-    await seeRoll(page);
+    await seeRollSince(page, rollsBefore);
     expect(errors, errors.join('\n')).toEqual([]);
   });
 });

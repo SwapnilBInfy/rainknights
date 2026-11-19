@@ -1,5 +1,5 @@
 import { devices, type Page } from '@playwright/test';
-import { test, expect } from './fixtures';
+import { test, expect, artifactPath } from './fixtures';
 import { HOUSE, MARKET, TOWN, cellCenter } from '../src/town/mistford';
 
 // The south mat is the way out. Standing just inside it and pressing A (or
@@ -78,7 +78,7 @@ test('keyboard leaves the house and the market by the south door', async ({ page
   await steer(page, cellCenter(TOWN.houseExit));
   await steer(page, { ...cellCenter(TOWN.houseMat), scene: 'HouseScene' });
   await page.waitForTimeout(1500);
-  await page.locator('#app canvas').screenshot({ path: '/opt/cursor/artifacts/house_interior.png' });
+  await page.locator('#app canvas').screenshot({ path: artifactPath('house_interior.png') });
   await steer(page, { ...insideDoor(HOUSE.door), interact: 'door' });
   await expect(app).toHaveAttribute('data-interact', 'door');
   await page.keyboard.press('Space');
@@ -93,7 +93,7 @@ test('keyboard leaves the house and the market by the south door', async ({ page
   await steer(page, cellCenter(TOWN.shopExit));
   await steer(page, { ...cellCenter(TOWN.shopMat), scene: 'MarketScene' });
   await page.waitForTimeout(1500);
-  await page.locator('#app canvas').screenshot({ path: '/opt/cursor/artifacts/market_interior.png' });
+  await page.locator('#app canvas').screenshot({ path: artifactPath('market_interior.png') });
   await steer(page, { ...insideDoor(MARKET.door), interact: 'door' });
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-scene', 'TownScene');
