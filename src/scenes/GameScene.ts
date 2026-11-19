@@ -27,7 +27,9 @@ import { replayHeldKeys } from '../input/keys';
 import { attackHint, beamKeyLabel, rollHint, rollKeyLabel } from '../input/prompts';
 import { isTouchControlsActive, onTouchControlsChange } from '../input/touchControls';
 import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
-import { clearRun, loadGame, recordRunResult, resetGameSave, saveRun } from '../save/save';
+import { clearRun, loadGame, recordRunResult, resetGameSave, saveRun, writeProfile } from '../save/save';
+import { DEFEAT_HP_FRACTION, battleGear, collect, consumable, lootFor, spendItem, townMaxHp } from '../economy/economy';
+import { ListMenu } from '../ui/listMenu';
 
 interface RunBridge {
   /** Queue exactly enough XP for one level. Applied on the next scene update. */
@@ -97,6 +99,12 @@ interface RunBridge {
   throwNextFrame: () => void;
   /** Restore the knight to full health (debug / tests that are about something other than survival). */
   heal: () => void;
+  /** Hurt the knight (debug / tests). A lethal hit ends the run. */
+  hurt: (amount: number) => void;
+  /** End the run as a defeat without a damage popup (debug / tests). */
+  defeat: () => void;
+  /** Drips in the purse right now. */
+  coins: () => number;
   /** Vehicle crashes so far this run. */
   crashes: () => number;
   /** Teleport the knight onto a long street, `tilesBefore` tiles before it ends at a wall; returns whether one was found. */
@@ -135,6 +143,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private enemyGroup!: Phaser.Physics.Arcade.Group;
   private projectileGroup!: Phaser.Physics.Arcade.Group;
   private gemGroup!: Phaser.Physics.Arcade.Group;
+  private pickupGroup!: Phaser.Physics.Arcade.Group;
   private weather!: WeatherDirector;
   private hud!: HUD;
   private levelUpSystem!: LevelUpSystem;
@@ -173,6 +182,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private faultNextFrame = false;
   private terrainClock = 0;
   private wasWet = false;
+  private runDrips = 0;
+  private bagMenu: ListMenu | null = null;
 
   constructor() {
     super('GameScene');
@@ -197,6 +208,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.terrainClock = 0;
     this.crashCount = 0;
     this.wasWet = false;
+    this.runDrips = 0;
+    this.bagMenu = null;
     this.physics.world.timeScale = 1;
 
     const resume = data.resume ? loadGame().run : null;
@@ -224,6 +237,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       // An older save has no map seed, so the map is new: make sure the knight is not inside a building.
       const spot = this.openSpot(this.player.x, this.player.y);
       this.player.setPosition(spot.x, spot.y);
+    } else if (!data.tutorial) {
+      const town = loadGame().town;
+      this.player.applyBattleGear(battleGear(this.runCharacterId, town.armorId, town.hp));
     }
     this.player.onDied = () => this.endRun(false);
     this.player.onLevelUp = () => this.pauseForLevelUp();
@@ -255,6 +271,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.enemyGroup = this.physics.add.group();
     this.projectileGroup = this.physics.add.group();
     this.gemGroup = this.physics.add.group();
+    this.pickupGroup = this.physics.add.group();
 
     this.physics.add.overlap(this.player, this.enemyGroup, this.onPlayerHitEnemy as any, undefined, this);
     this.physics.add.overlap(
@@ -351,6 +368,16 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       heal: () => {
         this.player.hp = this.player.maxHp;
       },
+      hurt: (amount) => {
+        this.player.takeDamage(amount, this.time.now);
+      },
+      /** End the run the way a defeat does, without a damage number (debug / tests). */
+      defeat: () => {
+        if (this.ended || this.tutorial) return;
+        this.player.hp = 0;
+        this.player.onDied?.();
+      },
+      coins: () => loadGame().town.coins,
       spawnAround: (type, count) => {
         for (let i = 0; i < count; i++) this.spawnEnemyAroundPlayer(type);
       },
@@ -448,8 +475,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.time.delayedCall(6000, () => this.showWeatherHint());
     }
     this.checkpoint();
+    this.input.keyboard?.on('keydown-I', (event: KeyboardEvent) => {
+      if (!event.repeat) this.openBag();
+    });
 
     this.events.once('shutdown', () => {
+      this.bagMenu?.hide();
+      this.bagMenu = null;
       this.detachPause?.();
       this.detachPause = null;
       this.detachTouch?.();
@@ -499,6 +531,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.updateWeatherEffects(delta);
     this.updateTerrainEffects(delta);
     this.updateGems();
+    this.updatePickups();
     applyFrostAura(this.player, this.getActiveEnemies());
     this.updatePull();
     this.handleManualAttacks(time);
@@ -599,6 +632,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.hitStop(enemy === this.boss ? 140 : 45);
     this.player.kills += 1;
     this.spawnXpGem(enemy.x, enemy.y, enemy.stats.xp);
+    this.spawnLoot(enemy);
     if (enemy === this.boss) {
       this.boss = null;
       this.bossSummonEvent?.remove(false);
@@ -808,6 +842,77 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   // --- xp gems ---
 
+  private spawnLoot(enemy: Enemy) {
+    if (this.tutorial) return;
+    const loot = lootFor(enemy.stats.key, Math.random());
+    if (loot.coins > 0) this.spawnPickup(enemy.x + 5, enemy.y - 3, loot.coins, null);
+    if (loot.itemId) this.spawnPickup(enemy.x - 6, enemy.y + 4, 0, loot.itemId);
+  }
+
+  private spawnPickup(x: number, y: number, coins: number, itemId: string | null) {
+    const drop = this.physics.add.sprite(x, y, itemId ? TEX.supply : TEX.coin).setDepth(3);
+    drop.setData('coins', coins);
+    drop.setData('item', itemId ?? '');
+    drop.setData('ready', 0);
+    const body = drop.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(Phaser.Math.Between(-36, 36), Phaser.Math.Between(-60, -16));
+    this.pickupGroup.add(drop);
+    this.time.delayedCall(160, () => {
+      if (drop.active) drop.setData('ready', 1);
+    });
+  }
+
+  private updatePickups() {
+    const magnetRadiusSq = this.player.magnetRadius * this.player.magnetRadius;
+    for (const child of this.pickupGroup.getChildren()) {
+      const drop = child as Phaser.Physics.Arcade.Sprite;
+      if (!drop.active) continue;
+      const body = drop.body as Phaser.Physics.Arcade.Body;
+      if (drop.getData('full')) {
+        body.setVelocity(0, 0);
+        continue;
+      }
+      const dx = this.player.x - drop.x;
+      const dy = this.player.y - drop.y;
+      const distSq = dx * dx + dy * dy;
+      if (drop.getData('ready') && distSq < 12 * 12) {
+        this.collectPickup(drop);
+        continue;
+      }
+      if (drop.getData('ready') && distSq < magnetRadiusSq) {
+        const dist = Math.sqrt(distSq) || 1;
+        body.setVelocity((dx / dist) * 190, (dy / dist) * 190);
+      } else if (drop.getData('ready')) {
+        body.setVelocity(0, 0);
+      }
+    }
+  }
+
+  private collectPickup(drop: Phaser.Physics.Arcade.Sprite) {
+    const coins = Number(drop.getData('coins')) || 0;
+    const item = String(drop.getData('item') || '') || null;
+    const got = collectIntoTown(coins, item);
+    if (item && !got.storedItem) {
+      drop.setData('full', 1);
+      this.popup(drop.x, drop.y - 8, 'BAG FULL', '#f8f8f8');
+      return;
+    }
+    if (coins > 0) {
+      this.runDrips += coins;
+      audio.play('coin');
+      this.popup(drop.x, drop.y - 8, `+${coins}`, '#f8d020');
+    }
+    if (item && got.storedItem) {
+      audio.play('gem');
+      this.popup(drop.x, drop.y - 12, consumable(item)?.short ?? 'ITEM', '#f8f8f8');
+    }
+    const pop = this.add.image(drop.x, drop.y, drop.texture.key).setDepth(4);
+    this.tweens.add({ targets: pop, scale: 1.7, alpha: 0, duration: 140, onComplete: () => pop.destroy() });
+    drop.destroy();
+    const app = document.getElementById('app');
+    if (app) app.dataset.coins = String(loadGame().town.coins);
+  }
+
   private spawnXpGem(x: number, y: number, value: number) {
     const gem = this.physics.add.sprite(x, y, TEX.xpGem).setDepth(3);
     gem.setData('xp', value);
@@ -975,8 +1080,76 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       kills: this.player.kills,
       level: this.player.level,
     };
-    recordRunResult(data);
-    this.time.delayedCall(400, () => this.scene.start('GameOverScene', data));
+    const town = loadGame().town;
+    const max = townMaxHp(town.characterId, town.armorId);
+    const ratio = this.player.maxHp > 0 ? Math.max(0, this.player.hp) / this.player.maxHp : 0;
+    const townHp = won ? Math.max(1, Math.round(max * ratio)) : Math.max(1, Math.round(max * DEFEAT_HP_FRACTION));
+    recordRunResult(data, townHp);
+    this.time.delayedCall(400, () => this.scene.start('GameOverScene', { ...data, drips: this.runDrips }));
+  }
+
+  private openBag() {
+    if (this.tutorial || this.ended || this.levelUpOpen || this.userPaused || this.paused || this.bagMenu) return;
+    const profile = loadGame().town;
+    const rows = Object.keys(profile.bag)
+      .filter((id) => (profile.bag[id] ?? 0) > 0 && consumable(id))
+      .map((id) => ({ id, label: `${consumable(id)!.name} x${profile.bag[id]}` }));
+    if (rows.length === 0) {
+      this.popup(this.player.x, this.player.y - 14, 'BAG EMPTY', '#f8f8f8');
+      return;
+    }
+    rows.push({ id: 'close', label: 'CLOSE' });
+    this.bagMenu = new ListMenu(this);
+    this.paused = true;
+    this.hud.setVisible(false);
+    audio.setMuffled(true);
+    if (this.sys.isActive()) this.sys.pause();
+    this.bagMenu.show({
+      title: 'BAG',
+      rows,
+      hint: 'Use one.',
+      onPick: (id) => this.pickBag(id),
+      onClose: () => this.closeBag(),
+    });
+  }
+
+  private pickBag(id: string) {
+    if (id === 'close') {
+      this.closeBag();
+      return;
+    }
+    const item = consumable(id);
+    const next = spendItem(loadGame().town, id);
+    if (!item || !next) {
+      this.bagMenu?.setHint('None left.');
+      return;
+    }
+    const before = this.player.hp;
+    if (item.fullHeal) this.player.hp = this.player.maxHp;
+    else this.player.hp = Math.min(this.player.maxHp, this.player.hp + item.heal);
+    const healed = this.player.hp - before;
+    if (healed === 0 && item.hasteMs === 0) {
+      this.bagMenu?.setHint('HP is full.');
+      return;
+    }
+    writeProfile(next);
+    if (item.hasteMs > 0) this.player.applyHaste(item.hasteMs);
+    this.closeBag();
+    this.popup(this.player.x, this.player.y - 16, healed > 0 ? `+${healed}` : 'QUICK', '#70e090');
+    audio.play(healed > 0 ? 'sunbeam' : 'confirm');
+    this.checkpoint();
+  }
+
+  private closeBag() {
+    this.bagMenu?.hide();
+    this.bagMenu = null;
+    if (this.levelUpOpen || this.userPaused || this.ended) return;
+    if (this.sys.isPaused()) this.sys.resume();
+    this.input.keyboard?.resetKeys();
+    replayHeldKeys();
+    audio.setMuffled(false);
+    this.hud.setVisible(true);
+    this.paused = false;
   }
 
   // --- crashes ---
@@ -1273,4 +1446,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       }
     }
   }
+}
+
+function collectIntoTown(coins: number, item: string | null): { storedItem: boolean } {
+  const got = collect(loadGame().town, coins, item);
+  writeProfile(got.profile);
+  return { storedItem: got.storedItem };
 }

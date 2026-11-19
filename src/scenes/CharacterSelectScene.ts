@@ -4,6 +4,8 @@ import { chibiKey } from '../gfx/chibi';
 import { UI } from '../gfx/palette';
 import { drawCursor, drawWindow, textStyle } from '../ui/Window';
 import { audio } from '../audio/engine';
+import { chooseKnight } from '../economy/economy';
+import { loadGame, writeProfile } from '../save/save';
 
 /** Maps a stat multiplier to 1-5 filled segments (1.0 = 3). */
 function segments(mult: number, invert = false): number {
@@ -14,19 +16,23 @@ function segments(mult: number, invert = false): number {
 export class CharacterSelectScene extends Phaser.Scene {
   private selected = 0;
   private chosen = false;
+  /** Opened from the house mirror: pick a knight and return home, instead of starting a run. */
+  private wardrobe = false;
 
   constructor() {
     super('CharacterSelectScene');
   }
 
-  create() {
+  create(data: { wardrobe?: boolean } = {}) {
     this.selected = 0;
     this.chosen = false;
-    audio.playMusic('title');
+    this.wardrobe = data.wardrobe === true;
+    audio.playMusic(this.wardrobe ? 'town' : 'title');
     const { width } = this.scale;
     this.cameras.main.setBackgroundColor('#181c38');
 
-    this.add.text(width / 2, 4, 'CHOOSE YOUR KNIGHT', textStyle('#f8f8f8')).setOrigin(0.5, 0);
+    this.add.text(width / 2, 4, this.wardrobe ? 'THE MIRROR' : 'CHOOSE YOUR KNIGHT', textStyle('#f8f8f8')).setOrigin(0.5, 0);
+    if (this.wardrobe) this.add.text(4, 148, 'ESC: BACK', textStyle('#f8f8f8')).setDepth(5);
     drawWindow(this, 4, 16, 132, 140);
     drawWindow(this, 140, 16, 96, 140);
 
@@ -53,6 +59,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       else if (k === 'arrowdown' || k === 's') this.select((this.selected + 1) % 3, cursor, names, detail);
       else if (k === 'enter' || k === ' ' || k === 'z') this.choose(CHARACTERS[this.selected]);
       else if (k >= '1' && k <= '3') this.choose(CHARACTERS[Number(k) - 1]);
+      else if (k === 'escape' && this.wardrobe && !this.chosen) this.scene.start('HouseScene');
     });
   }
 
@@ -96,6 +103,11 @@ export class CharacterSelectScene extends Phaser.Scene {
     if (this.chosen) return;
     this.chosen = true;
     audio.play('confirm');
+    if (this.wardrobe) {
+      writeProfile(chooseKnight(loadGame().town, character.id));
+      this.scene.start('HouseScene');
+      return;
+    }
     this.scene.start('RegionSelectScene', { characterId: character.id });
   }
 }

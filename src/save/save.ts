@@ -1,16 +1,28 @@
 import { CHARACTERS } from '../config/characters';
 import { WEATHER_FRONTS, WORLD } from '../config/constants';
 import { REGIONS } from '../config/regions';
+import {
+  ARMOR,
+  BAG_CAP,
+  CONSUMABLES,
+  MAX_DRIPS,
+  STASH_CAP,
+  freshProfile,
+  grantArrival,
+  townMaxHp,
+  type TownProfile,
+} from '../economy/economy';
 
 /**
  * Versioned browser save (`localStorage` key `rainknights:save`).
  *
  * v1 stores settings (mute), finished-run records, and at most one
- * in-progress run. Live enemies, projectiles, and gems are not stored.
+ * in-progress run. v2 adds the Mistford profile: drips, bag, stash,
+ * armor, and town HP. Live enemies, projectiles, and gems are not stored.
  * `migrations` upgrades older documents one version at a time before
- * the result is checked against the v1 shape.
+ * the result is checked against the current shape.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 export const SAVE_KEY = 'rainknights:save';
 /** Pre-save mute flag. Folded into the document on first load, then removed. */
 export const LEGACY_MUTE_KEY = 'rainknights:muted';
@@ -82,11 +94,15 @@ export interface RunSnapshot {
 }
 
 export interface SaveData {
-  version: 1;
+  version: 2;
   settings: SaveSettings;
   meta: SaveMeta;
   run: RunSnapshot | null;
+  /** Mistford: coins, bag, armor, and the HP you walk home with. */
+  town: TownProfile;
 }
+
+export type { TownProfile };
 
 export interface ParseResult {
   save: SaveData;
@@ -113,14 +129,18 @@ interface Migration {
  * Steps a stored document from its version up to `SAVE_VERSION`.
  * Add a step here when the schema changes; do not rewrite old saves in place.
  */
-export const migrations: Migration[] = [{ from: 0, migrate: migrateV0 }];
+export const migrations: Migration[] = [
+  { from: 0, migrate: migrateV0 },
+  { from: 1, migrate: migrateV1 },
+];
 
 export function defaultSave(): SaveData {
   return {
-    version: 1,
+    version: 2,
     settings: { muted: false },
     meta: { bestTime: 0, bestLevel: 0, bestKills: 0, runs: 0, wins: 0 },
     run: null,
+    town: freshProfile(),
   };
 }
 
@@ -154,7 +174,7 @@ export function parseStored(raw: string | null, legacyMuted: boolean | null): Pa
     return { save: defaultSave(), writable: true, recovered: true, fromLegacy: false };
   }
 
-  const save = normalizeV1(migrated.doc);
+  const save = normalizeSave(migrated.doc);
   if (!save) return { save: defaultSave(), writable: true, recovered: true, fromLegacy: false };
   return { save, writable: true, recovered: false, fromLegacy: false };
 }
@@ -298,7 +318,7 @@ export function clearRun(): boolean {
   });
 }
 
-export function recordRunResult(result: { won: boolean; time: number; kills: number; level: number }): boolean {
+export function recordRunResult(result: { won: boolean; time: number; kills: number; level: number }, townHp?: number): boolean {
   return gameSave.update((save) => {
     save.meta.runs += 1;
     if (result.won) save.meta.wins += 1;
@@ -306,6 +326,26 @@ export function recordRunResult(result: { won: boolean; time: number; kills: num
     save.meta.bestLevel = Math.max(save.meta.bestLevel, result.level);
     save.meta.bestKills = Math.max(save.meta.bestKills, result.kills);
     save.run = null;
+    if (townHp !== undefined) {
+      const max = townMaxHp(save.town.characterId, save.town.armorId);
+      save.town.hp = Math.max(1, Math.min(max, Math.round(townHp)));
+    }
+  });
+}
+
+/** First time the knight steps into Mistford. New games find a jar of drips; old saves do not. */
+export function arriveInTown(): TownProfile {
+  const current = gameSave.load().town;
+  const next = grantArrival(current);
+  if (next !== current) gameSave.update((save) => {
+    save.town = next;
+  });
+  return gameSave.load().town;
+}
+
+export function writeProfile(profile: TownProfile): boolean {
+  return gameSave.update((save) => {
+    save.town = profile;
   });
 }
 
@@ -348,12 +388,71 @@ function migrateV0(doc: Record<string, unknown>): Record<string, unknown> {
   };
 }
 
-function normalizeV1(doc: Record<string, unknown>): SaveData | null {
-  if (doc.version !== 1) return null;
+/** v1 had no town. The knight arrives in Mistford with an empty purse. */
+function migrateV1(doc: Record<string, unknown>): Record<string, unknown> {
+  const run = isRecord(doc.run) ? doc.run : null;
+  const characterId = run && typeof run.characterId === 'string' ? run.characterId : 'rainKnight';
+  return {
+    version: 2,
+    settings: doc.settings,
+    meta: doc.meta,
+    run: doc.run ?? null,
+    town: {
+      ...freshProfile(characterId),
+      coins: 0,
+      hp: 0,
+      visited: false,
+      fromLegacy: true,
+    },
+  };
+}
+
+function normalizeSave(doc: Record<string, unknown>): SaveData | null {
+  if (doc.version !== SAVE_VERSION) return null;
   const settings = readSettings(doc.settings) ?? { muted: false };
   const meta = readMeta(doc.meta) ?? defaultSave().meta;
   const run = doc.run == null ? null : readRun(doc.run);
-  return { version: 1, settings, meta, run };
+  const town = readTown(doc.town);
+  return { version: 2, settings, meta, run, town };
+}
+
+const CONSUMABLE_IDS = new Set(CONSUMABLES.map((item) => item.id));
+const ARMOR_IDS = new Set(ARMOR.map((item) => item.id));
+
+function readTown(value: unknown): TownProfile {
+  const blank = freshProfile();
+  blank.fromLegacy = true;
+  if (!isRecord(value)) return blank;
+  const characterId = typeof value.characterId === 'string' && CHARACTER_IDS.has(value.characterId) ? value.characterId : blank.characterId;
+  const ownedArmor = Array.isArray(value.ownedArmor)
+    ? value.ownedArmor.filter((id): id is string => typeof id === 'string' && ARMOR_IDS.has(id))
+    : [];
+  const armorId = typeof value.armorId === 'string' && ownedArmor.includes(value.armorId) ? value.armorId : null;
+  const max = townMaxHp(characterId, armorId);
+  const hpRaw = readInt(value.hp, 1, 10_000);
+  const coins = readInt(value.coins, 0, MAX_DRIPS) ?? 0;
+  return {
+    characterId,
+    coins,
+    bag: readStacks(value.bag, BAG_CAP),
+    stash: readStacks(value.stash, STASH_CAP),
+    ownedArmor,
+    armorId,
+    hp: hpRaw === null ? max : Math.min(max, hpRaw),
+    visited: value.visited === true,
+    fromLegacy: value.fromLegacy === true,
+  };
+}
+
+function readStacks(value: unknown, cap: number): Record<string, number> {
+  if (!isRecord(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [id, count] of Object.entries(value)) {
+    if (!CONSUMABLE_IDS.has(id)) continue;
+    const n = readInt(count, 1, cap);
+    if (n !== null) out[id] = n;
+  }
+  return out;
 }
 
 function readSettings(value: unknown): SaveSettings | null {

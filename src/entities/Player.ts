@@ -161,8 +161,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.beamReadyAt = time + ms;
   }
 
+  /** Battle-only speed buff from Storm Tea. Not written into the checkpoint. */
+  private hasteUntil = 0;
+
   get effectiveMoveSpeed(): number {
-    return this.baseMoveSpeed * (1 + 0.2 * this.powerups.gale) * this.statuses.speedMult * this.terrainSpeed;
+    const haste = this.scene.time.now < this.hasteUntil ? 1.15 : 1;
+    return this.baseMoveSpeed * (1 + 0.2 * this.powerups.gale) * this.statuses.speedMult * this.terrainSpeed * haste;
+  }
+
+  /** Armor and the HP you left Mistford with. A continued run uses the checkpoint instead. */
+  applyBattleGear(stats: { hp: number; maxHp: number; baseMoveSpeed: number; attackDamage: number }) {
+    this.maxHp = stats.maxHp;
+    this.hp = Math.max(1, Math.min(stats.maxHp, stats.hp));
+    this.baseMoveSpeed = stats.baseMoveSpeed;
+    this.attackDamage = stats.attackDamage;
+  }
+
+  applyHaste(ms: number) {
+    this.hasteUntil = this.scene.time.now + ms;
   }
 
   preUpdate(time: number, delta: number) {

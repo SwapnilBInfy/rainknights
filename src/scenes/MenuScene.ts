@@ -9,12 +9,13 @@ import { loadGame, resetGameSave, type SaveData } from '../save/save';
 
 const ANIMATED = ['down', 'side', 'down'] as const;
 
-type Choice = 'continue' | 'new' | 'reset';
+type Choice = 'continue' | 'new' | 'reset' | 'town';
 
 const LABEL: Record<Choice, string> = {
   continue: 'CONTINUE',
   new: 'NEW GAME',
   reset: 'RESET SAVE',
+  town: 'MISTFORD',
 };
 
 interface HitBox {
@@ -32,11 +33,18 @@ function clock(seconds: number): string {
   return `${minutes.toString().padStart(2, '0')}:${remain.toString().padStart(2, '0')}`;
 }
 
-/** Null keeps the original PRESS START title. A run, a record, or a mute opens the menu. */
+function townProgress(save: SaveData): boolean {
+  const town = save.town;
+  return town.visited || town.coins > 0 || town.ownedArmor.length > 0 || Object.keys(town.bag).length > 0 || Object.keys(town.stash).length > 0;
+}
+
+/** Null keeps the original PRESS START title. A run, a record, a mute, or Mistford opens the menu. */
 function menuChoices(save: SaveData): Choice[] | null {
   const meta = save.meta;
+  const home = townProgress(save);
   const dirty =
     save.run != null ||
+    home ||
     save.settings.muted ||
     meta.runs > 0 ||
     meta.wins > 0 ||
@@ -45,8 +53,9 @@ function menuChoices(save: SaveData): Choice[] | null {
     meta.bestKills > 0;
   if (!dirty) return null;
   const choices: Choice[] = [];
-  if (save.run) choices.push('continue');
-  choices.push('new', 'reset');
+  if (save.run) choices.push('continue', 'new', 'reset');
+  else if (home) choices.push('town', 'reset');
+  else choices.push('new', 'reset');
   return choices;
 }
 
@@ -66,6 +75,7 @@ export class MenuScene extends Phaser.Scene {
   private runClock = '';
   private runRegion = '';
   private best = '';
+  private townCoins = '';
 
   constructor() {
     super('MenuScene');
@@ -88,6 +98,7 @@ export class MenuScene extends Phaser.Scene {
     this.runClock = run ? clock(run.elapsedSeconds) : '';
     this.runRegion = run?.regionId ?? '';
     this.best = save.meta.runs > 0 ? clock(save.meta.bestTime) : '';
+    this.townCoins = save.town.visited ? String(save.town.coins) : '';
 
     const sheet = this.textures.get(TEX.terrainTilesNyc);
     for (let i = 0; i < 2; i++) if (!sheet.has(`t${i}`)) sheet.add(`t${i}`, 0, i * 16, 0, 16, 16);
@@ -215,7 +226,13 @@ export class MenuScene extends Phaser.Scene {
 
     const selectable = this.mode === 'confirm' ? ['NO', 'YES'] : this.choices.map((choice) => LABEL[choice]);
     const header =
-      this.mode === 'confirm' ? 'Erase save?' : this.runLevel ? `LV${this.runLevel}  ${this.runClock}` : '';
+      this.mode === 'confirm'
+        ? 'Erase save?'
+        : this.runLevel
+          ? `LV${this.runLevel}  ${this.runClock}`
+          : this.townCoins !== ''
+            ? `${this.townCoins} DRIPS`
+            : '';
     const rowH = 16;
     const lines = (header ? 1 : 0) + selectable.length;
     const winW = 176;
@@ -270,7 +287,8 @@ export class MenuScene extends Phaser.Scene {
       delete app.dataset.eraseConfirm;
       return;
     }
-    app.dataset.titleMenu = this.choices[0] === 'continue' ? 'continue' : 'menu';
+    const first = this.choices[0];
+    app.dataset.titleMenu = first === 'continue' ? 'continue' : first === 'town' ? 'town' : 'menu';
     if (this.mode === 'confirm') {
       app.dataset.titleChoice = this.confirmIndex === 0 ? 'no' : 'yes';
       app.dataset.eraseConfirm = 'open';
@@ -372,6 +390,7 @@ export class MenuScene extends Phaser.Scene {
       return;
     }
     if (choice === 'continue') this.continueRun();
+    else if (choice === 'town') this.enterTown();
     else this.startNewGame();
   }
 
@@ -416,10 +435,18 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
+  private enterTown() {
+    if (this.leaving) return;
+    this.leaving = true;
+    audio.play('confirm');
+    this.scene.start('TownScene');
+  }
+
   private startNewGame() {
     if (this.leaving) return;
     this.leaving = true;
     audio.play('confirm');
-    this.scene.start('CharacterSelectScene');
+    // A saved run stays put until a new fight actually starts.
+    this.scene.start('TownScene');
   }
 }

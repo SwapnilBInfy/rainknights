@@ -1,4 +1,4 @@
-import { test, expect, stubWeather } from './fixtures';
+import { beginCityRun, test, expect, stubWeather } from './fixtures';
 import { type Browser, type Page } from '@playwright/test';
 
 // The world: seeded, city-shaped maps that the weather changes, and tiles that do things to you.
@@ -15,14 +15,7 @@ async function begin(page: Page, query = '', region: 'nyc' | 'miami' = 'nyc') {
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto('/' + query);
-  const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
-  await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'CharacterSelectScene');
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
-  await page.keyboard.press(region === 'nyc' ? 'Digit1' : 'Digit2');
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  await beginCityRun(page, region);
   return errors;
 }
 

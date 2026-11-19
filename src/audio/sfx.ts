@@ -42,6 +42,13 @@ export const SFX = {
     tone(ctx, out, { t: t + 0.04, dur: 0.06, freq: midiToHz(91 + step * 2), voice: 'square50', vol: 0.05, release: 0.04 });
   },
 
+  /** A drip picked up off the street. `step` rises when several land in a row. */
+  coin(ctx: BaseAudioContext, out: AudioNode, t: number, step = 0) {
+    const n = typeof step === 'number' ? step : 0;
+    tone(ctx, out, { t, dur: 0.04, freq: midiToHz(88 + n * 2), voice: 'square25', vol: 0.1, release: 0.02 });
+    tone(ctx, out, { t: t + 0.04, dur: 0.1, freq: midiToHz(100 + n * 2), voice: 'square50', vol: 0.09, release: 0.05 });
+  },
+
   hurt(ctx: BaseAudioContext, out: AudioNode, t: number) {
     tone(ctx, out, { t, dur: 0.3, freq: 340, slideTo: 90, voice: 'square25', vol: 0.16, release: 0.05 });
     noiseHit(ctx, out, { t, dur: 0.12, vol: 0.1, filter: 'lowpass', freq: 2000 });

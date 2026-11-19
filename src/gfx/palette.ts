@@ -115,6 +115,8 @@ export const SNOW_GOLEM = { main: 0xdfeaf5, highlight: 0xffffff, shadow: 0x9db4c
 export const TORNADO_BOSS = { main: 0x6c5b8f, highlight: 0xa695c9, shadow: 0x3b2f57 };
 
 export const XP_GEM = { main: 0x4be05a, highlight: 0xb6ffb8, shadow: 0x1f8a2e };
+export const COIN = { main: 0xf8d040, highlight: 0xfff6a0, shadow: 0xc08010 };
+export const SUPPLY = { main: 0xe8c090, highlight: 0xfff0d0, shadow: 0xa07040 };
 export const PROJECTILE = { main: 0x8fe0ff, highlight: 0xffffff, shadow: 0x3f9ec9 };
 
 export const PU_SUN = { main: 0xffb020, highlight: 0xfff2b0, shadow: 0xb87200 };

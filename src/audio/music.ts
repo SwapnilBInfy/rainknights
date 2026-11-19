@@ -53,7 +53,7 @@ const T = {
 const m = (root: number): Chord => ({ root, q: 'min' });
 const M = (root: number): Chord => ({ root, q: 'maj' });
 
-export type SongKey = 'title' | 'nyc' | 'miami' | 'boss' | 'victory' | 'gameover';
+export type SongKey = 'title' | 'town' | 'nyc' | 'miami' | 'boss' | 'victory' | 'gameover';
 
 const DEFS: Record<SongKey, SongDef> = {
   // "Rain on the Route" — A minor, wistful.
@@ -61,6 +61,12 @@ const DEFS: Record<SongKey, SongDef> = {
     bpm: 104, tonic: 45, chords: [m(0), M(8), M(3), M(10), m(0), M(8), M(10), m(0)],
     bass: 'gentle', drums: 'light', arp: 'eighth', leadVoice: 'square25', leadVol: 0.1, gate: 0.85,
     rhythms: [T.a, T.b, T.c, T.f], restChance: 0.08, bias: 0, seed: 11, loop: true, vibrato: 12,
+  },
+  // "Mist on the Lane" — C major, a small town in the rain.
+  town: {
+    bpm: 96, tonic: 48, chords: [M(0), M(5), m(9), M(7), M(0), M(5), M(7), M(0)],
+    bass: 'gentle', drums: 'light', arp: 'eighth', leadVoice: 'square25', leadVol: 0.09, gate: 0.88,
+    rhythms: [T.a, T.f, T.c], restChance: 0.1, bias: 0.15, seed: 19, loop: true, vibrato: 10,
   },
   // "The Gray Storm" — D minor, driving and tense.
   nyc: {

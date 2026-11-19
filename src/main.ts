@@ -98,6 +98,9 @@ async function start() {
       scenes.MenuScene,
       scenes.CharacterSelectScene,
       scenes.RegionSelectScene,
+      scenes.TownScene,
+      scenes.HouseScene,
+      scenes.MarketScene,
       scenes.GameScene,
       scenes.GameOverScene,
       scenes.OverlayScene,
@@ -117,7 +120,16 @@ async function start() {
   }
 }
 
-const MARKED_SCENES = new Set(['MenuScene', 'CharacterSelectScene', 'RegionSelectScene', 'GameScene', 'GameOverScene']);
+const MARKED_SCENES = new Set([
+  'MenuScene',
+  'CharacterSelectScene',
+  'RegionSelectScene',
+  'TownScene',
+  'HouseScene',
+  'MarketScene',
+  'GameScene',
+  'GameOverScene',
+]);
 
 /** Checkpoints the live run when the tab is hidden or the page is going away. */
 function installExitSave(game: Phaser.Game) {
