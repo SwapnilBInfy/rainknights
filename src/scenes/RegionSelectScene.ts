@@ -6,6 +6,7 @@ import { drawWindow, textStyle } from '../ui/Window';
 import { drawWeatherIcon, WEATHER_SHORT } from '../ui/weatherIcons';
 import { audio } from '../audio/engine';
 import { runStartData } from '../systems/runStart';
+import { eachKeyEventOnce } from '../input/keyEvents';
 
 interface RegionSelectData {
   characterId: string;
@@ -33,8 +34,10 @@ export class RegionSelectScene extends Phaser.Scene {
 
     const weather: (RegionWeatherState | null)[] = REGIONS.map(() => null);
     let alive = true;
+    const app = document.getElementById('app');
     this.events.once('shutdown', () => {
       alive = false;
+      if (app) delete app.dataset.regionSelected;
     });
 
     // The list.
@@ -62,6 +65,8 @@ export class RegionSelectScene extends Phaser.Scene {
       cardName.setText(region.name);
       cardSub.setText(region.subtitle.replace(/^The /, ''));
       cardKey.setText(`Press ${this.selected + 1}`);
+      // Lets tests wait for the highlighted row instead of guessing how long a keypress takes.
+      if (app) app.dataset.regionSelected = region.id;
     };
 
     REGIONS.forEach((region, i) => {
@@ -100,7 +105,7 @@ export class RegionSelectScene extends Phaser.Scene {
       .setDepth(3);
     show();
 
-    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
+    this.input.keyboard?.on('keydown', eachKeyEventOnce((e) => {
       const k = e.key.toLowerCase();
       const before = this.selected;
       if (k === 'arrowup' || k === 'w' || k === 'arrowleft' || k === 'a') this.selected = (this.selected + REGIONS.length - 1) % REGIONS.length;
@@ -113,7 +118,7 @@ export class RegionSelectScene extends Phaser.Scene {
         return;
       }
       show();
-    });
+    }));
   }
 
   private choose(region: RegionDef, weather: RegionWeatherState | null) {

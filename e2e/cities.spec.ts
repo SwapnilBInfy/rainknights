@@ -30,12 +30,20 @@ async function toPicker(page: Page) {
   }
 }
 
+/** One keypress, then wait for the highlighted row to be the one expected: no guessing how long Phaser takes. */
+async function pressUntilSelected(page: Page, key: 'ArrowDown' | 'ArrowUp', expected: string) {
+  await page.keyboard.press(key);
+  await expect(page.locator('#app')).toHaveAttribute('data-region-selected', expected);
+}
+
 test('the picker lists every city and Down + Enter picks one from the list', async ({ page }) => {
   expect(REGIONS.map((r) => r.id)).toEqual(['nyc', 'miami', 'london', 'tokyo', 'mumbai']);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await toPicker(page);
-  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown'); // New York -> Mumbai
+  await expect(page.locator('#app')).toHaveAttribute('data-region-selected', 'nyc');
+  // one row per press, in list order
+  for (const id of ['miami', 'london', 'tokyo', 'mumbai']) await pressUntilSelected(page, 'ArrowDown', id);
   await page.keyboard.press('Enter');
   await expect(page.locator('#app')).toHaveAttribute('data-scene', 'GameScene');
   expect(await rk<string>(page, 'regionId()')).toBe('mumbai');
@@ -44,7 +52,8 @@ test('the picker lists every city and Down + Enter picks one from the list', asy
 
 test('the list wraps round: Up from New York is Mumbai', async ({ page }) => {
   await toPicker(page);
-  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('#app')).toHaveAttribute('data-region-selected', 'nyc');
+  await pressUntilSelected(page, 'ArrowUp', 'mumbai');
   await page.keyboard.press('Enter');
   await expect(page.locator('#app')).toHaveAttribute('data-scene', 'GameScene');
   expect(await rk<string>(page, 'regionId()')).toBe('mumbai');
