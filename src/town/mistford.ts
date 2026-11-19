@@ -87,6 +87,7 @@ export function cellCenter(cell: Cell): { x: number; y: number } {
 }
 
 export const TOWN_ROWS = TOWN_ART;
+export const MARKET_ROWS = MARKET_ART;
 export const townGrid: Grid = parse(TOWN_ART, TOWN_FLOOR);
 export const houseGrid: Grid = parse(HOUSE_ART, ROOM_FLOOR);
 export const marketGrid: Grid = parse(MARKET_ART, ROOM_FLOOR);

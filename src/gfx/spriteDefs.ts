@@ -7,6 +7,7 @@ import { generateWeaponTextures } from './weapons';
 import { CHARACTERS } from '../config/characters';
 import { generateTerrainTileset, generateRainTexture } from './tiles';
 import { generateSignTexture, generateVillagerTexture } from './townFolk';
+import { generateFurnitureTextures } from './furniture';
 import * as P from './palette';
 
 export const TEX = {
@@ -93,6 +94,7 @@ export async function generateAllTextures(scene: Phaser.Scene, afterBatch?: () =
   generateVillagerTexture(scene, TEX.villagerBlue, 0x3060c8, 0x4a3020);
   generateVillagerTexture(scene, TEX.villagerGreen, 0x2e8a48, 0x6a4a28);
   generateSignTexture(scene, TEX.signpost);
+  generateFurnitureTextures(scene);
   generateBlobTexture(scene, TEX.projectile, { radius: 2, shape: 'diamond', ...P.PROJECTILE }, 1);
   await pause();
 

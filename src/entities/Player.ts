@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { PLAYER_BASE, XP_BASE, XP_GROWTH } from '../config/constants';
+import { PLAYER_BASE, XP_BASE } from '../config/constants';
+import { grantXp } from './levelUp';
 import type { CharacterDef } from '../config/characters';
 import { chibiKey, type Facing, type WeaponType } from '../gfx/chibi';
 import { weaponKey, SLASH_KEY } from '../gfx/weapons';
@@ -46,6 +47,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private weapon: Phaser.GameObjects.Image;
   private attackSwingUntil = 0;
   private hurtFlashMs = 0;
+  private healFlashMs = 0;
   private tintKey = '';
   /** Wet / burning / chilled / frozen / shocked. Frozen holds you still for a moment; shock only slows. */
   readonly statuses = new StatusSet({ frozenMs: STATUS_TUNING.frozenPlayerMs, shockStuns: false });
@@ -187,6 +189,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const { burnTicks } = this.statuses.update(delta);
     for (let i = 0; i < burnTicks; i++) this.takeStatusDamage(1, time);
     this.hurtFlashMs = Math.max(0, this.hurtFlashMs - delta);
+    this.healFlashMs = Math.max(0, this.healFlashMs - delta);
     this.tryStartRoll(time);
     this.handleMovement(time);
     this.handleAuras(time, delta);
@@ -216,6 +219,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const s = this.statuses;
     let key = '';
     if (this.hurtFlashMs > 0) key = 'hurt';
+    else if (this.healFlashMs > 0) key = 'heal';
     else if (s.has('frozen')) key = 'frozen';
     else if (s.has('shocked')) key = Math.floor(time / 90) % 2 === 0 ? 'shock-a' : 'shock-b';
     else if (s.has('burning')) key = Math.floor(time / 120) % 2 === 0 ? 'burn-a' : 'burn-b';
@@ -231,6 +235,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       'burn-b': 0xffd070,
       chilled: 0xc8ecff,
       wet: 0x9ac0ff,
+      heal: 0xb0ffc0,
     };
     if (key === '') this.clearTint();
     else if (key === 'hurt') this.setTintFill(0xff4040);
@@ -460,13 +465,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   addXp(amount: number) {
-    this.xp += amount;
-    while (this.xp >= this.xpToNext) {
-      this.xp -= this.xpToNext;
-      this.level += 1;
-      this.xpToNext = XP_BASE + this.level * XP_GROWTH;
-      this.onLevelUp?.();
+    const next = grantXp(
+      { xp: this.xp, xpToNext: this.xpToNext, level: this.level, hp: this.hp, maxHp: this.maxHp },
+      amount
+    );
+    this.xp = next.state.xp;
+    this.xpToNext = next.state.xpToNext;
+    this.level = next.state.level;
+    this.hp = next.state.hp;
+    if (next.levels > 0) {
+      this.healFlashMs = 520;
+      this.invulnerableUntil = Math.max(this.invulnerableUntil, this.scene.time.now + 650);
+      this.setTint(0xb0ffc0);
     }
+    for (let i = 0; i < next.levels; i++) this.onLevelUp?.();
   }
 
   toSnapshot(): PlayerSnapshot {

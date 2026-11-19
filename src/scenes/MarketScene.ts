@@ -8,7 +8,8 @@ import { bagLabel, buy, buyFailText, shopRows, townMaxHp } from '../economy/econ
 import { Avatar } from '../town/avatar';
 import { mountMap } from '../town/mapView';
 import { Speech, clearHub, publishHub } from '../town/speech';
-import { MARKET, cellCenter, cellOf, marketGrid, sameCell } from '../town/mistford';
+import { MARKET, MARKET_ROWS, cellCenter, cellOf, cells, marketGrid, sameCell } from '../town/mistford';
+import { FURNITURE, placeExit, placeProp } from '../gfx/furniture';
 
 /** The market counter. Space (or A) opens the buy list. */
 export class MarketScene extends Phaser.Scene {
@@ -42,6 +43,9 @@ export class MarketScene extends Phaser.Scene {
 
     const keeper = cellCenter(MARKET.keeper);
     this.add.image(keeper.x, keeper.y, TEX.villagerBlue).setDepth(8);
+    for (const cell of cells(MARKET_ROWS, 'K')) placeProp(this, FURNITURE.counter, cell, 2);
+    for (const col of [2, 6, 11]) placeProp(this, FURNITURE.shelf, { col, row: 1 }, 2);
+    placeExit(this, MARKET.door);
     this.chrome = new HubChrome(this, 'MARKET');
 
     audio.playMusic('town');
@@ -71,14 +75,21 @@ export class MarketScene extends Phaser.Scene {
     this.menu.pump(time);
     this.avatar.locked = this.menu.isOpen || this.speech.open;
     if (!this.leaving && !this.avatar.locked && sameCell(cellOf(this.avatar.x, this.avatar.y), MARKET.door)) {
-      this.leaving = true;
-      audio.play('confirm');
-      this.scene.start('TownScene', { at: 'shop' });
+      this.leaveMarket();
       return;
     }
     const row = cellOf(this.avatar.x, this.avatar.y).row;
-    this.interact = row === MARKET.counterRow || row === MARKET.counterRow + 1 ? 'shop' : '';
+    const doorAt = cellCenter(MARKET.door);
+    const nearDoor = Phaser.Math.Distance.Between(this.avatar.x, this.avatar.y, doorAt.x, doorAt.y) <= 22;
+    this.interact = nearDoor ? 'door' : row === MARKET.counterRow || row === MARKET.counterRow + 1 ? 'shop' : '';
     this.publish();
+  }
+
+  private leaveMarket() {
+    if (this.leaving) return;
+    this.leaving = true;
+    audio.play('confirm');
+    this.scene.start('TownScene', { at: 'shop' });
   }
 
   private heldKeys() {
@@ -101,6 +112,7 @@ export class MarketScene extends Phaser.Scene {
       return;
     }
     if (key === 'i') this.openStatus();
+    else if ((key === ' ' || key === 'enter' || key === 'z') && this.interact === 'door') this.leaveMarket();
     else if ((key === ' ' || key === 'enter' || key === 'z') && this.interact === 'shop') this.openShop();
   };
 
@@ -176,7 +188,8 @@ export class MarketScene extends Phaser.Scene {
     if (this.interact === 'shop') {
       const at = cellCenter({ col: Math.round(this.avatar.x / 16), row: MARKET.counterRow - 1 });
       this.chrome.setBubble({ x: at.x, y: at.y });
-    } else this.chrome.setBubble(null);
+    } else if (this.interact === 'door') this.chrome.setBubble(cellCenter(MARKET.door));
+    else this.chrome.setBubble(null);
     publishHub({
       place: 'market',
       coins: profile.coins,

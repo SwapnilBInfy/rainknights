@@ -59,6 +59,8 @@ interface RunBridge {
   rolling: () => boolean;
   rollCharge: () => number;
   invulnerable: () => boolean;
+  /** Dodge rolls started this run: lets a test see that a roll happened without catching its 220ms window. */
+  rolls: () => number;
   /** Hits avoided by rolling this run. */
   dodges: () => number;
   /** How many enemies are currently winding up an attack. */
@@ -101,6 +103,8 @@ interface RunBridge {
   heal: () => void;
   /** Hurt the knight (debug / tests). A lethal hit ends the run. */
   hurt: (amount: number) => void;
+  /** Grant XP. Enough to level up heals to full and opens the level-up menu. */
+  addXp: (amount: number) => void;
   /** End the run as a defeat without a damage popup (debug / tests). */
   defeat: () => void;
   /** Drips in the purse right now. */
@@ -159,6 +163,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private terrain!: TerrainResult;
   private lastFrontIndex = 0;
   private pendingLevelUps = 0;
+  private levelCue = false;
   private ended = false;
   private xpGrant = 0;
   private detachTouch: (() => void) | null = null;
@@ -178,6 +183,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private tutorialBadge = '';
   private mapSeed = 0;
   private crashCount = 0;
+  private rollCount = 0;
   /** Test hook: throw on the next update. */
   private faultNextFrame = false;
   private terrainClock = 0;
@@ -205,8 +211,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.signatureSeen = false;
     this.tutorial = null;
     this.tutorialBadge = '';
+    this.levelCue = false;
     this.terrainClock = 0;
     this.crashCount = 0;
+    this.rollCount = 0;
     this.wasWet = false;
     this.runDrips = 0;
     this.bagMenu = null;
@@ -247,6 +255,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.tutorial?.note('hurt');
       this.floatText(this.player.x, this.player.y - 12, `-${amount}`, '#f04040');
       this.hitStop(55);
+    });
+    this.player.on('rolled', () => {
+      this.rollCount += 1;
     });
     this.player.on('dodged', () => {
       audio.play('dodge');
@@ -371,6 +382,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       hurt: (amount) => {
         this.player.takeDamage(amount, this.time.now);
       },
+      addXp: (amount: number) => {
+        this.xpGrant += Math.max(0, amount);
+      },
       /** End the run the way a defeat does, without a damage number (debug / tests). */
       defeat: () => {
         if (this.ended || this.tutorial) return;
@@ -388,6 +402,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         this.faultNextFrame = true;
       },
       crashes: () => this.crashCount,
+      rolls: () => this.rollCount,
       tpStreetEnd: (tilesBefore = 3) => {
         const end = this.terrain.field.findStreetEnd();
         if (!end) return false;
@@ -949,8 +964,16 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   private pauseForLevelUp() {
     this.pendingLevelUps += 1;
-    if (this.paused) return; // a menu is already open — this level is queued behind it
-    this.showLevelUpMenu();
+    if (this.paused || this.levelCue) return; // a menu is already open — this level is queued behind it
+    this.levelCue = true;
+    audio.play('sunbeam');
+    // Leave the HP bar up for a moment so the full heal reads before the menu covers it. This runs on the scene's own
+    // clock, not the wall clock: it holds still while the game is paused (so the menu never opens on top of the pause
+    // overlay; resuming opens it) and is dropped with the scene.
+    this.time.delayedCall(480, () => {
+      this.levelCue = false;
+      if (!this.ended && this.pendingLevelUps > 0 && !this.levelUpOpen) this.showLevelUpMenu();
+    });
   }
 
   private showLevelUpMenu() {

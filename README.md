@@ -28,7 +28,8 @@ are AI-generated (via `npm run art:generate`).
   direction (short recharge, shown by the gauge under your HP)
 - **Auto-attack**: a weaker Storm Bolt still fires at the nearest enemy as a backup
 - **Level up**: collect XP gems from defeated enemies, then pick one of three
-  upgrades (weapon, stat, or weather power). The fight freezes until you pick
+  upgrades (weapon, stat, or weather power). Each level restores HP to full,
+  armor included. The fight freezes until you pick
 - **Pause**: **Esc** or **P** during a run (see Controls)
 - **Goal**: survive the escalating storm fronts and defeat the **Tornado**
   boss that arrives at the 5-minute mark
@@ -256,7 +257,7 @@ walks you back. After a victory or a defeat, PRESS START returns you home.
 
 | Place | What you can do |
 | ----- | --------------- |
-| Your house (west) | The **bed** restores HP. The **chest** holds spare food. The **mirror** changes which knight you are. The **rack** swaps armor you own. |
+| Your house (west) | The **bed** restores HP. The **chest** holds spare food. The **mirror** changes which knight you are. The **rack** swaps armor you own. The mat at the south door walks you back outside (or press A beside it). |
 | The market (east) | Buy food and armor with **Drips**. Stand at the counter and press Space (or A). Arrows, WASD, a held d-pad, or a gamepad move the list. |
 | The street | Two neighbours and a sign. Walk up and press Space (or A). |
 

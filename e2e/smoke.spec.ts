@@ -281,18 +281,55 @@ test.describe('feel follow-ups', () => {
     });
   });
 
+  test('pausing during the level-up heal holds the menu back until you resume', async ({ page }) => {
+    const errors = collectErrors(page);
+    await beginRun(page);
+    const app = page.locator('#app');
+
+    await page.evaluate(() => window.__rk?.grantLevel());
+    // The level is gained on the next frame; the menu follows about half a second later. Pause in between.
+    await page.waitForFunction(() => (window.__rk?.level() ?? 1) > 1, undefined, { polling: 'raf', timeout: 10_000 });
+    await page.keyboard.press('Escape');
+    const pause = page.getByRole('dialog', { name: 'Paused' });
+    await expect(pause).toBeVisible();
+
+    // The menu must not open on top of the pause overlay.
+    await page.waitForTimeout(900);
+    await expect(app).not.toHaveAttribute('data-level-up', 'open');
+    await expect(pause).toBeVisible();
+
+    // Resuming brings the owed level-up menu.
+    await page.keyboard.press('KeyP');
+    await expect(pause).toBeHidden();
+    await expect(app).toHaveAttribute('data-level-up', 'open');
+    await page.waitForTimeout(450); // the menu ignores confirms for a short beat
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Space');
+    await expect(app).not.toHaveAttribute('data-level-up', 'open');
+    expect(await page.evaluate(() => window.__rk?.isScenePaused())).toBe(false);
+
+    expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
+  });
+
   test('level-up pauses the scene and ignores the swing that opened it', async ({ page }) => {
     const errors = collectErrors(page);
     await beginRun(page);
 
     await page.evaluate(() => window.__rk?.grantLevel());
     const app = page.locator('#app');
+    // The swing key (and touch A, which emits Space) must not confirm yet. Send it in the very frame the menu is
+    // seen open: a separate round trip can outlast the menu's short arm delay on a busy machine, and then Space
+    // would rightly confirm.
+    await page.waitForFunction(
+      () => {
+        if (document.getElementById('app')?.dataset.levelUp !== 'open') return false;
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
+        return true;
+      },
+      undefined,
+      { polling: 'raf', timeout: 10_000 }
+    );
     await expect(app).toHaveAttribute('data-level-up', 'open');
-
-    // The swing key (and touch A, which emits Space) must not confirm yet.
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
-    });
     await page.waitForTimeout(120);
     await expect(app).toHaveAttribute('data-level-up', 'open');
 
