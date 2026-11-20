@@ -92,6 +92,22 @@ export const townGrid: Grid = parse(TOWN_ART, TOWN_FLOOR);
 export const houseGrid: Grid = parse(HOUSE_ART, ROOM_FLOOR);
 export const marketGrid: Grid = parse(MARKET_ART, ROOM_FLOOR);
 
+const UNDERCROFT_ART = [
+  '#################',
+  '#...............#',
+  '#..p.....P....p.#',
+  '#...............#',
+  '#.......S.......#',
+  '#...............#',
+  '#...............#',
+  '#...............#',
+  '#.......d.......#',
+  '#################',
+];
+export const UNDERCROFT_ROWS = UNDERCROFT_ART;
+// plain floor (not road), so the street decor paints no lane markings in the crypt
+export const undercroftGrid: Grid = parse(UNDERCROFT_ART, TOWN_FLOOR);
+
 const doorMats = cells(TOWN_ART, 'd').sort((a, b) => a.col - b.col);
 
 export const TOWN = {
@@ -101,6 +117,9 @@ export const TOWN = {
   gates: cells(TOWN_ART, '*'),
   /** The blue flight pad: a 2x2 plate. Stand on it and press A to fly. */
   pad: cells(TOWN_ART, 'F'),
+  /** The cellar hatch, revealed once the Stormglass is whole, and the step beside it where you come up from the Undercroft. */
+  hatch: { col: 7, row: 3 } as Cell,
+  hatchExit: { col: 7, row: 4 } as Cell,
   /** Where you land when you come back from a flight: on the pad. */
   padSpawn: { col: 14, row: 11 } as Cell,
   /** Where you land outside a door, on the street, so the mat does not immediately pull you back in. */
@@ -196,3 +215,12 @@ export function reachableFrom(grid: Grid, start: Cell): Set<string> {
   }
   return seen;
 }
+
+/** The Undercroft, beneath Mistford: the first Rain Knights' crypt, with Aurel's statue and his Lantern. */
+export const UNDERCROFT = {
+  spawn: { col: 8, row: 7 } as Cell,
+  exit: cells(UNDERCROFT_ART, 'd')[0],
+  pedestal: cells(UNDERCROFT_ART, 'P')[0],
+  statue: cells(UNDERCROFT_ART, 'S')[0],
+  plaques: cells(UNDERCROFT_ART, 'p'),
+};

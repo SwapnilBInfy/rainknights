@@ -12,8 +12,10 @@
  * its objectives are done; completing one queues a cutscene for the next time the knight is in Mistford.
  */
 
+import { CITIES } from '../config/regions';
+
 export type NpcId = 'pia' | 'brent' | 'marrow' | 'quill';
-export type ObjectId = 'vane' | 'altar';
+export type ObjectId = 'vane' | 'altar' | 'hatch' | 'statue' | 'pedestal' | 'plaque';
 export type Target = NpcId | ObjectId;
 export type ShardId = 'grayShard' | 'mistShard' | 'neonShard' | 'tideShard' | 'amberShard';
 
@@ -46,9 +48,15 @@ const FAR_SHARDS: ShardId[] = FAR_CITIES.map((c) => SHARD_OF[c]);
 export const SHARDS_NEEDED = 4;
 /** The finale's region: a storm island in the Pacific, only on the map once Quill has marked it. */
 export const FINALE_REGION = 'stormhold';
-export const LAST_STAGE = 5;
+export const LAST_STAGE = 6;
+/** Aurel's tablets, buried in the tunnels under the cities: read this many (one per city) to open the cellar hatch in Mistford. */
+export const TABLETS_NEEDED = 3;
+/** Bumped when stages were renumbered, so a story saved earlier keeps its meaning. */
+export const STORY_VERSION = 2;
 
 export interface StoryState {
+  /** The story's layout version; an older save is moved up when it is read. */
+  version: number;
   started: boolean;
   /** 1 to LAST_STAGE; LAST_STAGE + 1 once the story is complete. */
   stage: number;
@@ -64,7 +72,7 @@ export interface StoryState {
 }
 
 export function freshStory(): StoryState {
-  return { started: false, stage: 1, flags: [], items: [], placed: [], pending: null, complete: false };
+  return { version: STORY_VERSION, started: false, stage: 1, flags: [], items: [], placed: [], pending: null, complete: false };
 }
 
 const has = (s: StoryState, flag: string) => s.flags.includes(flag);
@@ -72,6 +80,13 @@ const withFlag = (s: StoryState, flag: string): StoryState => (has(s, flag) ? s 
 const owns = (s: StoryState, shard: ShardId) => s.items.includes(shard) || s.placed.includes(shard);
 const farOwned = (s: StoryState) => FAR_SHARDS.filter((x) => owns(s, x)).length;
 const farPlaced = (s: StoryState) => FAR_SHARDS.filter((x) => s.placed.includes(x)).length;
+/** How many of Aurel's tablets have been read (one counts per city). */
+export const tabletsRead = (s: StoryState): number => s.flags.filter((f) => f.startsWith('tablet:')).length;
+export const hasLantern = (s: StoryState): boolean => s.flags.includes('lantern');
+/** Tablets are in the tunnels only while the story is at the Undercroft stage. */
+export const tabletsAvailable = (s: StoryState): boolean => s.started && s.stage === 5;
+/** The cellar hatch is revealed once the Stormglass is whole. */
+export const hatchVisible = (s: StoryState): boolean => s.started && (s.stage >= 5 || s.complete);
 
 // ---- Objectives ------------------------------------------------------------------------------------------
 
@@ -145,6 +160,21 @@ export const STAGES: Stage[] = [
   },
   {
     n: 5,
+    title: 'THE UNDERCROFT',
+    clear: 'lantern',
+    objectives: [
+      {
+        id: 'tablets',
+        text: 'Read 3 buried tablets',
+        done: (s) => tabletsRead(s) >= TABLETS_NEEDED,
+        progress: (s) => ({ have: Math.min(TABLETS_NEEDED, tabletsRead(s)), need: TABLETS_NEEDED }),
+      },
+      { id: 'hatch', text: 'Open the cellar hatch', done: (s) => has(s, 'hatch:open') },
+      { id: 'lantern', text: "Take Aurel's Lantern", done: (s) => has(s, 'lantern') },
+    ],
+  },
+  {
+    n: 6,
     title: 'THE EYE OF THE STORM',
     clear: 'ending',
     objectives: [
@@ -209,10 +239,12 @@ export function flightTargets(s: StoryState): string[] {
   if (stage === 2 && !owns(s, 'grayShard')) out.push('nyc');
   if (stage === 3 && farOwned(s) < 2) for (const c of FAR_CITIES) if (!owns(s, SHARD_OF[c])) out.push(c);
   if (stage === 4 && !owns(s, 'amberShard')) out.push('miami');
-  if (stage === 5 && finaleUnlocked(s) && !has(s, 'win:stormhold')) out.push(FINALE_REGION);
+  // the tablets are in the tunnels under any city that has not given one yet
+  if (stage === 5 && tabletsRead(s) < TABLETS_NEEDED) for (const c of CITIES) if (!has(s, `tablet:${c.id}`)) out.push(c.id);
+  if (stage === 6 && finaleUnlocked(s) && !has(s, 'win:stormhold')) out.push(FINALE_REGION);
   // Mistford is the destination when the next thing to do is there (talk to someone, place a shard), or when a shard is in hand
   const next = objectivesOf(s).find((o) => !o.done);
-  const atHome = !!next && ['pia', 'vane', 'marrow', 'brent', 'quill', 'place'].includes(next.objective.id);
+  const atHome = !!next && ['pia', 'vane', 'marrow', 'brent', 'quill', 'place', 'hatch', 'lantern'].includes(next.objective.id);
   if (atHome || s.items.length > 0) out.push('mistford');
   return out;
 }
@@ -221,6 +253,7 @@ export function flightTargets(s: StoryState): string[] {
 export function runObjective(s: StoryState, region: string): string {
   if (!s.started || s.complete) return '';
   if (region === FINALE_REGION) return 'DEFEAT THE REGENT';
+  if (s.stage === 5 && tabletsRead(s) < TABLETS_NEEDED) return has(s, `tablet:${region}`) ? '' : 'FIND A TABLET BELOW';
   const shard = SHARD_OF[region];
   if (!shard || owns(s, shard)) return '';
   if (s.stage === 2 && region === 'nyc') return `WIN HERE: ${SHARD_NAME[shard]}`;
@@ -230,10 +263,13 @@ export function runObjective(s: StoryState, region: string): string {
 }
 
 /** The Stormglass's strength in the finale: each shard on the altar toughens and sharpens the knight. */
-export function finaleBuff(s: StoryState): { hp: number; damage: number } {
+export function finaleBuff(s: StoryState): { hp: number; damage: number; lantern: boolean } {
   const n = Math.min(SHARDS_NEEDED, s.placed.length);
-  return { hp: n * 10, damage: n * 0.06 };
+  return { hp: n * 10, damage: n * 0.06, lantern: hasLantern(s) };
 }
+
+/** Aurel's Lantern slows the Regent's lightning: the rings that warn of a strike last this many times longer. */
+export const LANTERN_WARNING = 1.4;
 
 // ---- Events from the game -------------------------------------------------------------------------------
 
@@ -285,6 +321,10 @@ export interface Talk {
   gift?: Record<string, number>;
   /** The altar took shards, so the scene can flash it. */
   placed?: ShardId[];
+  /** The hatch is open and the knight goes down (once the words are read). */
+  enter?: 'undercroft';
+  /** The knight took the Lantern. */
+  took?: boolean;
 }
 
 const page = (a: string, b = ''): string[] => (b ? [a, b] : [a]);
@@ -312,7 +352,8 @@ export function interact(s: StoryState, target: Target): Talk {
         2: page('New York? Be careful.', 'The cabs never stop.'),
         3: page('Far cities, far storms.', 'Fly high to cross oceans.'),
         4: page('Miami next. Bring a hat.', 'The sun there bites.'),
-        5: page('Quill knows the sky.', 'Ask him by the flight pad.'),
+        5: page('Tunnels under every city.', 'Mind the dark, knight.'),
+        6: page('Quill knows the sky.', 'Ask him by the flight pad.'),
       };
       return { state: next, pages: [done ? page('The sun! I forgot its face.', 'Thank you, Rain Knight.') : line[stage] ?? page('Good luck, knight.')] };
     }
@@ -329,7 +370,8 @@ export function interact(s: StoryState, target: Target): Talk {
         2: page('Heard of the Stormglass?', 'Rain Buns help in a fight.'),
         3: page('Eat a bun when you are low.', 'They heal a lot.'),
         4: page('The Amber Shard, in Miami?', 'Beaches get crowded.'),
-        5: page('Stormhold? My gran said it', 'was a sunny isle, once.'),
+        5: page('Mind the tunnels, knight.', 'Take a lantern. Or a bun.'),
+        6: page('Stormhold? My gran said it', 'was a sunny isle, once.'),
       };
       return { state: s, pages: [done ? page('Sunny days, big sales!', 'Come shop, hero.') : line[stage] ?? page('Shop is open.')] };
     }
@@ -369,27 +411,34 @@ export function interact(s: StoryState, target: Target): Talk {
             pages: [
               page('The Stormglass is whole!', 'But hear the wind, knight.'),
               page('The vane spins to the', 'Pacific. A storm waits.'),
-              page('Aurel was no villain once.', 'Quill can show you the way.'),
+              page('Aurel left tablets in the', 'tunnels. Read three.'),
             ],
           };
         }
         return { state: s, pages: [page('The Amber Shard, in Miami,', 'is last. Mind the tornado.')] };
       }
+      if (stage === 5) {
+        if (tabletsRead(s) < TABLETS_NEEDED) return { state: s, pages: [page('Stairs lead down in every', 'city. Read three tablets.'), page(`You have read ${tabletsRead(s)} of ${TABLETS_NEEDED}.`, 'One city, one tablet.')] };
+        if (!has(s, 'hatch:open')) return { state: s, pages: [page('The hatch by the altar', 'will open now. Go down.')] };
+        return { state: s, pages: [page('The Lantern waits in the', 'Undercroft, below us.')] };
+      }
       return { state: s, pages: [page('Quill, by the flight pad,', 'will show you the Eye.')] };
     }
     case 'quill': {
-      if (stage === 5 && !has(s, 'quill:eye')) {
+      if (stage === 6 && !has(s, 'quill:eye')) {
         return {
           state: advance(withFlag(s, 'quill:eye')),
           pages: [
             page('The Eye? I flew past it.', 'A black storm out at sea.'),
             page('Stormhold, they call it.', 'I marked it on your map.'),
             page('Climb high to cross it,', 'then come down on its star.'),
+            ...(hasLantern(s) ? [page('You have the Lantern. Its', 'light tames the Regent.')] : []),
           ],
         };
       }
       if (done) return { state: s, pages: [page('Clear skies from here to', 'the edge of the world!')] };
-      if (stage === 5) return { state: s, pages: [page('The star in the Pacific.', 'Fly high to cross the sea.')] };
+      if (stage === 6) return { state: s, pages: [page('The star in the Pacific.', 'Fly high to cross the sea.')] };
+      if (stage === 5) return { state: s, pages: [page('Aurel hid tablets in the', 'tunnels. Fly to a city.')] };
       return { state: s, pages: [page('Quill, courier of the high', 'winds. Busy sky today.')] };
     }
     case 'vane': {
@@ -397,8 +446,35 @@ export function interact(s: StoryState, target: Target): Talk {
       const next = advance(withFlag(s, 'examine:vane'));
       if (done) return { state: next, pages: [page('The vane spins free, swept', 'by an honest wind.')] };
       if (stage === 1) return { state: next, pages: [page('The weathervane is frozen,', 'its arrow on the empty sea.'), ...(first ? [page('It hums faintly...', 'Marrow will know why.')] : [])] };
-      if (stage >= 5) return { state: next, pages: [page('It points at the Pacific:', 'the Eye of the Storm.')] };
+      if (stage >= 6) return { state: next, pages: [page('It points at the Pacific:', 'the Eye of the Storm.')] };
+      if (stage === 5) return { state: next, pages: [page('The vane trembles toward', 'the ground. Look below.')] };
       return { state: next, pages: [page('The vane trembles, as if', 'it hears the far storms.')] };
+    }
+    case 'hatch': {
+      // revealed once the Stormglass is whole; opens when three tablets have been read (or at once for a story already past that)
+      const canOpen = has(s, 'hatch:open') || tabletsRead(s) >= TABLETS_NEEDED || stage >= 6 || done;
+      if (!canOpen) return { state: s, pages: [page('An iron hatch, sealed shut.', 'The tablets hold the key.'), page(`Tablets read: ${tabletsRead(s)} of ${TABLETS_NEEDED}.`, 'Look in the tunnels.')] };
+      const opening = !has(s, 'hatch:open');
+      return {
+        state: advance(withFlag(s, 'hatch:open')),
+        pages: opening ? [page('The tablets glow. The hatch', 'swings open. Stairs down.')] : [page('The stairs lead down to', 'the Undercroft.')],
+        enter: 'undercroft',
+      };
+    }
+    case 'statue': {
+      if (done) return { state: s, pages: [page('Sir Aurel, at peace,', 'looks up at a clear sky.')] };
+      return { state: s, pages: [page('A statue of Sir Aurel,', 'the first Rain Knight.'), page('His face is turned up,', 'as if listening to rain.')] };
+    }
+    case 'plaque': {
+      return { state: s, pages: [page('"Here lies the first', 'Lantern of the Knights."'), page('"Light it for the storm,', 'never against the rain."')] };
+    }
+    case 'pedestal': {
+      if (has(s, 'lantern')) return { state: s, pages: [page('The pedestal is empty.', 'The Lantern burns with you.')] };
+      return {
+        state: advance(withFlag(s, 'lantern')),
+        pages: [page("You take Aurel's Lantern.", 'It is warm, and it glows.'), page('Its light will tame the', 'Regent\'s lightning some.')],
+        took: true,
+      };
     }
     case 'altar': {
       if (done) return { state: s, pages: [page('The Stormglass shines.', 'The sky is calm at last.')] };
@@ -417,6 +493,31 @@ export function interact(s: StoryState, target: Target): Talk {
       return { state: advance(now), pages, placed };
     }
   }
+}
+
+// ---- Aurel's tablets -------------------------------------------------------------------------------------
+
+/** What the three tablets say, in the order they are read: Sir Aurel's story, a few lines at a time. */
+export const TABLET_TEXT: string[][][] = [
+  [page('AUREL, THE FIRST KNIGHT:', 'The storms took my village.'), page('I swore the sky would', 'never hurt anyone again.')],
+  [page('I gathered every weather', 'into one glass: the Eye.'), page('It worked. Rain stopped.', 'And the world went still.')],
+  [page('A world with no rain is', 'a world that cannot grow.'), page('Forgive me. My Lantern', 'lies beneath Mistford.')],
+];
+
+export interface TabletRead {
+  state: StoryState;
+  pages: string[][];
+  /** It was the first from this city, so it counts toward the three. */
+  counted: boolean;
+}
+
+/** The knight reads a tablet in a tunnel under `region`. Only the first in each city counts. */
+export function readTablet(s: StoryState, region: string): TabletRead {
+  const flag = `tablet:${region}`;
+  if (!tabletsAvailable(s) || has(s, flag)) return { state: s, pages: [page('Worn glyphs. You have', 'read this one already.')], counted: false };
+  const next = advance(withFlag(s, flag));
+  const n = tabletsRead(next);
+  return { state: next, pages: TABLET_TEXT[Math.min(n, TABLET_TEXT.length) - 1], counted: true };
 }
 
 // ---- Cutscenes --------------------------------------------------------------------------------------------
@@ -476,6 +577,15 @@ export const CUTSCENES: Record<string, Cutscene> = {
       ['And far away, in the Pacific,', 'a black storm turns to', 'look back at it.'],
     ],
   },
+  lantern: {
+    id: 'lantern',
+    title: 'STAGE 5 CLEAR',
+    subtitle: 'THE UNDERCROFT',
+    pages: [
+      ['Under Mistford, the first', 'Rain Knights kept a Lantern.', 'It burns with Aurel\'s light.'],
+      ['Quill has marked the Eye', 'on your map. Fly high, and', 'finish what Aurel began.'],
+    ],
+  },
   ending: {
     id: 'ending',
     title: 'STORY COMPLETE',
@@ -502,15 +612,19 @@ export function sanitizeStory(value: unknown): StoryState {
   const list = <T extends string>(x: unknown, ok: (s: string) => boolean): T[] =>
     Array.isArray(x) ? ([...new Set(x.filter((e): e is string => typeof e === 'string' && ok(e)))] as T[]) : [];
   const stage = typeof v.stage === 'number' && Number.isInteger(v.stage) ? Math.min(LAST_STAGE + 1, Math.max(1, v.stage)) : 1;
-  const complete = v.complete === true || stage > LAST_STAGE;
+  const complete = v.complete === true;
   const pending = typeof v.pending === 'string' && v.pending in CUTSCENES ? v.pending : null;
+  // A story saved before the Undercroft stage was added has the finale as stage 5: move it to stage 6.
+  const moved = v.version !== STORY_VERSION && stage >= 5 ? Math.min(LAST_STAGE + 1, stage + 1) : stage;
+  const finished = complete || moved > LAST_STAGE;
   return {
+    version: STORY_VERSION,
     started: v.started === true,
-    stage: complete ? LAST_STAGE + 1 : stage,
+    stage: finished ? LAST_STAGE + 1 : moved,
     flags: list(v.flags, (f) => FLAG_RE.test(f)).slice(0, 80),
     items: list<ShardId>(v.items, (i) => SHARD_IDS.has(i)),
     placed: list<ShardId>(v.placed, (i) => SHARD_IDS.has(i)),
     pending,
-    complete,
+    complete: finished,
   };
 }

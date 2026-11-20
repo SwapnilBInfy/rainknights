@@ -11,7 +11,36 @@ import {
   reachableFrom,
   sameCell,
   townGrid,
+  UNDERCROFT,
+  undercroftGrid,
 } from '../src/town/mistford';
+import { STORY_SPOTS } from '../src/town/storyTown';
+
+describe('the Undercroft', () => {
+  it('is a closed room with the stairs up, Aurel\'s statue, two plaques and the pedestal, all reachable', () => {
+    expect(undercroftGrid.length).toBeGreaterThan(8);
+    expect(undercroftGrid.every((row) => row.length === undercroftGrid[0].length)).toBe(true);
+    expect(UNDERCROFT.plaques).toHaveLength(2);
+    const reached = reachableFrom(undercroftGrid, UNDERCROFT.spawn);
+    const below = (c: { col: number; row: number }) => `${c.col},${c.row + 1}`;
+    expect(reached.has(`${UNDERCROFT.exit.col},${UNDERCROFT.exit.row}`)).toBe(true);
+    // each prop can be walked up to from the south, where the knight stands to use it
+    for (const c of [UNDERCROFT.statue, UNDERCROFT.pedestal, ...UNDERCROFT.plaques]) expect(reached.has(below(c)), `${c.col},${c.row}`).toBe(true);
+    // walled all round
+    for (let c = 0; c < undercroftGrid[0].length; c++) {
+      expect(isSolid(undercroftGrid[0][c])).toBe(true);
+      expect(isSolid(undercroftGrid[undercroftGrid.length - 1][c])).toBe(true);
+    }
+    expect(sameCell(UNDERCROFT.spawn, UNDERCROFT.exit)).toBe(false);
+  });
+
+  it('the cellar hatch and the step beside it, in the alcove, clear of the altar and Marrow', () => {
+    expect(sameCell(TOWN.hatch, TOWN.hatchExit)).toBe(false);
+    expect(Math.abs(TOWN.hatch.row - TOWN.hatchExit.row) + Math.abs(TOWN.hatch.col - TOWN.hatchExit.col)).toBe(1);
+    for (const spot of [STORY_SPOTS.vane, STORY_SPOTS.altar, STORY_SPOTS.marrow, STORY_SPOTS.quill]) expect(sameCell(spot, TOWN.hatch), 'not under a prop').toBe(false);
+    expect(STORY_SPOTS.hatch).toEqual(TOWN.hatch);
+  });
+});
 
 describe('Mistford map', () => {
   it('is a small rectangle with a clear road from the plaza to the house, the market, and the south gate', () => {
@@ -19,7 +48,7 @@ describe('Mistford map', () => {
     expect(townGrid.length).toBeGreaterThan(10);
     expect(townGrid[0].length).toBeGreaterThan(15);
     const reached = reachableFrom(townGrid, TOWN.spawn);
-    for (const cell of [TOWN.houseMat, TOWN.shopMat, TOWN.houseExit, TOWN.shopExit, TOWN.padSpawn, ...TOWN.pad, ...TOWN.gates]) {
+    for (const cell of [TOWN.houseMat, TOWN.shopMat, TOWN.houseExit, TOWN.shopExit, TOWN.padSpawn, TOWN.hatch, TOWN.hatchExit, ...TOWN.pad, ...TOWN.gates]) {
       expect(reached.has(`${cell.col},${cell.row}`), `${cell.col},${cell.row}`).toBe(true);
     }
     expect(isSolid(townGrid[TOWN.spawn.row][TOWN.spawn.col])).toBe(false);

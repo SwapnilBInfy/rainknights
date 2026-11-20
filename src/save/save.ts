@@ -507,7 +507,7 @@ function readRun(value: unknown): RunSnapshot | null {
   const player = readPlayer(value.player);
   const mapSeed = readInt(value.mapSeed, 0, 0x7fffffff);
   const usedPois = Array.isArray(value.usedPois)
-    ? [...new Set(value.usedPois.filter((k): k is string => typeof k === 'string' && /^[su]\d{1,2}(:\d{1,2})?$/.test(k)))].slice(0, 120)
+    ? [...new Set(value.usedPois.filter((k): k is string => typeof k === 'string' && /^[sut]\d{1,2}(:\d{1,2})?$/.test(k)))].slice(0, 120)
     : [];
   if (
     !weatherLabel ||

@@ -12,7 +12,11 @@ import {
   landed,
   LAST_STAGE,
   objectivesOf,
+  hasLantern,
+  hatchVisible,
+  LANTERN_WARNING,
   quillHere,
+  readTablet,
   runEnded,
   runObjective,
   sanitizeStory,
@@ -21,6 +25,11 @@ import {
   SHARD_OF,
   STAGES,
   startStory,
+  STORY_VERSION,
+  tabletsAvailable,
+  TABLET_TEXT,
+  TABLETS_NEEDED,
+  tabletsRead,
   trackerText,
   type StoryState,
   type Target,
@@ -43,6 +52,10 @@ function toStage(n: number): StoryState {
   if (n <= 4) return s;
   s = clearPending(talk(talk(talk(runEnded(s, 'miami', true).state, 'altar'), 'marrow'), 'marrow'));
   if (n <= 5) return s;
+  // the Undercroft: three tablets from three cities, the hatch, the Lantern
+  for (const city of ['nyc', 'london', 'miami']) s = readTablet(s, city).state;
+  s = clearPending(talk(talk(s, 'hatch'), 'pedestal'));
+  if (n <= 6) return s;
   throw new Error('no such stage');
 }
 
@@ -67,7 +80,7 @@ describe('starting the story', () => {
 });
 
 describe('the whole story, start to finish', () => {
-  it('plays through five stages in order, with a cutscene queued at each', () => {
+  it('plays through six stages in order, with a cutscene queued at each', () => {
     const seen: string[] = [];
     const take = (s: StoryState) => {
       if (s.pending) seen.push(s.pending);
@@ -108,7 +121,22 @@ describe('the whole story, start to finish', () => {
     expect(s.stage).toBe(5);
     expect(s.complete).toBe(false);
 
-    // Stage 5: the eye of the storm
+    // Stage 5: the Undercroft (tablets in the tunnels, the hatch, the Lantern)
+    expect(tabletsAvailable(s)).toBe(true);
+    s = readTablet(s, 'nyc').state;
+    s = readTablet(s, 'tokyo').state;
+    expect(s.stage).toBe(5);
+    s = talk(s, 'hatch');
+    expect(s.flags, 'the hatch does not open without three tablets').not.toContain('hatch:open');
+    expect(s.stage).toBe(5);
+    s = readTablet(s, 'miami').state;
+    s = talk(s, 'hatch');
+    s = talk(s, 'pedestal');
+    expect(hasLantern(s)).toBe(true);
+    s = take(s);
+    expect(s.stage).toBe(6);
+
+    // Stage 6: the eye of the storm
     expect(finaleUnlocked(s)).toBe(false);
     s = talk(s, 'quill');
     expect(finaleUnlocked(s)).toBe(true);
@@ -119,13 +147,13 @@ describe('the whole story, start to finish', () => {
     s = take(end.state);
     expect(s.complete).toBe(true);
     expect(s.stage).toBe(LAST_STAGE + 1);
-    expect(seen).toEqual(['prologue', 'stage1', 'stage2', 'stage3', 'restored', 'ending']);
+    expect(seen).toEqual(['prologue', 'stage1', 'stage2', 'stage3', 'restored', 'lantern', 'ending']);
     expect(trackerText(s)).toBe('The rain has stopped.');
     expect(flightTargets(s)).toEqual([]);
   });
 
   it('survives being saved and loaded at every step', () => {
-    for (const n of [1, 2, 3, 4, 5]) {
+    for (const n of [1, 2, 3, 4, 5, 6]) {
       const s = toStage(n);
       expect(sanitizeStory(JSON.parse(JSON.stringify(s)))).toEqual(s);
     }
@@ -216,20 +244,21 @@ describe('the villagers', () => {
     expect(quillHere(toStage(3))).toBe(false);
     expect(quillHere(toStage(4))).toBe(true);
     expect(interact(toStage(4), 'quill').state.flags).not.toContain('quill:eye');
-    const s5 = toStage(5);
+    expect(interact(toStage(5), 'quill').state.flags, 'not until the Undercroft is done').not.toContain('quill:eye');
+    const s5 = toStage(6);
     expect(finaleUnlocked(s5)).toBe(false);
     expect(finaleUnlocked(interact(s5, 'quill').state)).toBe(true);
   });
 
   it('everyone has something to say at every stage, and once the story is done', () => {
-    for (const n of [1, 2, 3, 4, 5]) {
-      for (const who of ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar'] as const) {
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      for (const who of ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar', 'hatch', 'statue', 'plaque', 'pedestal'] as const) {
         const t = interact(toStage(n), who);
         expect(t.pages.length, `${who} at stage ${n}`).toBeGreaterThan(0);
       }
     }
-    const done = { ...toStage(5), complete: true, stage: LAST_STAGE + 1 };
-    for (const who of ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar'] as const) expect(interact(done, who).pages.length).toBeGreaterThan(0);
+    const done = { ...toStage(6), complete: true, stage: LAST_STAGE + 1 };
+    for (const who of ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar', 'hatch', 'statue', 'plaque', 'pedestal'] as const) expect(interact(done, who).pages.length).toBeGreaterThan(0);
   });
 });
 
@@ -266,7 +295,7 @@ describe('objectives and the tracker', () => {
 
   it('advance does nothing for a story that has not started, or one that is complete', () => {
     expect(advance(freshStory())).toEqual(freshStory());
-    const done = { ...toStage(5), complete: true, stage: LAST_STAGE + 1 };
+    const done = { ...toStage(6), complete: true, stage: LAST_STAGE + 1 };
     expect(advance(done)).toEqual(done);
   });
 });
@@ -281,9 +310,16 @@ describe('what the rest of the game is told', () => {
     const oneFar = runEnded(toStage(3), 'london', true).state;
     expect(flightTargets(oneFar).sort()).toEqual(['mistford', 'mumbai', 'tokyo']); // in hand, and two to find
     expect(flightTargets(toStage(4))).toEqual(['miami']);
+    // stage 5: the tunnels under any city that has not given a tablet; then home for the hatch and the Lantern
     const s5 = toStage(5);
-    expect(flightTargets(s5)).toEqual(['mistford']); // Quill is at home
-    expect(flightTargets(interact(s5, 'quill').state)).toEqual([FINALE]);
+    expect(flightTargets(s5).sort()).toEqual(['london', 'miami', 'mumbai', 'nyc', 'tokyo']);
+    const read = readTablet(s5, 'nyc').state;
+    expect(flightTargets(read).sort()).toEqual(['london', 'miami', 'mumbai', 'tokyo']);
+    const three = readTablet(readTablet(read, 'tokyo').state, 'miami').state;
+    expect(flightTargets(three)).toEqual(['mistford']); // the hatch
+    const s6 = toStage(6);
+    expect(flightTargets(s6)).toEqual(['mistford']); // Quill is at home
+    expect(flightTargets(interact(s6, 'quill').state)).toEqual([FINALE]);
   });
 
   it('tells a run whether a win here recovers a shard, and what the finale wants', () => {
@@ -292,31 +328,36 @@ describe('what the rest of the game is told', () => {
     expect(runObjective(toStage(3), 'tokyo')).toBe('WIN HERE: NEON SHARD');
     expect(runObjective(toStage(4), 'miami')).toBe('WIN HERE: AMBER SHARD');
     expect(runObjective(runEnded(toStage(2), 'nyc', true).state, 'nyc')).toBe('');
-    expect(runObjective(toStage(5), 'stormhold')).toBe('DEFEAT THE REGENT');
+    expect(runObjective(toStage(6), 'stormhold')).toBe('DEFEAT THE REGENT');
+    expect(runObjective(toStage(5), 'nyc')).toBe('FIND A TABLET BELOW');
+    expect(runObjective(readTablet(toStage(5), 'nyc').state, 'nyc'), 'this city has given its tablet').toBe('');
   });
 
   it('landing at the Eye begins the finale, and nowhere else does', () => {
-    const s = interact(toStage(5), 'quill').state;
+    const s = interact(toStage(6), 'quill').state;
     expect(landed(s, 'nyc')).toBe(s);
     expect(landed(s, 'stormhold').flags).toContain('landed:stormhold');
   });
 
   it('the Stormglass toughens the knight for the finale: each shard on the altar helps', () => {
-    expect(finaleBuff(freshStory())).toEqual({ hp: 0, damage: 0 });
-    expect(finaleBuff(toStage(3))).toEqual({ hp: 10, damage: 0.06 });
-    expect(finaleBuff(toStage(5)).hp).toBe(40);
-    expect(finaleBuff(toStage(5)).damage).toBeCloseTo(0.24, 9);
+    expect(finaleBuff(freshStory())).toEqual({ hp: 0, damage: 0, lantern: false });
+    expect(finaleBuff(toStage(3))).toEqual({ hp: 10, damage: 0.06, lantern: false });
+    expect(finaleBuff(toStage(6)).hp).toBe(40);
+    expect(finaleBuff(toStage(6)).damage).toBeCloseTo(0.24, 9);
+    expect(finaleBuff(toStage(6)).lantern, 'the Lantern from the Undercroft').toBe(true);
+    expect(finaleBuff(toStage(5)).lantern).toBe(false);
+    expect(LANTERN_WARNING).toBeGreaterThan(1);
   });
 });
 
 describe('every word fits the screen', () => {
   const tooLong = (line: string) => line.length > 27;
   it('dialogue pages are at most two lines of 27 characters', () => {
-    for (const n of [1, 2, 3, 4, 5]) {
+    for (const n of [1, 2, 3, 4, 5, 6]) {
       const states = [toStage(n), { ...toStage(n), complete: true, stage: LAST_STAGE + 1 }];
       const withExtras = [...states, runEnded(toStage(Math.min(n, 4)), n === 2 ? 'nyc' : 'miami', true).state];
       for (const s of withExtras) {
-        for (const who of ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar'] as const) {
+        for (const who of ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar', 'hatch', 'statue', 'plaque', 'pedestal'] as const) {
           for (const pg of interact(s, who).pages) {
             expect(pg.length, `${who} ${n}`).toBeLessThanOrEqual(2);
             for (const line of pg) expect(tooLong(line), `${who} stage ${n}: "${line}"`).toBe(false);
@@ -326,7 +367,7 @@ describe('every word fits the screen', () => {
     }
     // the first-time speeches too
     for (const who of ['pia', 'marrow', 'quill', 'brent'] as const) {
-      const s = { ...toStage(who === 'quill' ? 5 : who === 'brent' ? 3 : 1), flags: [] as string[] };
+      const s = { ...toStage(who === 'quill' ? 6 : who === 'brent' ? 3 : 1), flags: [] as string[] };
       const t = interact({ ...s, flags: who === 'marrow' ? ['examine:vane'] : [] }, who);
       for (const pg of t.pages) for (const line of pg) expect(tooLong(line), `${who}: "${line}"`).toBe(false);
     }
@@ -381,3 +422,124 @@ describe('reading a saved story back', () => {
 });
 
 const FINALE = 'stormhold';
+
+describe('the Undercroft: tablets, the hatch and the Lantern', () => {
+  it('tablets are only in the tunnels at stage 5, and the hatch only shows once the Stormglass is whole', () => {
+    expect(tabletsAvailable(toStage(4))).toBe(false);
+    expect(tabletsAvailable(toStage(5))).toBe(true);
+    expect(tabletsAvailable(toStage(6))).toBe(false);
+    expect(hatchVisible(toStage(4))).toBe(false);
+    expect(hatchVisible(toStage(5))).toBe(true);
+    expect(hatchVisible(toStage(6))).toBe(true);
+    expect(hatchVisible(freshStory())).toBe(false);
+    expect(readTablet(toStage(3), 'nyc').counted).toBe(false);
+  });
+
+  it('one tablet counts for each city, and the three tell Aurel\'s story in order', () => {
+    let s = toStage(5);
+    const seen: string[] = [];
+    for (const [i, city] of ['nyc', 'tokyo', 'mumbai'].entries()) {
+      const r = readTablet(s, city);
+      expect(r.counted, city).toBe(true);
+      expect(r.pages).toEqual(TABLET_TEXT[i]);
+      seen.push(r.pages[0][0]);
+      s = r.state;
+      expect(tabletsRead(s)).toBe(i + 1);
+    }
+    expect(new Set(seen).size).toBe(3);
+    expect(tabletsRead(s)).toBe(TABLETS_NEEDED);
+  });
+
+  it('a second tablet in the same city does not count, and says so', () => {
+    const once = readTablet(toStage(5), 'london');
+    const again = readTablet(once.state, 'london');
+    expect(again.counted).toBe(false);
+    expect(again.state).toBe(once.state);
+    expect(tabletsRead(again.state)).toBe(1);
+    expect(again.pages[0].join(' ')).toContain('read this one already');
+  });
+
+  it('the hatch is sealed until three tablets are read, then opens and leads down', () => {
+    const two = readTablet(readTablet(toStage(5), 'nyc').state, 'tokyo').state;
+    const sealed = interact(two, 'hatch');
+    expect(sealed.enter).toBeUndefined();
+    expect(sealed.pages.flat().join(' ')).toContain('sealed');
+    expect(sealed.pages.flat().join(' ')).toContain('2 of 3');
+    const three = readTablet(two, 'miami').state;
+    const open = interact(three, 'hatch');
+    expect(open.enter).toBe('undercroft');
+    expect(open.state.flags).toContain('hatch:open');
+    // and from then on it just leads down
+    expect(interact(open.state, 'hatch').enter).toBe('undercroft');
+    expect(trackerText(open.state)).toBe("Take Aurel's Lantern");
+  });
+
+  it('taking the Lantern completes the stage, queues its card, and moves the story on to the finale', () => {
+    const opened = interact(readTablet(readTablet(readTablet(toStage(5), 'nyc').state, 'tokyo').state, 'miami').state, 'hatch').state;
+    const took = interact(opened, 'pedestal');
+    expect(took.took).toBe(true);
+    expect(hasLantern(took.state)).toBe(true);
+    expect(took.state.stage).toBe(6);
+    expect(took.state.pending).toBe('lantern');
+    // the pedestal is then empty
+    const again = interact(took.state, 'pedestal');
+    expect(again.took).toBeUndefined();
+    expect(again.state).toBe(took.state);
+  });
+
+  it('Marrow, Pia and Quill each have something to say about the tunnels while the tablets are being read', () => {
+    const s = toStage(5);
+    expect(interact(s, 'marrow').pages.flat().join(' ')).toContain('three tablets');
+    expect(interact(s, 'quill').pages.flat().join(' ')).toContain('tablets');
+    expect(interact(readTablet(s, 'nyc').state, 'marrow').pages.flat().join(' ')).toContain('1 of 3');
+    const three = readTablet(readTablet(readTablet(s, 'nyc').state, 'tokyo').state, 'miami').state;
+    expect(interact(three, 'marrow').pages.flat().join(' ')).toContain('hatch');
+    // Quill mentions the Lantern in the finale only if you have it
+    expect(interact(toStage(6), 'quill').pages.flat().join(' ')).toContain('Lantern');
+    const noLantern = { ...toStage(6), flags: toStage(6).flags.filter((f) => f !== 'lantern') };
+    expect(interact(noLantern, 'quill').pages.flat().join(' ')).not.toContain('Lantern');
+  });
+
+  it('the Lantern slows the Regent\'s lightning: a longer warning', () => {
+    expect(LANTERN_WARNING).toBeGreaterThan(1);
+    expect(LANTERN_WARNING).toBeLessThan(2);
+  });
+});
+
+describe('a story saved before the Undercroft stage was added', () => {
+  const old = (over: Record<string, unknown>) => ({ started: true, stage: 1, flags: [], items: [], placed: [], pending: null, complete: false, ...over });
+
+  it('keeps stages 1 to 4 as they were, and stamps the new version', () => {
+    for (const stage of [1, 2, 3, 4]) {
+      const s = sanitizeStory(old({ stage }));
+      expect(s.stage).toBe(stage);
+      expect(s.version).toBe(STORY_VERSION);
+    }
+  });
+
+  it('moves the old finale (stage 5) to stage 6, so the player is still at the Eye and not sent back underground', () => {
+    const s = sanitizeStory(old({ stage: 5, flags: ['quill:eye'], placed: ['grayShard', 'mistShard', 'neonShard', 'amberShard'] }));
+    expect(s.stage).toBe(6);
+    expect(s.flags).toContain('quill:eye');
+    expect(s.complete).toBe(false);
+    expect(trackerText(s)).toBe('Fly to the Eye');
+    // the hatch can still be opened for the Lantern, without reading tablets
+    expect(interact(s, 'hatch').enter).toBe('undercroft');
+  });
+
+  it('keeps a finished story finished', () => {
+    const a = sanitizeStory(old({ stage: 6, complete: true }));
+    expect(a.complete).toBe(true);
+    expect(a.stage).toBe(LAST_STAGE + 1);
+    const b = sanitizeStory(old({ stage: 6 })); // (an old save marks completion by the stage alone)
+    expect(b.complete).toBe(true);
+  });
+
+  it('does not move a story that is already the new layout', () => {
+    const fresh = sanitizeStory({ ...toStage(5), version: STORY_VERSION });
+    expect(fresh.stage).toBe(5);
+    const moved = sanitizeStory({ ...toStage(6), version: STORY_VERSION });
+    expect(moved.stage).toBe(6);
+    expect(sanitizeStory(JSON.parse(JSON.stringify(moved)))).toEqual(moved);
+  });
+});

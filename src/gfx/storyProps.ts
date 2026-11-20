@@ -1,6 +1,15 @@
 import Phaser from 'phaser';
 
-export const STORY_TEX = { vane: 'story_vane', altar: 'story_altar', marrow: 'story_marrow', quill: 'story_quill' } as const;
+export const STORY_TEX = {
+  vane: 'story_vane',
+  altar: 'story_altar',
+  marrow: 'story_marrow',
+  quill: 'story_quill',
+  statue: 'story_statue',
+  pedestal: 'story_pedestal',
+  pedestalEmpty: 'story_pedestal_empty',
+  plaque: 'story_plaque',
+} as const;
 
 const OUTLINE = 0x14121f;
 
@@ -60,5 +69,63 @@ export function generateAltarTexture(scene: Phaser.Scene, key: string) {
   rect(2, 7, 13, 11, 0x9aa0b8); // the slab
   rect(2, 7, 13, 8, 0xc0c6d8);
   rect(2, 14, 3, 19, 0x565a6c);
+  outline();
+}
+
+/** Sir Aurel in stone: a helmeted knight with his sword planted point-down in front of him. */
+export function generateStatueTexture(scene: Phaser.Scene, key: string) {
+  if (scene.textures.exists(key)) return;
+  const { rect, px, outline } = canvasPainter(scene, key, 16, 26);
+  const stone = 0x9096aa;
+  const light = 0xc0c6d8;
+  const dark = 0x666b80;
+  rect(3, 22, 12, 25, dark); // plinth
+  rect(3, 22, 12, 22, stone);
+  rect(5, 8, 10, 21, stone); // body
+  rect(5, 8, 6, 21, light);
+  rect(3, 9, 4, 14, stone); // arms
+  rect(11, 9, 12, 14, stone);
+  rect(5, 2, 10, 8, stone); // the helmet
+  rect(5, 2, 6, 8, light);
+  rect(6, 5, 9, 5, 0x2c2e3c); // the visor slit
+  px(7, 1, light);
+  px(8, 0, light);
+  px(8, 1, light);
+  rect(7, 12, 8, 24, 0xd8dce8); // the sword
+  px(7, 11, 0xc8a040);
+  px(8, 11, 0xc8a040);
+  rect(5, 12, 10, 12, 0xc8a040);
+  outline();
+}
+
+/** The pedestal in the Undercroft, with the Lantern on it (lit) or without. */
+export function generatePedestalTexture(scene: Phaser.Scene, key: string, withLantern: boolean) {
+  if (scene.textures.exists(key)) return;
+  const { rect, px, outline } = canvasPainter(scene, key, 16, 24);
+  rect(2, 20, 13, 23, 0x666b80);
+  rect(2, 20, 13, 20, 0x9096aa);
+  rect(4, 10, 11, 19, 0x7e849a);
+  rect(4, 10, 5, 19, 0xa6acc0);
+  rect(3, 8, 12, 10, 0x9096aa);
+  rect(3, 8, 12, 8, 0xc0c6d8);
+  if (withLantern) {
+    // the Lantern: a small gold cage round a flame
+    rect(6, 1, 9, 7, 0xc8a040);
+    rect(7, 2, 8, 6, 0xfff2a0);
+    rect(7, 3, 8, 4, 0xffffff);
+    rect(5, 0, 10, 0, 0xa07820);
+    px(7, -1 + 1, 0xa07820);
+  }
+  outline();
+}
+
+/** A stone plaque on a short post: the first Rain Knights' words. */
+export function generatePlaqueTexture(scene: Phaser.Scene, key: string) {
+  if (scene.textures.exists(key)) return;
+  const { rect, outline } = canvasPainter(scene, key, 14, 18);
+  rect(6, 10, 7, 17, 0x666b80);
+  rect(1, 1, 12, 10, 0x9aa0b8);
+  rect(1, 1, 12, 2, 0xc0c6d8);
+  for (let y = 4; y <= 8; y += 2) rect(3, y, 10, y, 0x5a5f74); // lines of carved text
   outline();
 }
