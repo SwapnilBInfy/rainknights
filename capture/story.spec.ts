@@ -6,7 +6,7 @@ import { mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultSave, serialize } from '../src/save/save';
-import { clearPending, freshStory, interact, runEnded, startStory, type StoryState, type Target } from '../src/story/story';
+import { clearPending, freshStory, interact, readTablet, runEnded, startStory, type StoryState, type Target } from '../src/story/story';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = join(__dirname, 'output');
@@ -26,7 +26,10 @@ function stageAt(n: number): StoryState {
   s = runEnded(runEnded(s, 'london', true).state, 'tokyo', true).state;
   s = clearPending(talk(talk(s, 'altar'), 'brent'));
   if (n <= 4) return s;
-  return clearPending(talk(talk(talk(runEnded(s, 'miami', true).state, 'altar'), 'marrow'), 'marrow'));
+  s = clearPending(talk(talk(talk(runEnded(s, 'miami', true).state, 'altar'), 'marrow'), 'marrow'));
+  if (n <= 5) return s;
+  for (const city of ['nyc', 'london', 'miami']) s = readTablet(s, city).state;
+  return clearPending(talk(talk(s, 'hatch'), 'pedestal'));
 }
 
 const seedSave = (story: StoryState) => {
@@ -105,7 +108,7 @@ test('story mode: the finale', async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: { width: 960, height: 640 }, recordVideo: { dir: OUTPUT_DIR, size: { width: 960, height: 640 } } });
   const page = await context.newPage();
-  await open(page, talk(stageAt(5), 'quill'));
+  await open(page, talk(stageAt(6), 'quill'));
   await page.keyboard.press('KeyG');
   await page.waitForTimeout(800);
   await page.evaluate(`window.__hub.tp(14, 11)`);

@@ -415,7 +415,8 @@ Knight, who tried to hold all the weather in one storm and has been hiding in it
 | 2. The Gray Shard | Win a run in New York (the Phantom Bus), place the shard on the altar, speak with Marrow |
 | 3. The Far Storms | Win in **two** of London, Tokyo and Mumbai, place both shards, talk to Brent (he gives three Rain Buns) |
 | 4. The Amber Sun | Win in Miami (the Tornado), place the shard (the fourth restores the Stormglass), speak with Marrow |
-| 5. The Eye of the Storm | Talk to Quill, fly to the Eye, defeat the Tempest Regent |
+| 5. The Undercroft | Read **three of Aurel's tablets** buried in the tunnels under three different cities, open the cellar hatch in Mistford, take Aurel's Lantern |
+| 6. The Eye of the Storm | Talk to Quill, fly to the Eye, defeat the Tempest Regent |
 
 **People and things.** Pia, Brent, **Marrow** and **Quill** (a courier who turns up at the flight pad once the Stormglass
 is whole); the **weathervane** (frozen at first, it trembles as the shards wake and spins free at the end) and the
@@ -428,6 +429,16 @@ shards). The next thing to do is always shown along the bottom of the screen in 
 and on the flight map, where the stars the story wants are **marked in gold** (a bobbing arrow and a ring on the radar,
 and Mistford itself when something waits there). Completing a stage plays a short story card; the prologue, the Stormglass
 being restored, and the ending have their own.
+
+**The Undercroft (stage 5).** Once the Stormglass is whole, Marrow says Aurel left tablets in the tunnels under the
+cities. In each city's tunnels the **farthest dead end holds a tablet instead of a chest** (only while the story is at
+this stage); reading one gives a few lines of Aurel's story, and **one counts per city**, so it takes three different
+cities. The flight map marks every city that has not given one yet, and a run in such a city says "FIND A TABLET
+BELOW". With three read, a **cellar hatch** by the altar opens: stairs down to the **Undercroft**, a dark crypt
+beneath Mistford with Aurel's statue, two plaques of the Rain Knights' words, and **Aurel's Lantern** on its
+pedestal. Taking the Lantern completes the stage; in the finale it makes every warning ring of the Regent's lightning
+last 40% longer. (A story saved before this stage existed keeps its place: its old finale is now stage 6, and the hatch
+can still be opened for the Lantern.)
 
 **The finale.** Quill marks the Eye on your map; fly there and land. Stormhold is a story-only place (it is not in the city
 list) and the Regent arrives after 50 seconds, from above. Every shard on the altar makes the knight stronger for this

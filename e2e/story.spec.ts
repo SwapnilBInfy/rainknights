@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { type Page } from '@playwright/test';
 import { defaultSave, serialize } from '../src/save/save';
-import { clearPending, freshStory, interact, runEnded, startStory, type StoryState, type Target } from '../src/story/story';
+import { clearPending, freshStory, interact, readTablet, runEnded, startStory, type StoryState, type Target } from '../src/story/story';
 
 // Story mode, "The Long Rain": the prologue and stage 1 played with real input from a fresh game, then each later
 // stage from a save made with the story's own rules (the same functions the game uses), through the finale.
@@ -26,7 +26,10 @@ function stageAt(n: number): StoryState {
   s = clearPending(talk(talk(s, 'altar'), 'brent'));
   if (n <= 4) return s;
   s = clearPending(talk(talk(talk(runEnded(s, 'miami', true).state, 'altar'), 'marrow'), 'marrow'));
-  return s;
+  if (n <= 5) return s;
+  // the Undercroft: three tablets, the hatch, the Lantern
+  for (const city of ['nyc', 'london', 'miami']) s = readTablet(s, city).state;
+  return clearPending(talk(talk(s, 'hatch'), 'pedestal'));
 }
 
 /** Start the page with this story already in the save. */
@@ -97,7 +100,7 @@ async function closeDialogue(page: Page) {
   throw new Error('the dialogue never closed');
 }
 
-const SPOTS = { pia: [5, 10], vane: [8, 3], marrow: [10, 2], altar: [9, 5], quill: [16, 11], brent: [12, 10] } as const;
+const SPOTS = { pia: [5, 10], vane: [8, 3], marrow: [10, 2], altar: [9, 5], quill: [16, 11], brent: [12, 10], hatch: [7, 4] } as const;
 const goto = (page: Page, who: keyof typeof SPOTS) => speak(page, SPOTS[who][0], SPOTS[who][1], who);
 
 // ---------------------------------------------------------------------------------------------------------
@@ -269,7 +272,7 @@ test('Brent gives three Rain Buns in stage 3, once', async ({ page }) => {
 
 test('Quill is at the pad once the Stormglass is whole, and marks the Eye on the flight map', async ({ page }) => {
   const errors = watchErrors(page);
-  await seed(page, stageAt(5));
+  await seed(page, stageAt(6));
   await intoMistford(page);
   await expect(app(page)).toHaveAttribute('data-objective', 'Talk to Quill by the pad');
   await goto(page, 'quill');
@@ -287,7 +290,7 @@ test('Quill is at the pad once the Stormglass is whole, and marks the Eye on the
 test('the finale: land on the Eye, face the Tempest Regent (its lightning, its phases), win, and the rain stops', async ({ page }) => {
   test.setTimeout(90_000);
   const errors = watchErrors(page);
-  await seed(page, talk(stageAt(5), 'quill'));
+  await seed(page, talk(stageAt(6), 'quill'));
   await intoMistford(page);
   await page.evaluate(`window.__hub.tp(14, 11)`);
   await page.keyboard.press('Space');
@@ -302,6 +305,7 @@ test('the finale: land on the Eye, face the Tempest Regent (its lightning, its p
   expect(await rk<string>(page, 'regionId()')).toBe('stormhold');
   expect((await savedStory(page))?.flags).toContain('landed:stormhold');
   await expect(app(page)).toHaveAttribute('data-objective', 'DEFEAT THE REGENT');
+  expect(await rk<boolean>(page, 'lantern()'), "Aurel's Lantern, taken in the Undercroft, is lit").toBe(true);
   // the Stormglass's strength shows in the knight's health: 4 shards on the altar
   await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
 
@@ -334,7 +338,7 @@ test('the finale: land on the Eye, face the Tempest Regent (its lightning, its p
 });
 
 test('after the story is complete, Mistford is sunny, the people are glad, and the title says it is done', async ({ page }) => {
-  const finished = { ...stageAt(5), flags: [...stageAt(5).flags, 'quill:eye', 'landed:stormhold', 'win:stormhold'], complete: true, stage: 6 };
+  const finished = { ...stageAt(6), flags: [...stageAt(6).flags, 'quill:eye', 'landed:stormhold', 'win:stormhold'], complete: true, stage: 7 };
   await seed(page, finished);
   await page.goto('/');
   await expect(app(page)).toHaveAttribute('data-scene', 'MenuScene');
@@ -343,4 +347,162 @@ test('after the story is complete, Mistford is sunny, the people are glad, and t
   await expect(app(page)).toHaveAttribute('data-objective', 'The rain has stopped.');
   await goto(page, 'pia');
   expect((await hub<StoryState>(page, 'story()')).complete).toBe(true);
+});
+
+
+// ---- Stage 5: the Undercroft ----------------------------------------------------------------------------
+
+/** Stand in the tunnel under a city: down by an entrance that is not one already used, as chosen by `pick`. */
+async function downTo(page: Page, pick: (rows: { id: number; kind: string; pair?: number; tunnel?: number }[]) => number) {
+  const rows = (await rk<{ id: number; kind: string; pair?: number; tunnel?: number }[]>(page, 'pois()')).filter((r) => r.kind === 'entrance');
+  const n = pick(rows);
+  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await rk(page, 'heal()');
+  await rk(page, `tpToPoi('entrance', ${n})`);
+  await page.waitForFunction(() => (window as any).__rk?.depth?.() === 'underground', undefined, frame);
+  await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, frame);
+}
+
+/** Start a run in a city from Mistford by the south road (the story is already in the save). */
+async function runIn(page: Page, digit: string) {
+  await page.keyboard.down('ArrowDown');
+  await expect(app(page)).toHaveAttribute('data-scene', 'RegionSelectScene', { timeout: 15_000 });
+  await page.keyboard.up('ArrowDown');
+  await page.keyboard.press(digit);
+  await expect(app(page)).toHaveAttribute('data-scene', 'GameScene');
+  await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, frame);
+}
+
+test('stage 5: a buried tablet in the tunnels counts once per city, and the HUD says where to look', async ({ page }) => {
+  await seed(page, stageAt(5));
+  const errors = watchErrors(page);
+  await intoMistford(page);
+  await expect(app(page)).toHaveAttribute('data-objective', 'Read 3 buried tablets 0/3');
+  await runIn(page, 'Digit1');
+  await expect(app(page)).toHaveAttribute('data-objective', 'FIND A TABLET BELOW');
+  await downTo(page, (rows) => rows[0].id);
+  expect(await rk<boolean>(page, `tpToStairs('tablet', 0)`)).toBe(true);
+  await page.waitForFunction(() => (window as any).__rk.usedPois().some((k: string) => k.startsWith('t')), undefined, frame);
+  await page.waitForFunction(() => document.getElementById('app')?.dataset.objective !== 'FIND A TABLET BELOW', undefined, { polling: 'raf', timeout: 15_000 });
+  expect((await savedStory(page))?.flags).toContain('tablet:nyc');
+  // the other tunnel under the same city has a tablet too, but it is the same city: it does not count again
+  await rk(page, `tpToStairs('back')`);
+  await page.waitForFunction(() => (window as any).__rk?.depth?.() === 'surface' && (window as any).__rk?.hp?.() > 0, undefined, frame);
+  await downTo(page, (rows) => rows.find((r) => r.tunnel !== rows[0].tunnel)!.id);
+  expect(await rk<boolean>(page, `tpToStairs('tablet', 0)`)).toBe(true);
+  await page.waitForFunction(() => (window as any).__rk.usedPois().filter((k: string) => k.startsWith('t')).length === 2, undefined, frame);
+  await page.waitForTimeout(500);
+  expect((await savedStory(page))?.flags.filter((f) => f.startsWith('tablet:'))).toEqual(['tablet:nyc']);
+  expect(errors, errors.join('\n')).toEqual([]);
+});
+
+test('before stage 5 there are no tablets: the farthest dead end is just a chest', async ({ page }) => {
+  await seed(page, stageAt(4));
+  await intoMistford(page);
+  await runIn(page, 'Digit1');
+  await downTo(page, (rows) => rows[0].id);
+  expect(await rk<boolean>(page, `tpToStairs('tablet', 0)`)).toBe(false);
+});
+
+test('the flight map marks every city until each has given a tablet', async ({ page }) => {
+  await seed(page, readTablet(stageAt(5), 'nyc').state);
+  await intoMistford(page);
+  await page.evaluate(`window.__hub.tp(14, 11)`);
+  await page.keyboard.press('Space');
+  await expect(app(page)).toHaveAttribute('data-scene', 'FlightScene');
+  await page.waitForFunction(() => (window as any).__flight?.frames() > 3, undefined, frame);
+  expect((await page.evaluate(`window.__flight.targets()`)) as string[]).toEqual(expect.arrayContaining(['london', 'tokyo', 'mumbai', 'miami']));
+  expect((await page.evaluate(`window.__flight.targets()`)) as string[]).not.toContain('nyc');
+});
+
+test('the cellar hatch: not there before the Stormglass is whole; sealed with two tablets; open with three', async ({ page }) => {
+  await seed(page, stageAt(4));
+  await intoMistford(page);
+  await page.evaluate(`window.__hub.tp(7, 4)`);
+  await page.waitForTimeout(250);
+  expect(await app(page).getAttribute('data-interact'), 'no hatch yet').toBe('');
+});
+
+test('a sealed hatch tells you how many tablets you have read, and does not open', async ({ page }) => {
+  await seed(page, readTablet(readTablet(stageAt(5), 'nyc').state, 'tokyo').state);
+  await intoMistford(page);
+  await goto(page, 'hatch');
+  await expect(app(page)).toHaveAttribute('data-scene', 'TownScene');
+  expect((await hub<StoryState>(page, 'story()')).flags).not.toContain('hatch:open');
+  expect(await app(page).getAttribute('data-objective')).toBe('Read 3 buried tablets 2/3');
+});
+
+test('the Undercroft with real input: three tablets open the hatch, the stairs lead down, the Lantern is taken, the stage is cleared', async ({ page }) => {
+  const errors = watchErrors(page);
+  let s = stageAt(5);
+  for (const city of ['nyc', 'tokyo', 'miami']) s = readTablet(s, city).state;
+  await seed(page, s);
+  await intoMistford(page);
+  await expect(app(page)).toHaveAttribute('data-objective', 'Open the cellar hatch');
+  // open the hatch: its words, and then the stairs down
+  await page.evaluate(`window.__hub.tp(7, 4)`);
+  await expect(app(page)).toHaveAttribute('data-interact', 'hatch');
+  await page.keyboard.press('Space');
+  await closeDialogue(page);
+  await expect(app(page)).toHaveAttribute('data-scene', 'UndercroftScene', { timeout: 8_000 });
+  expect((await hub<StoryState>(page, 'story()')).flags).toContain('hatch:open');
+  await page.waitForFunction(() => (window as any).__hub?.frames() > 3, undefined, frame);
+
+  // read the statue and a plaque, then take the Lantern
+  await page.evaluate(`window.__hub.tp(8, 5)`);
+  await expect(app(page)).toHaveAttribute('data-interact', 'statue');
+  await page.keyboard.press('Space');
+  await closeDialogue(page);
+  await page.evaluate(`window.__hub.tp(9, 3)`);
+  await expect(app(page)).toHaveAttribute('data-interact', 'pedestal');
+  await page.keyboard.press('Space');
+  await closeDialogue(page);
+  await expect(app(page)).toHaveAttribute('data-scene', 'CutsceneScene', { timeout: 8_000 });
+  await expect(app(page)).toHaveAttribute('data-cutscene', 'lantern');
+  await skipCutscene(page);
+  await expect(app(page)).toHaveAttribute('data-scene', 'TownScene');
+  const after = await hub<StoryState>(page, 'story()');
+  expect(after.stage).toBe(6);
+  expect(after.flags).toContain('lantern');
+  expect(await savedStory(page)).toEqual(after);
+  await expect(app(page)).toHaveAttribute('data-objective', 'Talk to Quill by the pad');
+  expect(errors, errors.join('\n')).toEqual([]);
+});
+
+test('the Undercroft: the stairs up lead back to Mistford, beside the hatch; the pedestal is empty once the Lantern is taken', async ({ page }) => {
+  await seed(page, stageAt(6));
+  await intoMistford(page);
+  await goto(page, 'hatch'); // for a story already past the stage, the hatch just leads down
+  await expect(app(page)).toHaveAttribute('data-scene', 'UndercroftScene', { timeout: 8_000 });
+  await page.waitForFunction(() => (window as any).__hub?.frames() > 3, undefined, frame);
+  await page.evaluate(`window.__hub.tp(9, 3)`);
+  await expect(app(page)).toHaveAttribute('data-interact', 'pedestal');
+  await page.keyboard.press('Space');
+  await closeDialogue(page);
+  expect((await hub<StoryState>(page, 'story()')).stage, 'taking it twice does nothing').toBe(6);
+  await page.evaluate(`window.__hub.tp(8, 8)`); // the stairs up
+  await expect(app(page)).toHaveAttribute('data-scene', 'TownScene', { timeout: 8_000 });
+  await page.waitForFunction(() => (window as any).__hub?.place() === 'town', undefined, frame);
+  const y = await hub<number>(page, 'y()');
+  expect(y).toBeLessThan(80); // up in the alcove, beside the hatch
+});
+
+test('a story saved before the Undercroft stage keeps its place: the old finale is now stage 6, with the Eye still to fly to', async ({ page }) => {
+  // the saved story as an older version wrote it: five stages, the finale as stage 5, no version
+  const finale = talk(stageAt(6), 'quill');
+  const old = { started: true, stage: 5, flags: finale.flags.filter((f) => f !== 'lantern' && !f.startsWith('tablet:') && f !== 'hatch:open'), items: [], placed: finale.placed, pending: null, complete: false };
+  const save = defaultSave();
+  (save as unknown as { story: unknown }).story = old;
+  save.town.visited = true;
+  await page.addInitScript((raw) => {
+    if (!localStorage.getItem('rainknights:seeded')) {
+      localStorage.setItem('rainknights:save', raw);
+      localStorage.setItem('rainknights:seeded', '1');
+    }
+  }, serialize(save));
+  await intoMistford(page);
+  const story = await hub<StoryState>(page, 'story()');
+  expect(story.stage).toBe(6);
+  expect(story.version).toBeGreaterThanOrEqual(2);
+  await expect(app(page)).toHaveAttribute('data-objective', 'Fly to the Eye');
 });

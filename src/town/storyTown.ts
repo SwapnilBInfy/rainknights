@@ -4,6 +4,7 @@ import { STORY_TEX } from '../gfx/storyProps';
 import { loadGame, loadStory, writeProfile, writeStory } from '../save/save';
 import {
   clearPending,
+  hatchVisible,
   interact,
   objectivesOf,
   quillHere,
@@ -20,7 +21,8 @@ import { drawWindow, textStyle } from '../ui/Window';
 import { cellCenter, type Cell } from './mistford';
 
 /** Where the story's props and people stand in Mistford: the alcove between the house and the market. */
-export const STORY_SPOTS: Record<'vane' | 'altar' | 'marrow' | 'quill', Cell> = {
+export const STORY_SPOTS: Record<'vane' | 'altar' | 'marrow' | 'quill' | 'hatch', Cell> = {
+  hatch: { col: 7, row: 3 },
   vane: { col: 8, row: 2 },
   altar: { col: 9, row: 4 },
   marrow: { col: 10, row: 3 },
@@ -31,7 +33,7 @@ export interface TalkableSink {
   push(t: { x: number; y: number; id: string; lines: readonly string[] }): unknown;
 }
 
-const IDS: readonly string[] = ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar'];
+const IDS: readonly string[] = ['pia', 'brent', 'marrow', 'quill', 'vane', 'altar', 'hatch'];
 
 /**
  * Story mode in Mistford: the weathervane, the altar, Marrow and Quill (when they are there), what everyone says,
@@ -46,6 +48,7 @@ export class StoryTown {
   private trackerKey = '';
   private journal: Phaser.GameObjects.Container | null = null;
   private quill: Phaser.GameObjects.Image | null = null;
+  private hatchGfx: Phaser.GameObjects.Graphics | null = null;
   private hidden = false;
 
   constructor(
@@ -84,7 +87,16 @@ export class StoryTown {
     const marrow = solid(STORY_SPOTS.marrow, STORY_TEX.marrow, 8, 6, 4, 16, 8);
     this.talkables.push({ x: marrow.at.x, y: marrow.at.y, id: 'marrow', lines: [] });
     this.ensureQuill();
+    this.ensureHatch();
     this.refreshTracker();
+  }
+
+  /** The cellar hatch shows once the Stormglass is whole (it may appear while you stand here). */
+  private ensureHatch() {
+    if (this.hatchGfx || !hatchVisible(this.story)) return;
+    const at = cellCenter(STORY_SPOTS.hatch);
+    this.hatchGfx = this.scene.add.graphics().setDepth(2);
+    this.talkables.push({ x: at.x, y: at.y, id: 'hatch', lines: [] });
   }
 
   /** Quill arrives once the Stormglass is whole (and may arrive while you are standing here). */
@@ -105,7 +117,7 @@ export class StoryTown {
   }
 
   /** Talk to, or examine, something. Saves what it changes, and says what to show. */
-  talk(id: string): { pages: string[][]; placed: boolean } {
+  talk(id: string): { pages: string[][]; placed: boolean; enter?: 'undercroft' } {
     const before = this.story;
     const result = interact(before, id as Target);
     this.story = result.state;
@@ -116,8 +128,9 @@ export class StoryTown {
     }
     if (this.story !== before) writeStory(this.story);
     this.ensureQuill();
+    this.ensureHatch();
     this.refreshTracker();
-    return { pages: result.pages, placed: !!result.placed?.length };
+    return { pages: result.pages, placed: !!result.placed?.length, enter: result.enter };
   }
 
   /** A cutscene waiting to play (a stage was completed), consumed. */
@@ -145,6 +158,25 @@ export class StoryTown {
     a.lineStyle(2, 0xf0c848, 1).lineBetween(cx - tx * 7, cy - ty * 7, cx + tx * 7, cy + ty * 7);
     a.fillStyle(0xf0c848, 1).fillTriangle(cx + tx * 9, cy + ty * 9, cx + tx * 4 - ty * 3, cy + ty * 4 + tx * 3, cx + tx * 4 + ty * 3, cy + ty * 4 - tx * 3);
     a.fillStyle(0xf0c848, 1).fillTriangle(cx - tx * 7, cy - ty * 7, cx - tx * 9 - ty * 3, cy - ty * 9 + tx * 3, cx - tx * 9 + ty * 3, cy - ty * 9 - tx * 3);
+
+    // the cellar hatch: a sealed iron plate, then an open stairwell once the tablets have been read
+    if (this.hatchGfx) {
+      const h = cellCenter(STORY_SPOTS.hatch);
+      const open = this.story.flags.includes('hatch:open');
+      const hg = this.hatchGfx;
+      hg.clear();
+      hg.fillStyle(0x14121f, 1).fillRect(h.x - 8, h.y - 7, 16, 14);
+      if (open) {
+        hg.fillStyle(0x0a0a14, 1).fillRect(h.x - 7, h.y - 6, 14, 12);
+        for (let i = 0; i < 4; i++) hg.fillStyle(0x3a3f56, 1).fillRect(h.x - 7, h.y - 5 + i * 3, 14, 1);
+        hg.fillStyle(0xffe680, 0.25 + 0.2 * Math.sin(time / 300)).fillRect(h.x - 7, h.y - 6, 14, 12);
+      } else {
+        hg.fillStyle(0x6a6f84, 1).fillRect(h.x - 7, h.y - 6, 14, 12);
+        hg.fillStyle(0x8e94a8, 1).fillRect(h.x - 7, h.y - 6, 14, 2);
+        hg.fillStyle(0x3a3f52, 1).fillRect(h.x - 1, h.y - 3, 2, 5).fillRect(h.x - 3, h.y, 6, 2);
+        hg.fillStyle(0xffe680, 0.15 + 0.12 * Math.sin(time / 400)).fillRect(h.x - 7, h.y - 6, 14, 12); // a faint glow: it wants the tablets
+      }
+    }
 
     // the altar's four sockets
     const at = cellCenter(STORY_SPOTS.altar);

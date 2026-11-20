@@ -6,7 +6,7 @@ import { TEX } from '../gfx/spriteDefs';
 import { getCharacter } from '../config/characters';
 import { getRegion, type RegionDef } from '../config/regions';
 import { drawFlightPad } from '../gfx/flight';
-import { finaleBuff, runEnded as storyRunEnded, runObjective } from '../story/story';
+import { finaleBuff, LANTERN_WARNING, readTablet, tabletsAvailable, TABLETS_NEEDED, runEnded as storyRunEnded, runObjective } from '../story/story';
 import { STRIKE, strikeHits, strikeSpots } from '../systems/regent';
 import { onPad, padCenterFor, PAD_SIZE, stepPadCharge } from '../systems/flightPad';
 import { Player } from '../entities/Player';
@@ -138,11 +138,13 @@ interface RunBridge {
   wound: (amount: number) => void;
   /** Which level the knight is on, what is on the surface map (and whether it has been used), and ways onto things (debug / tests). */
   depth: () => 'surface' | 'underground';
-  pois: () => { id: number; kind: string; col: number; row: number; used: boolean }[];
+  pois: () => { id: number; kind: string; col: number; row: number; used: boolean; pair?: number; tunnel?: number }[];
+  /** Aurel's Lantern is lit for this fight (the finale, with the Lantern from the Undercroft). */
+  lantern: () => boolean;
   usedPois: () => string[];
   tpToPoi: (kind: 'entrance' | 'crate' | 'shrine', n?: number) => boolean;
   /** Underground: put the knight on the stairs back (`back`), or the stairs on (`far`), or by a chest (`chest`). */
-  tpToStairs: (which: 'back' | 'far' | 'chest', n?: number) => boolean;
+  tpToStairs: (which: 'back' | 'far' | 'chest' | 'tablet', n?: number) => boolean;
   tunnelChests: () => number;
   minimap: () => 'on' | 'off';
   /** The darkness has a light round the knight (underground only). */
@@ -239,6 +241,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private minimap: Minimap | null = null;
   private tunnelSpawnTimer = 0;
   private castCount = 0;
+  private lantern = false;
   private wasWet = false;
   private runDrips = 0;
   private bagMenu: ListMenu | null = null;
@@ -333,6 +336,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.player.onDied = () => this.endRun(false);
     this.padCharge = 0;
     this.castCount = 0;
+    // Aurel's Lantern, from the Undercroft, is lit for the finale only
+    this.lantern = !data.tutorial && region.id === 'stormhold' && finaleBuff(loadStory()).lantern;
     this.padHinted = -1e9;
     this.padGfx = data.tutorial || this.level === 'underground' ? null : this.add.graphics().setDepth(0.6);
     this.player.onLevelUp = () => this.pauseForLevelUp();
@@ -513,7 +518,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         this.player.hp = Math.max(1, this.player.hp - amount);
       },
       depth: () => this.level,
-      pois: () => this.surfacePois.map((p) => ({ id: p.id, kind: p.kind, col: p.col, row: p.row, used: this.poiDirector?.isUsed(`s${p.id}`) ?? false })),
+      pois: () => this.surfacePois.map((p) => ({ id: p.id, kind: p.kind, col: p.col, row: p.row, used: this.poiDirector?.isUsed(`s${p.id}`) ?? false, pair: p.pair, tunnel: p.tunnel })),
+      lantern: () => this.lantern,
       usedPois: () => [...(this.poiDirector?.used ?? [])],
       tpToPoi: (kind, n = 0) => {
         const poi = poisOf(this.surfacePois, kind)[n];
@@ -761,6 +767,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (remainingHp != null) boss.hp = Math.min(boss.maxHp, remainingHp);
     else if (this.region.bossIntro) this.hud.showMessage(this.region.bossIntro);
     if (!remainingHp && this.finaleBuffText) this.time.delayedCall(2800, () => this.hud.showMessage(this.finaleBuffText));
+    if (!remainingHp && this.lantern) this.time.delayedCall(5600, () => this.hud.showMessage("Aurel's Lantern glows:\nstrike warnings last longer."));
 
     const summon = BOSS_SUMMONS[boss.stats.key];
     if (summon) {
@@ -1192,7 +1199,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       const start = reversed ? tun.b : tun.a;
       const far = reversed ? tun.a : tun.b;
       items.push({ key: 'back', kind: 'back', ...poiCenter(start) }, { key: 'far', kind: 'far', ...poiCenter(far) });
-      tun.chests.forEach((c, i) => items.push({ key: `u${tunnel}:${i}`, kind: 'crate', ...poiCenter(c) }));
+      // In the story, while Aurel's tablets are being gathered, the tunnel's farthest dead end holds one instead of a chest
+      const tablet = !this.tutorial && tabletsAvailable(loadStory()) ? tun.chests.length - 1 : -1;
+      tun.chests.forEach((c, i) => items.push(i === tablet ? { key: `t${tunnel}`, kind: 'tablet', ...poiCenter(c) } : { key: `u${tunnel}:${i}`, kind: 'crate', ...poiCenter(c) }));
       this.darkness = new Darkness(this);
     }
     this.poiDirector = new PoiDirector(this, { trigger: (item) => this.onPoi(item) }, items, used);
@@ -1231,7 +1240,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       const dots: MiniDot[] = [];
       for (const item of this.poiDirector.items) {
         if (this.poiDirector.isUsed(item.key) && item.kind !== 'entrance' && item.kind !== 'back' && item.kind !== 'far') continue;
-        const color = item.kind === 'entrance' ? 0x58e0d0 : item.kind === 'crate' ? 0xffd84a : item.kind === 'shrine' ? 0xc080ff : item.kind === 'far' ? 0x58d8ff : 0xffe680;
+        const color = item.kind === 'entrance' ? 0x58e0d0 : item.kind === 'crate' ? 0xffd84a : item.kind === 'shrine' ? 0xc080ff : item.kind === 'tablet' ? 0xff9ad8 : item.kind === 'far' ? 0x58d8ff : 0xffe680;
         dots.push({ x: item.x, y: item.y, color });
       }
       if (this.level === 'surface' && !this.tutorial) dots.push({ ...padCenterFor(this.terrain.spawn), color: 0x3f8cf0 });
@@ -1257,6 +1266,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (item.kind === 'crate') this.openCrate(item);
     else if (item.kind === 'shrine') this.blessKnight(item);
     else if (item.kind === 'entrance' && item.poi) this.descend(item.poi);
+    else if (item.kind === 'tablet') this.readTabletHere();
     else if (item.kind === 'back' || item.kind === 'far') this.ascend(item.kind);
   }
 
@@ -1267,6 +1277,21 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (Math.random() < (buried ? 0.8 : 0.45)) this.spawnPickup(item.x - 7, item.y + 4, 0, 'rainBun');
     for (let i = 0; i < 3; i++) this.spawnXpGem(item.x + Phaser.Math.Between(-10, 10), item.y + Phaser.Math.Between(-8, 8), buried ? 14 : 8);
     this.hud.showMessage(buried ? 'A buried chest!\nDrips, gems, maybe a bun.' : 'A supply crate!\nDrips and gems spill out.', 1900);
+  }
+
+  /** One of Aurel's tablets: his words, a few lines at a time. The first from each city counts toward the three. */
+  private readTabletHere() {
+    const result = readTablet(loadStory(), this.region.id);
+    writeStory(result.state);
+    result.pages.forEach((page, i) => this.time.delayedCall(i * 3600, () => !this.ended && this.hud.showMessage(page.join('\n'), 3400)));
+    if (result.counted) {
+      const n = result.state.flags.filter((f) => f.startsWith('tablet:')).length;
+      this.time.delayedCall(result.pages.length * 3600, () => {
+        if (this.ended) return;
+        this.hud.showMessage(n >= TABLETS_NEEDED ? 'All three tablets read!\nThe hatch in Mistford opens.' : `Tablets read: ${n} of ${TABLETS_NEEDED}.\nOne in each city.`, 3000);
+        this.hud.setObjective(runObjective(loadStory(), this.region.id));
+      });
+    }
   }
 
   /** A weather shrine: its power gains a level, and the knight is mended a little. */
@@ -1327,6 +1352,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private castLightning(strikes: number) {
     if (this.ended || !this.player?.active) return;
     this.castCount += 1;
+    // Aurel's Lantern, if the knight carries it, makes every warning last longer
+    const warning = STRIKE.telegraphMs * (this.lantern ? LANTERN_WARNING : 1);
     audio.play('thunder');
     for (const spot of strikeSpots(this.player, strikes, Math.random)) {
       const ring = this.add.graphics().setDepth(6);
@@ -1336,8 +1363,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         ring.lineStyle(2, 0xfff06a, Math.min(1, alpha + 0.3)).strokeCircle(spot.x, spot.y, STRIKE.radius);
       };
       draw(0.35, 0xb070ff);
-      this.tweens.addCounter({ from: 0.35, to: 0.9, duration: STRIKE.telegraphMs, onUpdate: (t) => ring.active && draw(t.getValue() ?? 0.5, 0xb070ff) });
-      this.time.delayedCall(STRIKE.telegraphMs, () => {
+      this.tweens.addCounter({ from: 0.35, to: 0.9, duration: warning, onUpdate: (t) => ring.active && draw(t.getValue() ?? 0.5, 0xb070ff) });
+      this.time.delayedCall(warning, () => {
         if (!ring.active) return;
         ring.clear();
         ring.fillStyle(0xffffff, 0.9).fillCircle(spot.x, spot.y, STRIKE.radius + 4);

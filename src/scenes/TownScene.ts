@@ -47,14 +47,16 @@ export class TownScene extends Phaser.Scene {
   private frames = 0;
   private padGfx!: Phaser.GameObjects.Graphics;
   private storyTown!: StoryTown;
+  private enterAfter: 'undercroft' | null = null;
   private talkables: { x: number; y: number; id: string; lines: readonly string[] }[] = [];
 
   constructor() {
     super('TownScene');
   }
 
-  create(data: { at?: 'plaza' | 'house' | 'shop' | 'pad' } = {}) {
+  create(data: { at?: 'plaza' | 'house' | 'shop' | 'pad' | 'hatch' } = {}) {
     this.leaving = false;
+    this.enterAfter = null;
     this.interact = '';
     this.frames = 0;
     this.drops = [];
@@ -67,7 +69,7 @@ export class TownScene extends Phaser.Scene {
       this.scene.start('CutsceneScene', { id: waiting.pending, next: { scene: 'TownScene', data } });
       return;
     }
-    const spot = data.at === 'house' ? TOWN.houseExit : data.at === 'shop' ? TOWN.shopExit : data.at === 'pad' ? TOWN.padSpawn : TOWN.spawn;
+    const spot = data.at === 'house' ? TOWN.houseExit : data.at === 'shop' ? TOWN.shopExit : data.at === 'pad' ? TOWN.padSpawn : data.at === 'hatch' ? TOWN.hatchExit : TOWN.spawn;
     const at = cellCenter(spot);
 
     const sunny = waiting.started && waiting.complete;
@@ -268,13 +270,25 @@ export class TownScene extends Phaser.Scene {
         return;
       }
       const talk = this.nearestTalk();
-      if (talk && this.storyTown.handles(talk.id)) this.speech.showPages(this.storyTown.talk(talk.id).pages);
+      if (talk && this.storyTown.handles(talk.id)) {
+        const said = this.storyTown.talk(talk.id);
+        this.enterAfter = said.enter ?? null;
+        this.speech.showPages(said.pages);
+      }
       else if (talk) this.speech.show(talk.lines);
     }
   };
 
   /** A conversation is over. If it completed a stage, the story card for it plays now. */
   private afterSpeech() {
+    if (this.enterAfter && !this.leaving) {
+      // the hatch is open: down the stairs, once the words have been read
+      this.enterAfter = null;
+      this.leaving = true;
+      audio.play('confirm');
+      this.time.delayedCall(200, () => this.scene.start('UndercroftScene'));
+      return;
+    }
     const pending = this.storyTown.takePending();
     if (!pending || this.leaving) return;
     this.leaving = true;
