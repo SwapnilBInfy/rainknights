@@ -6,6 +6,7 @@ import {
   effectsFor,
   floodRingsFor,
   ICE_GRIP,
+  MUD_SLOW,
   waterBodies,
   WADE_SLOW,
   weatherTerrain,
@@ -68,7 +69,7 @@ describe('static weather', () => {
     expect(weatherTerrain('cold_front').freeze).toBe(true);
     expect(weatherTerrain('heat').dry).toBe(true);
     expect(weatherTerrain('hurricane').puddleDensity).toBeGreaterThan(0);
-    expect(weatherTerrain('clear')).toEqual({ freeze: false, dry: false, puddleDensity: 0 });
+    expect(weatherTerrain('clear')).toEqual({ freeze: false, dry: false, puddleDensity: 0, mudDensity: 0 });
   });
 });
 
@@ -128,5 +129,61 @@ describe('water bodies', () => {
     const sizes = new Map<number, number>();
     for (const id of b.ids) if (id) sizes.set(id, (sizes.get(id) ?? 0) + 1);
     expect(Math.max(...sizes.values())).toBeGreaterThan(400); // bridges do not cut it in two
+  });
+});
+
+describe('mud', () => {
+  const count = (grid: Grid, t: number) => grid.flat().filter((v) => v === t).length;
+
+  it('slows you down but does not soak you, and is not solid', () => {
+    expect(effectsFor(TileType.MUD)).toEqual({ slow: MUD_SLOW, grip: 1, wet: false });
+    expect(MUD_SLOW).toBeLessThan(1);
+    expect(MUD_SLOW).toBeLessThan(0.85); // worse than wading
+    expect(effectsFor(TileType.GRASS_A).slow).toBe(1);
+  });
+
+  it('rain churns open grass into mud; heat, cold and clear skies leave none', () => {
+    const { grid } = generateMap('nyc', 33);
+    for (const wet of ['rain', 'thunderstorm', 'tropical_downpour', 'hurricane']) {
+      expect(count(applyStaticWeather(grid, wet, 33), TileType.MUD), wet).toBeGreaterThan(8);
+    }
+    for (const dry of ['clear', 'heat', 'cold_front', 'windy']) expect(count(applyStaticWeather(grid, dry, 33), TileType.MUD), dry).toBe(0);
+    expect(weatherTerrain('tropical_downpour').mudDensity).toBeGreaterThan(weatherTerrain('rain').mudDensity);
+  });
+
+  it('only ever replaces grass: never a road, a building, the water or the plaza', () => {
+    for (const region of ['nyc', 'miami', 'london', 'tokyo', 'mumbai']) {
+      const { grid, spawn } = generateMap(region, 77);
+      const out = applyStaticWeather(grid, 'tropical_downpour', 77);
+      for (let y = 0; y < grid.length; y++) {
+        for (let x = 0; x < grid[0].length; x++) {
+          if (out[y][x] !== TileType.MUD) continue;
+          expect([TileType.GRASS_A, TileType.GRASS_B], `${region} ${x},${y} was ${grid[y][x]}`).toContain(grid[y][x]);
+          expect(Math.hypot(x - spawn.col, y - spawn.row), 'the plaza stays clear').toBeGreaterThan(7);
+        }
+      }
+    }
+  });
+
+  it('is the same map every time for the same seed and weather, and different for another seed', () => {
+    const { grid } = generateMap('london', 5);
+    expect(applyStaticWeather(grid, 'rain', 5)).toEqual(applyStaticWeather(grid, 'rain', 5));
+    expect(applyStaticWeather(grid, 'rain', 5)).not.toEqual(applyStaticWeather(grid, 'rain', 6));
+  });
+
+  it('collects beside water, where the ground is low', () => {
+    let near = 0;
+    let far = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const { grid } = generateMap('nyc', seed);
+      const out = applyStaticWeather(grid, 'rain', seed);
+      const water = (x: number, y: number) => {
+        for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) if ([TileType.WATER, TileType.SHALLOW].includes(grid[y + dy]?.[x + dx])) return true;
+        return false;
+      };
+      for (let y = 0; y < out.length; y++) for (let x = 0; x < out[0].length; x++) if (out[y][x] === TileType.MUD) (water(x, y) ? (near += 1) : (far += 1));
+    }
+    expect(near + far).toBeGreaterThan(0);
+    expect(near / (near + far)).toBeGreaterThan(0.4);
   });
 });

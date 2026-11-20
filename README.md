@@ -442,6 +442,39 @@ cutscenes, and the functions the game calls when something happens (`interact`, 
 plays the whole story from start to ending and checks that every line fits the screen. The Regent's phases and
 lightning are in `src/systems/regent.ts`; Mistford's props and journal are in `src/town/storyTown.ts`.
 
+### Below the city, and what is on the map
+
+The world has more in it than streets and enemies.
+
+**Stairs down.** Each city map has **four entrances**, in two linked pairs: subway stairs in the street cities (New
+York, London, Tokyo), cave mouths on the coast (Miami, Mumbai). Stand still on one for a moment (a ring fills) and the
+knight goes down into a **tunnel**. A tunnel is a dark, dry maze under the city: a subway of straight corridors and
+pillared stations in the street cities, a winding cave with pools on the coast. It is lit only by a pool of light
+round the knight (and a glow at stairs and chests), full of **buried chests** (richer than crates), and with a
+trickle of enemies. **Time stands still down there**: the storm clock does not run, there is no weather and no boss.
+At one end are the stairs you came down; at the other, the stairs to the **linked entrance**, which can be anywhere
+on the map, so a tunnel is a way across it. The knight comes back as they left: level, health, powers and kills. A boss
+on the field waits for you, as hurt as you left it. Continue after leaving a run underground puts you on the surface at
+the stairs. The same map always has the same entrances and the same tunnels (they come from the map's seed).
+
+**Supply crates and weather shrines.** Ten **crates** are scattered over each map: walk into one for drips, maybe a
+bun, and a spill of gems. Three **weather shrines** grant a power: stand at one for a moment and one of Sunbeam,
+Rainbow Shield, Gale, Frost Aura or Static Charge gains a level and the knight is mended by a quarter. Each is used
+once, and what has been used is remembered when you go underground and when you continue a saved run. None of this is
+in the tutorial.
+
+**Mud.** Rain churns open grass into **mud**, most of all beside water and most in a downpour: it slows you to 60%
+without soaking you. Clear skies, heat and cold leave none. (Roads, buildings and the plaza never turn to mud.)
+
+**The minimap.** In the top-right corner, the whole map (a pixel for every 2x2 tiles): water, roads, buildings, rock,
+ice and mud in different colours, with blips for the knight (blinking), stairs (teal), crates (yellow), shrines
+(purple), the flight pad (blue) and the boss (red). It shows the tunnel when you are underground. **N** turns it off
+and on.
+
+Where things go is a pure function of the map (`src/systems/pois.ts`, `src/systems/underground.ts`, no Phaser) and is
+unit-tested: every one is on open ground the knight can walk to, away from the plaza and from each other, on every city
+and many seeds; every tunnel can be walked from its way in to its way out, to every chest and every open tile.
+
 ### City enemies and bosses
 
 Each city can have its own signature enemy and boss on top of the shared

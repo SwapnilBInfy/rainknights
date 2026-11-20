@@ -33,9 +33,11 @@ export const TileType = {
   CAR: 10,
   /** A street lamp or hydrant (a beach umbrella on a beach): solid. */
   PROP: 11,
+  /** Churned-up ground after rain: walkable, slows you. Made by the weather, never by the generator. */
+  MUD: 12,
 } as const;
 
-export const TILE_TYPE_COUNT = 12;
+export const TILE_TYPE_COUNT = 13;
 
 export type Grid = number[][];
 

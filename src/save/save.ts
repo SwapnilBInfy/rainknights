@@ -91,6 +91,8 @@ export interface RunSnapshot {
   pendingLevelUps: number;
   /** Seed of the world map, so Continue returns to the same map. Absent in older saves. */
   mapSeed?: number;
+  /** Crates and shrines already used on this map ("s3" on the surface, "u0:2" in a tunnel), so Continue and a trip underground do not refill them. */
+  usedPois?: string[];
   player: PlayerSnapshot;
 }
 
@@ -504,6 +506,9 @@ function readRun(value: unknown): RunSnapshot | null {
   }
   const player = readPlayer(value.player);
   const mapSeed = readInt(value.mapSeed, 0, 0x7fffffff);
+  const usedPois = Array.isArray(value.usedPois)
+    ? [...new Set(value.usedPois.filter((k): k is string => typeof k === 'string' && /^[su]\d{1,2}(:\d{1,2})?$/.test(k)))].slice(0, 120)
+    : [];
   if (
     !weatherLabel ||
     !weatherCondition ||
@@ -528,6 +533,7 @@ function readRun(value: unknown): RunSnapshot | null {
     player,
     // Optional and additive (no version bump): a missing or invalid seed just means a fresh map.
     ...(mapSeed !== null ? { mapSeed } : {}),
+    ...(usedPois.length > 0 ? { usedPois } : {}),
   };
 }
 

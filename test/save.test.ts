@@ -182,6 +182,27 @@ describe('parseStored', () => {
   });
 });
 
+describe('the points of interest in a saved run', () => {
+  it('round-trips what has been used, and an older run without it still loads', () => {
+    const save = defaultSave();
+    save.run = { ...sampleRun(), usedPois: ['s3', 's7', 'u0:2'] };
+    expect(parseStored(serialize(save), null).save.run?.usedPois).toEqual(['s3', 's7', 'u0:2']);
+    const old = defaultSave();
+    old.run = sampleRun();
+    const back = parseStored(serialize(old), null).save.run;
+    expect(back).not.toBeNull();
+    expect(back?.usedPois).toBeUndefined();
+  });
+
+  it('drops anything that is not a key, without losing the run', () => {
+    const doc = JSON.parse(serialize({ ...defaultSave(), run: sampleRun() }));
+    doc.run.usedPois = ['s3', 's3', 'bogus', 5, 's1000', 'u1:4', '<script>'];
+    const back = parseStored(JSON.stringify(doc), null).save.run;
+    expect(back?.usedPois).toEqual(['s3', 'u1:4']);
+    expect(back?.characterId).toBe('rainKnight');
+  });
+});
+
 describe('the story in the save', () => {
   it('is absent in a new save, so older saves and new ones look the same until the story starts', () => {
     expect(defaultSave().story).toBeUndefined();

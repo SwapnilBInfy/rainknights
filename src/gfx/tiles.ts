@@ -52,7 +52,7 @@ function rng(seed: number) {
 
 export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: TerrainTheme) {
   if (scene.textures.exists(key)) return;
-  const tex = scene.textures.createCanvas(key, TILE * 12, TILE)!;
+  const tex = scene.textures.createCanvas(key, TILE * 13, TILE)!;
   const ctx = tex.getContext();
 
   const put = (tile: number, x: number, y: number, c: number) => {
@@ -172,6 +172,21 @@ export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: 
     }
   };
 
+  // Mud: dark, wet earth, churned, with a few glints where the puddles are.
+  const mud = (tile: number) => {
+    const rand = rng(53);
+    // brown whatever the city's ground, with a little of the ground showing through
+    const mix = (a: number, b: number, t: number) => {
+      const ch = (shift: number) => Math.round(((a >> shift) & 255) * (1 - t) + ((b >> shift) & 255) * t);
+      return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+    };
+    const base = mix(theme.groundA, 0x5a3e24, 0.78);
+    fill(tile, base);
+    for (let i = 0; i < 22; i++) put(tile, Math.floor(rand() * TILE), Math.floor(rand() * TILE), shade(base, i % 2 ? 0.14 : -0.16));
+    for (const [x, y] of [[3, 3], [4, 3], [10, 9], [11, 9], [11, 10], [5, 12]]) put(tile, x, y, shade(theme.water, -0.1));
+    for (const [x, y] of [[4, 3], [10, 9]]) put(tile, x, y, shade(theme.waterLight, -0.1));
+  };
+
   ground(0, theme.groundA, false, 11);
   ground(1, theme.groundB, true, 23);
   path(2);
@@ -184,6 +199,7 @@ export function generateTerrainTileset(scene: Phaser.Scene, key: string, theme: 
   ground(9, theme.groundA, false, 11); // tree
   path(10); // car (on the road)
   ground(11, theme.groundA, false, 11); // lamp, hydrant or umbrella
+  mud(12);
   tex.refresh();
 }
 
