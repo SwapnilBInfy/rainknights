@@ -22,13 +22,17 @@ export interface TileEffects {
 
 export const WADE_SLOW = 0.85;
 export const ICE_GRIP = 0.12;
+/** Mud drags at your boots, but does not soak you. */
+export const MUD_SLOW = 0.6;
 const NORMAL: TileEffects = { slow: 1, grip: 1, wet: false };
 const WADING: TileEffects = { slow: WADE_SLOW, grip: 1, wet: true };
 const ICY: TileEffects = { slow: 1, grip: ICE_GRIP, wet: false };
+const MUDDY: TileEffects = { slow: MUD_SLOW, grip: 1, wet: false };
 
 export function effectsFor(tile: number): TileEffects {
   if (tile === TileType.SHALLOW) return WADING;
   if (tile === TileType.ICE) return ICY;
+  if (tile === TileType.MUD) return MUDDY;
   return NORMAL;
 }
 
@@ -40,15 +44,19 @@ export interface WeatherTerrain {
   dry: boolean;
   /** Puddle blobs per tile (a map has 10,000). */
   puddleDensity: number;
+  /** Mud patches per tile: rain churns open grass into mud, most of all beside water. Heat and cold leave none. */
+  mudDensity: number;
 }
 
 const WET_DENSITY: Record<string, number> = { rain: 0.003, thunderstorm: 0.004, tropical_downpour: 0.005, hurricane: 0.004 };
+const MUD_DENSITY: Record<string, number> = { rain: 0.0014, thunderstorm: 0.0018, tropical_downpour: 0.0026, hurricane: 0.002, humid: 0.0006 };
 
 export function weatherTerrain(condition: string): WeatherTerrain {
   return {
     freeze: condition === 'cold_front',
     dry: condition === 'heat',
     puddleDensity: WET_DENSITY[condition] ?? 0,
+    mudDensity: MUD_DENSITY[condition] ?? 0,
   };
 }
 
@@ -96,6 +104,33 @@ export function applyStaticWeather(grid: Grid, condition: string, seed: number):
         for (let dx = 0; dx < (rng() < 0.7 ? size : 1); dx++) {
           const t = out[py + dy]?.[px + dx];
           if (t === TileType.GRASS_A || t === TileType.GRASS_B || t === TileType.PATH) out[py + dy][px + dx] = TileType.SHALLOW;
+        }
+      }
+    }
+  }
+
+  // Mud: patches of open grass (never roads, never the plaza), more of it where the ground is low, beside water.
+  if (rule.mudDensity > 0) {
+    const rng = mulberry32((seed ^ 0x51ed270b) >>> 0);
+    const n = Math.floor(cols * rows * rule.mudDensity);
+    const cx = Math.floor(cols / 2);
+    const cy = Math.floor(rows / 2);
+    const nearWater = (x: number, y: number) => {
+      for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) if (isWaterTile(grid[y + dy]?.[x + dx] ?? -1)) return true;
+      return false;
+    };
+    for (let i = 0; i < n * 3; i++) {
+      const px = 3 + Math.floor(rng() * (cols - 6));
+      const py = 3 + Math.floor(rng() * (rows - 6));
+      if (Math.hypot(px - cx, py - cy) < PLAZA_RADIUS + 3) continue;
+      // away from water, only a third of the candidates become mud
+      if (!nearWater(px, py) && rng() > 0.34) continue;
+      const r = 1 + Math.floor(rng() * 2);
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (dx * dx + dy * dy > r * r + 1) continue;
+          const t = out[py + dy]?.[px + dx];
+          if (t === TileType.GRASS_A || t === TileType.GRASS_B) out[py + dy][px + dx] = TileType.MUD;
         }
       }
     }

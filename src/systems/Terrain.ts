@@ -29,6 +29,11 @@ export class TerrainField {
     this.bodies = waterBodies(this.grid);
   }
 
+  /** The map as it is now (flooded, frozen, muddy). */
+  get currentGrid(): Grid {
+    return this.grid;
+  }
+
   get cols(): number {
     return this.grid[0].length;
   }
@@ -230,7 +235,18 @@ export function buildTerrain(scene: Phaser.Scene, region: RegionDef, opts: Terra
   const baseGrid = applyStaticWeather(generated.grid, opts.condition, opts.seed);
   const rings = floodRingsFor(opts.condition, opts.frontIndex);
   const grid = applyFlood(baseGrid, rings);
+  return mountTerrain(scene, region, baseGrid, grid, rings, opts.seed, generated.spawn);
+}
 
+/**
+ * The tunnels under a city, mounted the same way as the surface: the same tiles and painted detail, but no weather
+ * (it is dry down here, and nothing floods) and a spawn of the caller's choosing.
+ */
+export function buildUndergroundTerrain(scene: Phaser.Scene, region: RegionDef, grid: Grid, seed: number, spawn: { col: number; row: number }): TerrainResult {
+  return mountTerrain(scene, region, grid, grid, 0, seed, spawn);
+}
+
+function mountTerrain(scene: Phaser.Scene, region: RegionDef, baseGrid: Grid, grid: Grid, rings: number, seed: number, spawnCell: { col: number; row: number }): TerrainResult {
   const tilemap = scene.make.tilemap({ data: grid, tileWidth: TILE, tileHeight: TILE });
   const key = region.terrainTilesKey;
   const tileset = tilemap.addTilesetImage(key, key, TILE, TILE)!;
@@ -241,7 +257,7 @@ export function buildTerrain(scene: Phaser.Scene, region: RegionDef, opts: Terra
   layer.setDepth(0);
 
   const field = new TerrainField(layer, baseGrid, grid, rings);
-  const decor = new DecorLayer(scene, region.id, opts.seed, grid[0].length, grid.length);
+  const decor = new DecorLayer(scene, region.id, seed, grid[0].length, grid.length);
   const paint = (g: Grid) => {
     field.decorOps = decor.draw(g);
     field.decorDraws++;
@@ -249,6 +265,6 @@ export function buildTerrain(scene: Phaser.Scene, region: RegionDef, opts: Terra
   paint(grid);
   field.onChange = paint;
   scene.events.once('shutdown', () => decor.destroy());
-  const spawn = { x: generated.spawn.col * TILE + TILE / 2, y: generated.spawn.row * TILE + TILE / 2 };
-  return { tilemap, layer, field, spawn, seed: opts.seed };
+  const spawn = { x: spawnCell.col * TILE + TILE / 2, y: spawnCell.row * TILE + TILE / 2 };
+  return { tilemap, layer, field, spawn, seed };
 }

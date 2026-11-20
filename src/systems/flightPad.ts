@@ -29,3 +29,9 @@ export function stepPadCharge(charge: number, standing: boolean, deltaMs: number
   const next = standing ? charge + deltaMs / PAD_CHARGE_MS : charge - (deltaMs / PAD_CHARGE_MS) * PAD_DRAIN;
   return Math.min(1, Math.max(0, next));
 }
+
+/** The same ring for anything you stand on to use (stairs, shrines): `ms` is how long it takes to fill. */
+export function stepCharge(charge: number, standing: boolean, deltaMs: number, ms: number): number {
+  const next = standing ? charge + deltaMs / ms : charge - (deltaMs / ms) * PAD_DRAIN;
+  return Math.min(1, Math.max(0, next));
+}

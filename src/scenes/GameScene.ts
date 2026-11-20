@@ -22,7 +22,13 @@ import { hazardsEnabled, ruleFor, type HazardKind, type WeatherRule } from '../c
 import { FONT } from '../ui/Window';
 import { LevelUpSystem } from '../systems/LevelUpSystem';
 import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/PowerupSystem';
-import { buildTerrain, randomSeed, seedFromUrl, type TerrainResult } from '../systems/Terrain';
+import { buildTerrain, buildUndergroundTerrain, randomSeed, seedFromUrl, type TerrainResult } from '../systems/Terrain';
+import { generateMap } from '../systems/mapGen';
+import { placePois, poiCenter, poisOf, tunnelFor, type Poi } from '../systems/pois';
+import { generateUnderground, type Tunnel } from '../systems/underground';
+import { PoiDirector, type PoiItem } from '../systems/PoiDirector';
+import { Darkness } from '../gfx/darkness';
+import { Minimap, type MiniDot } from '../ui/Minimap';
 import { Enemy as EnemyBase } from '../entities/enemies/Enemy';
 import { floodRingsFor } from '../systems/terrainRules';
 import { HUD } from '../ui/HUD';
@@ -117,6 +123,9 @@ interface RunBridge {
   defeat: () => void;
   /** Drips in the purse right now. */
   coins: () => number;
+  /** The knight's powerup levels, and how many enemies they have defeated this run (debug / tests). */
+  powers: () => Record<string, number>;
+  kills: () => number;
   /** Vehicle crashes so far this run. */
   crashes: () => number;
   /** Teleport the knight onto a long street, `tilesBefore` tiles before it ends at a wall; returns whether one was found. */
@@ -127,6 +136,17 @@ interface RunBridge {
   tpToTile: (type: number, run?: number, offCols?: number, offRows?: number) => boolean;
   /** Take hit points off the knight, leaving at least 1 (debug / tests). */
   wound: (amount: number) => void;
+  /** Which level the knight is on, what is on the surface map (and whether it has been used), and ways onto things (debug / tests). */
+  depth: () => 'surface' | 'underground';
+  pois: () => { id: number; kind: string; col: number; row: number; used: boolean }[];
+  usedPois: () => string[];
+  tpToPoi: (kind: 'entrance' | 'crate' | 'shrine', n?: number) => boolean;
+  /** Underground: put the knight on the stairs back (`back`), or the stairs on (`far`), or by a chest (`chest`). */
+  tpToStairs: (which: 'back' | 'far' | 'chest', n?: number) => boolean;
+  tunnelChests: () => number;
+  minimap: () => 'on' | 'off';
+  /** The darkness has a light round the knight (underground only). */
+  dark: () => boolean;
   /** The flight pad: where it is, how full its ring is (0..1), and a way onto it. */
   padAt: () => { x: number; y: number };
   padCharge: () => number;
@@ -154,7 +174,13 @@ interface GameSceneData {
   resume?: boolean;
   /** The optional tutorial: no waves, no clock, no boss, and nothing written to the save. */
   tutorial?: boolean;
+  /** Go down into the tunnels under the city, by this entrance (the run itself comes from the save, as for Continue). */
+  underground?: { entry: number };
 }
+
+/** What each shrine's power is called. */
+const POWER_NAME: Record<string, string> = { sunbeam: 'Sunbeam', rainbowShield: 'Rainbow Shield', gale: 'Gale', frost: 'Frost Aura', staticCharge: 'Static Charge' };
+const SHRINE_POWERS = ['sunbeam', 'frost', 'gale', 'staticCharge', 'rainbowShield'] as const;
 
 export class GameScene extends Phaser.Scene implements WeatherHost {
   player!: Player;
@@ -205,6 +231,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private padCharge = 0;
   private padHinted = 0;
   private finaleBuffText = '';
+  private level: 'surface' | 'underground' = 'surface';
+  private surfacePois: Poi[] = [];
+  private tunnelPlan: { tun: Tunnel; entry: number; exitId: number; tunnel: number; reversed: boolean } | null = null;
+  private poiDirector: PoiDirector | null = null;
+  private darkness: Darkness | null = null;
+  private minimap: Minimap | null = null;
+  private tunnelSpawnTimer = 0;
   private castCount = 0;
   private wasWet = false;
   private runDrips = 0;
@@ -256,7 +289,25 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     // as far as the storm front already warrants.
     this.mapSeed = seedFromUrl() ?? resume?.mapSeed ?? randomSeed();
     const startFront = resume ? frontIndexAt(resume.elapsedSeconds) : (data.startFrontIndex ?? 0);
-    this.terrain = buildTerrain(this, region, { seed: this.mapSeed, condition: this.runWeatherCondition, frontIndex: startFront });
+    // The surface map's points of interest (where the stairs down are, the crates, the shrines) come from the map alone,
+    // so a trip underground and back finds everything where it was.
+    const surfaceMap = generateMap(region.id, this.mapSeed);
+    this.surfacePois = data.tutorial ? [] : placePois(surfaceMap.grid, surfaceMap.spawn, this.mapSeed, region.dress);
+    this.tunnelPlan = null;
+    if (resume && data.underground && !data.tutorial) {
+      const link = tunnelFor(this.surfacePois, data.underground.entry);
+      if (link) this.tunnelPlan = { tun: generateUnderground(region.id, this.mapSeed, link.tunnel, region.dress), entry: data.underground.entry, exitId: link.exitId, tunnel: link.tunnel, reversed: link.reversed };
+    }
+    this.level = this.tunnelPlan ? 'underground' : 'surface';
+    this.tunnelSpawnTimer = 0;
+    if (this.tunnelPlan) {
+      // down in the tunnels: from the stairs at our end, a few steps in
+      const { tun, reversed } = this.tunnelPlan;
+      const start = reversed ? tun.b : tun.a;
+      this.terrain = buildUndergroundTerrain(this, region, tun.grid, this.mapSeed, { col: start.col + (reversed ? -3 : 3), row: start.row });
+    } else {
+      this.terrain = buildTerrain(this, region, { seed: this.mapSeed, condition: this.runWeatherCondition, frontIndex: startFront });
+    }
 
     this.player = new Player(this, this.terrain.spawn.x, this.terrain.spawn.y, character);
     if (resume) {
@@ -264,6 +315,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       // An older save has no map seed, so the map is new: make sure the knight is not inside a building.
       const spot = this.openSpot(this.player.x, this.player.y);
       this.player.setPosition(spot.x, spot.y);
+      if (this.level === 'underground') this.player.setPosition(this.terrain.spawn.x, this.terrain.spawn.y);
     } else if (!data.tutorial) {
       const town = loadGame().town;
       this.player.applyBattleGear(battleGear(this.runCharacterId, town.armorId, town.hp));
@@ -282,7 +334,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.padCharge = 0;
     this.castCount = 0;
     this.padHinted = -1e9;
-    this.padGfx = data.tutorial ? null : this.add.graphics().setDepth(0.6);
+    this.padGfx = data.tutorial || this.level === 'underground' ? null : this.add.graphics().setDepth(0.6);
     this.player.onLevelUp = () => this.pauseForLevelUp();
     this.player.on('hurt', (amount: number) => {
       this.tutorial?.note('hurt');
@@ -336,7 +388,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (resume) this.weather.restoreClock(resume.elapsedSeconds, resume.bossHp != null);
 
     audio.playMusic(region.music);
-    audio.setAmbience(resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
+    audio.setAmbience(this.level === 'underground' ? null : resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
     this.hud = new HUD(this);
     this.hud.setObjective(data.tutorial ? '' : runObjective(loadStory(), region.id));
     this.levelUpSystem = new LevelUpSystem(this);
@@ -431,6 +483,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         this.player.onDied?.();
       },
       coins: () => loadGame().town.coins,
+      powers: () => ({ ...this.player.powerups }),
+      kills: () => this.player.kills,
       spawnAround: (type, count) => {
         for (let i = 0; i < count; i++) this.spawnEnemyAroundPlayer(type);
       },
@@ -458,6 +512,26 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       wound: (amount) => {
         this.player.hp = Math.max(1, this.player.hp - amount);
       },
+      depth: () => this.level,
+      pois: () => this.surfacePois.map((p) => ({ id: p.id, kind: p.kind, col: p.col, row: p.row, used: this.poiDirector?.isUsed(`s${p.id}`) ?? false })),
+      usedPois: () => [...(this.poiDirector?.used ?? [])],
+      tpToPoi: (kind, n = 0) => {
+        const poi = poisOf(this.surfacePois, kind)[n];
+        if (!poi) return false;
+        const at = poiCenter(poi);
+        this.player.setPosition(at.x, at.y);
+        return true;
+      },
+      tpToStairs: (which, n = 0) => {
+        const items = this.poiDirector?.items.filter((i) => (which === 'chest' ? i.kind === 'crate' : i.kind === which)) ?? [];
+        const item = items[n];
+        if (!item) return false;
+        this.player.setPosition(item.x, item.y);
+        return true;
+      },
+      tunnelChests: () => this.tunnelPlan?.tun.chests.length ?? 0,
+      minimap: () => (this.minimap?.visible ? 'on' : 'off'),
+      dark: () => !!this.darkness,
       padAt: () => padCenterFor(this.terrain.spawn),
       padCharge: () => this.padCharge,
       tpToPad: () => {
@@ -483,7 +557,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       resetSave: () => this.resetAndQuit(),
       quitQuestion: data.tutorial ? 'Leave tutorial?' : undefined,
     });
-    this.hud.setWeatherCondition(data.tutorial ? 'tutorial' : this.runWeatherCondition, data.tutorial ? 'Tutorial' : this.runWeatherLabel);
+    this.hud.setWeatherCondition(data.tutorial ? 'tutorial' : this.level === 'underground' ? 'clear' : this.runWeatherCondition, data.tutorial ? 'Tutorial' : this.level === 'underground' ? 'Underground' : this.runWeatherLabel);
     this.lastFrontIndex = this.weather.currentFrontIndex;
     if (resume && resume.pendingLevelUps > 0) {
       this.pendingLevelUps = resume.pendingLevelUps;
@@ -496,12 +570,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     }
     if (data.tutorial) {
       // The tutorial panel replaces the usual run intro and hints.
+    } else if (this.level === 'underground') {
+      this.hud.showMessage(region.dress === 'street' ? 'The subway.\nTime stands still down here.' : 'A cave under the shore.\nTime stands still down here.');
     } else if (resume) {
       this.hud.showMessage(`${region.name}.\nThe ${this.weather.frontName} resumes.`);
     } else {
       this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
     }
-    if (resume?.bossHp != null) this.spawnBoss(resume.bossHp);
+    if (resume?.bossHp != null && this.level === 'surface') this.spawnBoss(resume.bossHp);
 
     this.setupAmbientWeather(this.runWeatherTint);
     const hazardHost: HazardHost = {
@@ -523,10 +599,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       // No scheduled hazards: the tutorial drops its own lightning strike on cue.
       this.hazards = new HazardDirector(hazardHost, { wet: false, hazards: [] });
       this.startTutorial();
-    } else if (hazardsEnabled() && this.rule.hazards.length > 0) {
+    } else if (hazardsEnabled() && this.rule.hazards.length > 0 && this.level === 'surface') {
       this.hazards = new HazardDirector(hazardHost, this.rule);
     }
-    if (!data.tutorial && this.rule.terrainHint && !(resume && resume.pendingLevelUps > 0)) {
+    if (!data.tutorial) this.setupWorldDepth(resume?.usedPois ?? []);
+    if (!data.tutorial && this.rule.terrainHint && this.level === 'surface' && !(resume && resume.pendingLevelUps > 0)) {
       this.time.delayedCall(14000, () => {
         if (this.ended || this.paused || !this.rule.terrainHint) return;
         this.hud.showMessage(this.rule.terrainHint);
@@ -591,9 +668,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.tickHitStop(delta);
     this.updateFlightPad(time, delta);
     if (this.ended) return; // flew out
-    if (!this.tutorial) this.weather.update(delta); // the tutorial has no storm clock
-    this.updateAmbientWeather(delta);
-    this.updateWeatherEffects(delta);
+    this.updateWorldDepth(time, delta);
+    if (this.ended) return; // went up or down some stairs
+    if (!this.tutorial && this.level === 'surface') this.weather.update(delta); // the tutorial has no storm clock; time stands still underground
+    if (this.level === 'surface') {
+      this.updateAmbientWeather(delta);
+      this.updateWeatherEffects(delta);
+    }
     this.updateTerrainEffects(delta);
     this.updateGems();
     this.updatePickups();
@@ -1088,6 +1169,160 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.paused = false;
   }
 
+  // --- the world's depth: crates, shrines, stairs, tunnels, the minimap ---
+
+  /** Put the crates, shrines and stairs in the world (or the chests and stairs in a tunnel), the dark underground, and the minimap. */
+  private setupWorldDepth(used: string[]) {
+    const items: PoiItem[] = [];
+    if (this.level === 'surface') {
+      for (const p of this.surfacePois) {
+        const at = poiCenter(p);
+        items.push({
+          key: `s${p.id}`,
+          kind: p.kind,
+          x: at.x,
+          y: at.y,
+          poi: p,
+          dress: this.region.dress,
+          ...(p.kind === 'shrine' ? { power: SHRINE_POWERS[p.id % SHRINE_POWERS.length] } : {}),
+        });
+      }
+    } else if (this.tunnelPlan) {
+      const { tun, reversed, tunnel } = this.tunnelPlan;
+      const start = reversed ? tun.b : tun.a;
+      const far = reversed ? tun.a : tun.b;
+      items.push({ key: 'back', kind: 'back', ...poiCenter(start) }, { key: 'far', kind: 'far', ...poiCenter(far) });
+      tun.chests.forEach((c, i) => items.push({ key: `u${tunnel}:${i}`, kind: 'crate', ...poiCenter(c) }));
+      this.darkness = new Darkness(this);
+    }
+    this.poiDirector = new PoiDirector(this, { trigger: (item) => this.onPoi(item) }, items, used);
+    this.minimap = new Minimap(this);
+    this.minimap.setGrid(this.terrain.field.currentGrid, this.minimapKey());
+    this.input.keyboard?.on('keydown-N', () => this.minimap?.toggle());
+    this.events.once('shutdown', () => {
+      this.poiDirector?.destroy();
+      this.darkness?.destroy();
+      this.minimap?.destroy();
+      this.poiDirector = null;
+      this.darkness = null;
+      this.minimap = null;
+    });
+  }
+
+  private minimapKey(): string {
+    return `${this.level}:${this.terrain.field.floodRings}`;
+  }
+
+  private updateWorldDepth(time: number, delta: number) {
+    if (!this.poiDirector) return;
+    this.poiDirector.update(time, delta, this.player);
+    if (this.ended) return;
+    const cam = this.cameras.main.worldView;
+
+    if (this.level === 'underground') {
+      this.updateTunnelSpawns(delta);
+      const lights = [{ x: this.player.x - cam.x, y: this.player.y - cam.y, r: 62 + Math.sin(time / 230) * 2 }];
+      for (const item of this.poiDirector.items) if (!this.poiDirector.isUsed(item.key)) lights.push({ x: item.x - cam.x, y: item.y - cam.y, r: item.kind === 'crate' ? 22 : 30 });
+      this.darkness?.update(lights);
+    }
+
+    if (this.minimap) {
+      if (this.minimap.stale(this.minimapKey())) this.minimap.setGrid(this.terrain.field.currentGrid, this.minimapKey());
+      const dots: MiniDot[] = [];
+      for (const item of this.poiDirector.items) {
+        if (this.poiDirector.isUsed(item.key) && item.kind !== 'entrance' && item.kind !== 'back' && item.kind !== 'far') continue;
+        const color = item.kind === 'entrance' ? 0x58e0d0 : item.kind === 'crate' ? 0xffd84a : item.kind === 'shrine' ? 0xc080ff : item.kind === 'far' ? 0x58d8ff : 0xffe680;
+        dots.push({ x: item.x, y: item.y, color });
+      }
+      if (this.level === 'surface' && !this.tutorial) dots.push({ ...padCenterFor(this.terrain.spawn), color: 0x3f8cf0 });
+      if (this.boss?.active) dots.push({ x: this.boss.x, y: this.boss.y, color: 0xff4a4a });
+      this.minimap.setHidden(this.levelUpOpen || this.userPaused);
+      this.minimap.update(this.player, dots, Math.floor(time / 320) % 2 === 0);
+    }
+  }
+
+  /** A trickle of enemies in the tunnels (there is no storm down here): a few at a time, mostly the small ones. */
+  private updateTunnelSpawns(delta: number) {
+    this.tunnelSpawnTimer -= delta;
+    if (this.tunnelSpawnTimer > 0) return;
+    this.tunnelSpawnTimer = 1800;
+    if (this.getActiveEnemies().length >= 9) return;
+    const roll = Math.random();
+    this.spawnEnemyAroundPlayer(roll < 0.62 ? 'rainImp' : roll < 0.88 ? 'windWraith' : 'hailBrute');
+  }
+
+  private onPoi(item: PoiItem) {
+    if (this.ended) return;
+    audio.play('confirm');
+    if (item.kind === 'crate') this.openCrate(item);
+    else if (item.kind === 'shrine') this.blessKnight(item);
+    else if (item.kind === 'entrance' && item.poi) this.descend(item.poi);
+    else if (item.kind === 'back' || item.kind === 'far') this.ascend(item.kind);
+  }
+
+  /** A crate on the surface, or a buried chest: drips, a bun maybe, a spill of gems. */
+  private openCrate(item: PoiItem) {
+    const buried = item.key.startsWith('u');
+    this.spawnPickup(item.x + 6, item.y - 6, Phaser.Math.Between(buried ? 18 : 8, buried ? 34 : 18), null);
+    if (Math.random() < (buried ? 0.8 : 0.45)) this.spawnPickup(item.x - 7, item.y + 4, 0, 'rainBun');
+    for (let i = 0; i < 3; i++) this.spawnXpGem(item.x + Phaser.Math.Between(-10, 10), item.y + Phaser.Math.Between(-8, 8), buried ? 14 : 8);
+    this.hud.showMessage(buried ? 'A buried chest!\nDrips, gems, maybe a bun.' : 'A supply crate!\nDrips and gems spill out.', 1900);
+  }
+
+  /** A weather shrine: its power gains a level, and the knight is mended a little. */
+  private blessKnight(item: PoiItem) {
+    const power = (item.power ?? 'sunbeam') as keyof typeof this.player.powerups;
+    const level = Math.min(4, this.player.powerups[power] + 1);
+    this.player.powerups[power] = level;
+    this.player.hp = Math.min(this.player.maxHp, this.player.hp + Math.round(this.player.maxHp * 0.25));
+    this.cameras.main.flash(260, 255, 255, 255, false);
+    this.hud.showMessage(`${POWER_NAME[power] ?? power} shrine!\nPower up: level ${level}.`, 2400);
+    audio.play('levelUp');
+  }
+
+  /** Down some stairs: save the run where it stands at the entrance, then go under. */
+  private descend(entrance: Poi) {
+    if (!tunnelFor(this.surfacePois, entrance.id)) return;
+    const at = poiCenter(entrance);
+    const snapshot = this.captureRun();
+    saveRun({ ...snapshot, player: { ...snapshot.player, x: at.x, y: at.y + 24 }, usedPois: [...(this.poiDirector?.used ?? [])] });
+    this.changeLevel({ resume: true, underground: { entry: entrance.id } });
+  }
+
+  /** Up some stairs: back to the stairs we came down (`back`), or out the other end of the tunnel (`far`), on the surface. */
+  private ascend(which: 'back' | 'far') {
+    const plan = this.tunnelPlan;
+    const base = loadGame().run;
+    if (!plan || !base) return;
+    const exit = this.surfacePois.find((p) => p.id === (which === 'back' ? plan.entry : plan.exitId));
+    if (!exit) return;
+    const at = poiCenter(exit);
+    saveRun({
+      ...base,
+      player: { ...this.player.toSnapshot(), x: at.x, y: at.y + 24 },
+      pendingLevelUps: this.pendingLevelUps,
+      usedPois: [...(this.poiDirector?.used ?? [])],
+    });
+    this.changeLevel({ resume: true });
+  }
+
+  /** Fade out and start the scene again on the other level (the run itself travels in the save). */
+  private changeLevel(data: GameSceneData) {
+    if (this.ended) return;
+    this.ended = true;
+    this.paused = true;
+    this.levelUpOpen = false;
+    this.userPaused = false;
+    closePauseMenu();
+    this.levelUpSystem.close();
+    if (this.sys.isPaused()) this.sys.resume();
+    audio.setMuffled(false);
+    this.physics.pause();
+    this.bossSummonEvent?.remove(false);
+    this.cameras.main.fadeOut(320, 0, 0, 0);
+    this.time.delayedCall(380, () => this.scene.start('GameScene', data));
+  }
+
   /** The Regent calls lightning: rings on the ground where it will land, then the strikes. The first is on the knight. */
   private castLightning(strikes: number) {
     if (this.ended || !this.player?.active) return;
@@ -1191,7 +1426,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   /** Write the in-progress run. No-op once the run has ended or been abandoned. */
   checkpoint() {
-    if (this.tutorial || this.ended || !this.player?.active || !this.weather) return;
+    if (this.tutorial || this.ended || this.level === 'underground' || !this.player?.active || !this.weather) return;
     saveRun(this.captureRun());
   }
 
@@ -1207,6 +1442,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       bossHp: this.boss?.active ? this.boss.hp : null,
       pendingLevelUps: this.pendingLevelUps,
       mapSeed: this.mapSeed,
+      ...(this.poiDirector && this.poiDirector.used.size > 0 ? { usedPois: [...this.poiDirector.used] } : {}),
       player: this.player.toSnapshot(),
     };
   }
