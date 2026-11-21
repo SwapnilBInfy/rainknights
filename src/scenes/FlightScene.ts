@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { GATE_LEVELS, suggestedLevel } from '../systems/zones';
 import { REGIONS, type RegionDef } from '../config/regions';
 import { audio } from '../audio/engine';
 import { chibiKey } from '../gfx/chibi';
@@ -424,7 +425,9 @@ export class FlightScene extends Phaser.Scene {
     }
     const w = this.weather.get(best.id);
     const name = (this.regionOf(best)?.shortName ?? best.name).toUpperCase();
-    const label = w ? `${name} ${WEATHER_SHORT[w.condition] ?? ''} ${Math.round(w.temp)}C` : name;
+    // the level to bring (the one its second gate opens at): later cities ask more of the knight
+    const lv = GATE_LEVELS[best.id] ? ` LV${suggestedLevel(best.id)}` : '';
+    const label = (w ? `${name} ${WEATHER_SHORT[w.condition] ?? ''} ${Math.round(w.temp)}C` : name) + lv;
     this.plateText.setText(label).setX(VIEW_W / 2 + (w ? 5 : 0));
     const width = this.plateText.width + (w ? 18 : 8);
     this.plate.fillStyle(0x14121f, 0.65).fillRect(Math.round(VIEW_W / 2 - width / 2), 3, width, 13);

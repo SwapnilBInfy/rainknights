@@ -1,6 +1,7 @@
-import { getCharacter } from '../config/characters';
+import { CHARACTERS, getCharacter } from '../config/characters';
 import { PLAYER_BASE } from '../config/constants';
 import { freshHero, type Hero } from '../systems/hero';
+import { sanitizeUnlocked } from '../systems/unlocks';
 import { CHARMS, charm as charmDef, charmSlots, gain, nextPrice, rankLabel, randomCharm, type CharmBox } from './charms';
 
 /**
@@ -71,6 +72,8 @@ const LOOT: Record<string, { coins: number; itemId: string | null; chance: numbe
 
 export interface TownProfile {
   characterId: string;
+  /** The knights the player has earned (the first always). */
+  unlocked: string[];
   coins: number;
   bag: Record<string, number>;
   stash: Record<string, number>;
@@ -111,6 +114,7 @@ export function freshProfile(characterId = 'rainKnight'): TownProfile {
   const id = getCharacter(characterId).id;
   return {
     characterId: id,
+    unlocked: sanitizeUnlocked([], new Set(CHARACTERS.map((c) => c.id)), id),
     coins: 0,
     bag: {},
     stash: {},
@@ -237,7 +241,7 @@ export function equip(profile: TownProfile, armorId: string | null): TownProfile
 
 export function chooseKnight(profile: TownProfile, characterId: string): TownProfile {
   const id = getCharacter(characterId).id;
-  if (!id) return profile;
+  if (!id || !profile.unlocked.includes(id)) return profile; // a knight not yet earned cannot be chosen
   return { ...profile, characterId: id, hp: townMaxHp(id, profile.armorId) };
 }
 

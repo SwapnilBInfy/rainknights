@@ -55,6 +55,10 @@ export class HouseScene extends Phaser.Scene {
       place: () => 'house',
       frames: () => this.frames,
       wound: (hp: number) => writeProfile({ ...loadGame().town, hp: Math.max(1, Math.floor(hp)) }),
+      tp: (col: number, row: number) => {
+        const at = cellCenter({ col, row });
+        this.avatar.setPosition(at.x, at.y);
+      },
     };
     window.__hub = bridge;
     window.addEventListener('keydown', this.onKey);

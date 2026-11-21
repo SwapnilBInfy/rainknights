@@ -15,8 +15,9 @@ are AI-generated (via `npm run art:generate`).
 - **Start in Mistford**: a small rainy village. Your house is on the west
   side of the street, the market is on the east, and the **blue flight pad**
   is how you reach the cities
-- **Choose a knight**: the mirror in your house switches Rain Knight
-  (balanced), Hail Warden (tanky), or Storm Chaser (fast/fragile)
+- **Choose a knight**: you start with the **Rain Knight** (balanced) alone. The mirror in your house switches to the
+  others once they are earned: the **Hail Warden** (tanky) and the **Storm Chaser** (fast/fragile) are shadows marked
+  `???` until then (see "Knights you earn")
 - **Fly to a city**: stand on the blue pad, press A, and fly to New York, Miami, London, Tokyo or Mumbai (see
   Flying between locations). **There is no other way to a city.** That city's current weather sets which storm front the run starts on.
   When the run ends you come home — rest in your bed to heal, and keep
@@ -190,12 +191,13 @@ fails, the run starts on the calm fallback.
 
 Where the enemies are is a pure function of the map and its seed (`src/systems/camps.ts`, no Phaser, unit-tested): about
 sixteen **camps** of two to four enemies spread over the map, on open ground away from the plaza you start on, so the same
-map always has the same camps. They get **tougher the farther they are from the plaza**, in three rings:
+map always has the same camps. They get **tougher the farther they are from the plaza**, in the city's three zones
+(see "Zones and level gates"):
 
-| Ring (distance from the plaza) | Who lives there |
+| Zone (distance from the plaza) | Who lives there |
 | ------------------------------ | --------------- |
-| Outskirts (under 30 tiles)     | Rain Imp, Wind Wraith |
-| Midtown (30 to 52)             | Wind Wraith, Hail Brute, Lightning Wisp |
+| Outskirts (under 24 tiles)     | Rain Imp, Wind Wraith |
+| Midtown (24 to 40)             | Wind Wraith, Hail Brute, Lightning Wisp |
 | Core (beyond)                  | Hail Brute, Lightning Wisp, Snow Golem |
 
 A city's signature enemy (the New York Cab Wraith, on a street) leads some camps from midtown outwards. Tunnels hold a few
@@ -217,6 +219,43 @@ small camps of their own.
 The storm clock still runs, but only to move the weather through its fronts (Light Drizzle, Gusty Winds, Hailstorm,
 Thunderstorm, Blizzard, Tornado Warning: the flooding and the mood), the last lasting as long as you stay. It has no
 waves, no spawns and no boss time, and the battle screen no longer shows it.
+
+### Zones and level gates
+
+Every city is cut into three zones by two rings of rock round the plaza you land on: the **outskirts** (where you start),
+**midtown**, and the **core** (where the boss waits). Each ring has a **gate** in it (a barred door with its level on a red
+plate) that only opens for a knight of that level, and then stays open: walk up to a shut one and it tells you what it
+needs. Enemies cannot get through a shut gate either. A map the rings cut up badly (a coast cut into pieces by canals) gets
+two or three gates in a ring so that no stretch is shut away; the second ring's gate is on another side of midtown, so the
+way on is across it.
+
+| City | Midtown gate | Core gate (and the level to bring for the boss) |
+| ---- | ------------ | ------- |
+| New York | Lv 3 | Lv 6 |
+| Miami | Lv 4 | Lv 8 |
+| London | Lv 6 | Lv 10 |
+| Tokyo | Lv 8 | Lv 13 |
+| Mumbai | Lv 10 | Lv 16 |
+
+Later cities ask more: the flight map shows each city's suggested level (`LV6`) beside its name, and arriving under it tells
+you when the gates open. The gates are drawn on the Bag's map (orange when shut, green when open). A **tunnel is no way
+round a gate**: its far stairs are sealed ("bring Lv N to go up") to a knight too low for the zone they come out in. The
+tutorial's arena and the story's finale (Stormhold) have no gates. Where the rings and gates go is a pure function of the
+map and its seed (`src/systems/zones.ts`, no Phaser): the same map always has them in the same places, every zone can be
+reached through its gate, and the rings cost the knight under 15% of the walkable map on every city and seed tested.
+
+### Knights you earn
+
+Only the Rain Knight is yours at the start. The others are earned, and a locked knight shows as a shadow at the mirror with
+what to do:
+
+| Knight | How to earn |
+| ------ | ----------- |
+| Hail Warden | Win a boss fight (or follow the story to stage 3) |
+| Storm Chaser | Reach level 10 (or follow the story to stage 5) |
+
+They are handed over when a fight ends (the game-over screen says `NEW KNIGHT: ...`) or when you look in the mirror. A save
+from before this keeps whichever knight it was using.
 
 ### Your knight lasts
 

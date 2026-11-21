@@ -160,6 +160,7 @@ test('the same tunnel every time, and the way back brings you up at the stairs y
 test('the far stairs come up at the other end: the tunnel is a way across the map', async ({ page }) => {
   const errors = await begin(page);
   const entrances = (await pois(page)).filter((p) => p.kind === 'entrance');
+  await rk(page, 'setLevel(30)'); // (a tunnel is no way round a gate: the far stairs open only for a knight of the zone they come out in)
   await goDown(page, 0);
   await upBy(page, 'far');
   // we are now at the paired entrance: standing there does not send us straight back down (the knight is set a step off it)

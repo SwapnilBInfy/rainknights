@@ -185,9 +185,16 @@ test.describe('touch stick hold', () => {
     expect([...seen].length, `stick visited ${[...seen].join(',')}`).toBeGreaterThanOrEqual(3);
     expect((await hub(page)).frames).toBeGreaterThan(10);
 
-    while ((await hub(page)).item !== 'leave') {
-      await nudgeStick(page, 'down');
+    // down to LEAVE; a nudge still queued when LEAVE shows would wrap to the top, and A would buy the first row, so let
+    // the cursor settle and look again before pressing it
+    for (let tries = 0; tries < 6; tries++) {
+      while ((await hub(page)).item !== 'leave') {
+        await nudgeStick(page, 'down');
+      }
+      await page.waitForTimeout(400);
+      if ((await hub(page)).item === 'leave') break;
     }
+    expect((await hub(page)).item).toBe('leave');
     await tapButton(page, 'a');
     await expect(app).toHaveAttribute('data-shop', 'closed');
     await expect(app).toHaveAttribute('data-coins', '20');

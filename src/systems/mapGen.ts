@@ -10,6 +10,7 @@
  */
 import { MAP_COLS, MAP_ROWS } from '../config/constants';
 import { getRegion, type CityTuning, type CoastTuning } from '../config/regions';
+import { applyZones, type Gate } from './zones';
 
 /** Tile ids. The order is the order of the tileset strip (see gfx/tiles.ts). */
 export const TileType = {
@@ -51,6 +52,8 @@ export interface GeneratedMap {
   spawn: Spawn;
   seed: number;
   regionId: string;
+  /** The gates between the city's zones (empty unless the map was made `zoned`). */
+  gates: Gate[];
 }
 
 const SOLID = new Set<number>([TileType.WATER, TileType.ROCK, TileType.BUILDING, TileType.TREE, TileType.CAR, TileType.PROP]);
@@ -527,7 +530,8 @@ export function ensureConnected(grid: Grid, spawn: Spawn) {
   }
 }
 
-export function generateMap(regionId: string, seed: number, cols = MAP_COLS, rows = MAP_ROWS): GeneratedMap {
+/** `zoned` cuts the city into its three zones with two level-locked gates (see zones.ts): the game's maps are, a tutorial's is not. */
+export function generateMap(regionId: string, seed: number, cols = MAP_COLS, rows = MAP_ROWS, zoned = false): GeneratedMap {
   const rng = mulberry32(seed);
   const grid = baseGrass(cols, rows, rng);
   const spawn: Spawn = { col: Math.floor(cols / 2), row: Math.floor(rows / 2) };
@@ -538,5 +542,6 @@ export function generateMap(regionId: string, seed: number, cols = MAP_COLS, row
   clearPlaza(grid, spawn);
   frame(grid, regionId);
   ensureConnected(grid, spawn);
-  return { grid, spawn, seed, regionId };
+  const gates = zoned ? applyZones(grid, spawn, seed, regionId) : [];
+  return { grid, spawn, seed, regionId, gates };
 }

@@ -3,10 +3,11 @@
  * are is a pure function of the map and its seed, so the same map always has them in the same places, every camp is on
  * open ground the knight can walk to, and it can be tested.
  *
- * Camps get tougher the farther they are from the plaza the knight starts on (three rings), and the boss waits at the
+ * Camps get tougher the farther they are from the plaza the knight starts on (the city's three zones, see zones.ts), and the boss waits at the
  * far end of the map. A city's signature enemy (the Cab Wraith in New York) joins some camps beyond the first ring.
  */
 import { mulberry32, PLAZA_RADIUS, TileType, isSolid, type Grid, type Spawn } from './mapGen';
+import { ZONE_RADII } from './zones';
 
 export interface CampMember {
   type: string;
@@ -32,8 +33,8 @@ export interface CampPlan {
   boss: { col: number; row: number };
 }
 
-/** The three rings, as distances from the plaza in tiles. */
-export const TIER_EDGES: readonly [number, number] = [30, 52];
+/** The three rings (the city's zones), as distances from the plaza in tiles. */
+export const TIER_EDGES: readonly [number, number] = ZONE_RADII;
 export const tierAt = (distTiles: number): 0 | 1 | 2 => (distTiles < TIER_EDGES[0] ? 0 : distTiles < TIER_EDGES[1] ? 1 : 2);
 
 /** Who lives in each ring. */
@@ -48,7 +49,9 @@ export const CAMP_COUNT = 16;
 const SPACING = 13;
 const BOSS_CLEARANCE = 11;
 /** Nothing stands closer than this to the plaza: the knight starts in peace. */
-export const CAMP_CLEARANCE = PLAZA_RADIUS + 12;
+export const CAMP_CLEARANCE = PLAZA_RADIUS + 7;
+/** ...and none stands in a ring of rock, or at a gate: this far from the zone edges. */
+const RING_CLEARANCE = 3;
 
 const isFloor = (t: number) => t === TileType.GRASS_A || t === TileType.GRASS_B || t === TileType.PATH;
 const isWet = (t: number) => t === TileType.WATER || t === TileType.SHALLOW;
@@ -93,7 +96,7 @@ export function placeCamps(grid: Grid, spawn: Spawn, seed: number, signature?: s
   for (let row = margin; row < rows - margin; row++) {
     for (let col = margin; col < cols - margin; col++) {
       const d = Math.hypot(col - spawn.col, row - spawn.row);
-      if (d >= CAMP_CLEARANCE && isOpen(grid, col, row)) candidates.push({ col, row, d });
+      if (d >= CAMP_CLEARANCE && ZONE_RADII.every((r) => Math.abs(d - r) >= RING_CLEARANCE) && isOpen(grid, col, row)) candidates.push({ col, row, d });
     }
   }
   // The boss: among the farthest open ground, the one nearest a road if there is one (a bus wants a street).

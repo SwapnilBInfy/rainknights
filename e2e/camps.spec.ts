@@ -126,7 +126,7 @@ test('a defeated resident stays down until the knight has been away and come bac
   await page.waitForTimeout(800);
   expect((await camps(page)).alive).toBeLessThan(c0.count);
   // go far away (more than the respawn distance), and it comes back
-  await tp(page, 800, 800);
+  await tp(page, Math.min(1500, Math.max(100, target.x > 800 ? target.x - 600 : target.x + 600)), target.y);
   await page.waitForFunction((n) => (window as any).__rk.camps().alive >= n, c0.count, { polling: 'raf', timeout: 8_000 });
   expect(errors, errors.join('\n')).toEqual([]);
 });
@@ -156,6 +156,8 @@ test('defeating the waiting boss wins the run', async ({ page }) => {
   await page.waitForFunction(() => (window as any).__rk.camps().boss?.aggro, undefined, { polling: 'raf', timeout: 5_000 });
   await page.evaluate(`window.__rk.killBoss()`);
   await expect(page.locator('#app')).toHaveAttribute('data-scene', 'GameOverScene', { timeout: 10_000 });
+  // the first boss won earns the second knight
+  await expect(page.locator('#app')).toHaveAttribute('data-new-knight', /Hail Warden/);
   expect(errors, errors.join('\n')).toEqual([]);
 });
 

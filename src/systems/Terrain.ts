@@ -215,6 +215,8 @@ export interface TerrainOptions {
   condition: string;
   /** The storm front the run is on, which decides how far a hurricane has flooded. */
   frontIndex: number;
+  /** Cut the city into zones with level-locked gates (see zones.ts). */
+  zoned?: boolean;
 }
 
 export function randomSeed(): number {
@@ -231,7 +233,7 @@ export function seedFromUrl(): number | null {
 }
 
 export function buildTerrain(scene: Phaser.Scene, region: RegionDef, opts: TerrainOptions): TerrainResult {
-  const generated = generateMap(region.id, opts.seed);
+  const generated = generateMap(region.id, opts.seed, undefined, undefined, opts.zoned === true);
   const baseGrid = applyStaticWeather(generated.grid, opts.condition, opts.seed);
   const rings = floodRingsFor(opts.condition, opts.frontIndex);
   const grid = applyFlood(baseGrid, rings);
