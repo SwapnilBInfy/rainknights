@@ -17,6 +17,7 @@ import { WeatherDirector } from '../systems/WeatherDirector';
 import { CampDirector } from '../systems/CampDirector';
 import { GateDirector, GATE_NAME } from '../systems/GateDirector';
 import { gateLevels, levelForZone, suggestedLevel, zoneAt } from '../systems/zones';
+import { NO_SCALE, bossScaleFor, scaleFor } from '../systems/difficulty';
 import { placeCamps, tunnelCamps } from '../systems/camps';
 import { laterHero } from '../systems/hero';
 import { HazardDirector, type HazardHost } from '../systems/HazardDirector';
@@ -843,6 +844,13 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(1500, show);
   }
 
+  /** How tough an enemy is at this spot: by the zone it is in and the city (none in the tutorial; tunnels count as midtown). */
+  private scaleAt(x: number, y: number) {
+    if (this.tutorial) return NO_SCALE;
+    if (this.level === 'underground') return scaleFor(this.region.id, 1);
+    return scaleFor(this.region.id, zoneAt(Math.floor(x / TILE), Math.floor(y / TILE), this.surfaceSpawn));
+  }
+
   /** A free enemy near the knight that chases at once: a boss's backup, or one from the debug bridge. */
   spawnEnemyAroundPlayer(typeKey: string) {
     if (this.enemyGroup.countActive(true) >= MAX_LIVING_ENEMIES) return; // see MAX_LIVING_ENEMIES
@@ -859,6 +867,7 @@ export class GameScene extends Phaser.Scene {
   private spawnEnemyAt(typeKey: string, x: number, y: number): Enemy {
     const enemy = createEnemy(this, typeKey, x, y, this.player);
     enemy.terrain = this.terrain.field;
+    enemy.scaleTo(this.scaleAt(x, y));
     enemy.on('crash', this.handleCrash);
     enemy.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(enemy);
@@ -873,6 +882,7 @@ export class GameScene extends Phaser.Scene {
   private createBoss(x: number, y: number, resident: boolean, remainingHp?: number | null): Enemy {
     const boss = createEnemy(this, this.region.boss, x, y, this.player);
     boss.terrain = this.terrain.field;
+    if (!this.tutorial) boss.scaleTo(bossScaleFor(this.region.id));
     boss.on('crash', this.handleCrash);
     boss.once('enemyDied', this.handleEnemyDeath);
     boss.on('bossRage', () => {

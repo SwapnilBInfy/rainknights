@@ -50,6 +50,8 @@ test('a Cab Wraith winds up with a warning, charges, stalls, then cruises again'
 test('NYC has Cab Wraiths in its camps, and the first one to spot the knight announces itself', async ({ page }) => {
   const errors = await beginRun(page, 'nyc');
   const app = page.locator('#app');
+  // (this is about the hint, not survival: a core camp now hits hard enough to end a level-1 knight before it shows)
+  await page.evaluate(`setInterval(() => { try { window.__rk.heal(); } catch {} }, 30)`);
   const spots = await page.evaluate(`window.__rk.camps().spots`) as { x: number; y: number; type: string }[];
   const cab = spots.find((s) => s.type === 'cabWraith');
   expect(cab, 'a camp with a Cab Wraith').toBeTruthy();

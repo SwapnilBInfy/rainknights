@@ -34,6 +34,9 @@ export class GameOverScene extends Phaser.Scene {
     drawWindow(this, 30, 16, 180, 128);
 
     const title = data.won ? 'VICTORY!' : 'GAME OVER';
+    const root = document.getElementById('app');
+    if (root) root.dataset.runResult = data.won ? 'won' : 'lost';
+    this.events.once('shutdown', () => root && delete root.dataset.runResult);
     this.add
       .text(width / 2, 28, title, { fontFamily: FONT, fontSize: '16px', color: data.won ? '#28a038' : '#d03028' })
       .setOrigin(0.5, 0);
