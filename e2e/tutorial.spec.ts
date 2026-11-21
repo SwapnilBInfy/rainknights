@@ -29,6 +29,35 @@ const waitForStep = (page: Page, id: string) =>
     throw new Error(`still waiting for step "${id}": ${state}\n${e.message}`);
   });
 
+/** Walk toward the nearest enemy of a type until within `stop` px (or the step has moved on). */
+async function walkTo(page: Page, type: string, stop: number) {
+  const keys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
+  const down = new Set<string>();
+  const set = async (want: Set<string>) => {
+    for (const k of keys) {
+      if (want.has(k) && !down.has(k)) await page.keyboard.down(k), down.add(k);
+      if (!want.has(k) && down.has(k)) await page.keyboard.up(k), down.delete(k);
+    }
+  };
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const info = await page.evaluate(`JSON.stringify({ step: window.__rk.tutorialStep(), types: window.__rk.enemyTypes(), off: window.__rk.enemyOffsets() })`);
+    const { step: s, types, off } = JSON.parse(info as string) as { step: string; types: string[]; off: number[][] };
+    const i = types.indexOf(type);
+    if (s !== 'notice' || i < 0) break;
+    const [dx, dy] = off[i];
+    if (Math.hypot(dx, dy) <= stop) break;
+    const want = new Set<string>();
+    if (dx > 4) want.add('KeyD');
+    if (dx < -4) want.add('KeyA');
+    if (dy > 4) want.add('KeyS');
+    if (dy < -4) want.add('KeyW');
+    await set(want);
+    await page.waitForTimeout(40);
+  }
+  await set(new Set());
+}
+
 /** Steer toward the nearest gem until none are left (or the step has moved on). */
 async function walkToGems(page: Page) {
   const keys = ['KeyW', 'KeyA', 'KeyS', 'KeyD'];
@@ -58,7 +87,7 @@ async function walkToGems(page: Page) {
 
 test('the title offers the tutorial, and a fresh player can start it with T', async ({ page }) => {
   const errors = await openTutorial(page);
-  await expect(page.locator('#app')).toHaveAttribute('data-prompt', /^1\/10 MOVE \| Walk around with WASD/);
+  await expect(page.locator('#app')).toHaveAttribute('data-prompt', /^1\/11 MOVE \| Walk around with WASD/);
   expect(await step(page)).toBe('move');
   // No storm: no clock, no waves, no boss.
   await page.waitForTimeout(1500);
@@ -86,17 +115,32 @@ test('walks through every step with real input, then returns to the title', asyn
   // 3 BEAM: two dummies in a line; fire.
   await page.waitForFunction(() => (window as any).__rk.enemyTypes().filter((t: string) => t === 'trainingDummy').length >= 2, undefined, frame);
   await page.keyboard.down('KeyJ');
-  await waitForStep(page, 'gems');
+  await waitForStep(page, 'notice');
   await page.keyboard.up('KeyJ');
+
+  // 3b SLEEPING FOE: an imp stands still until the knight comes close. Walk up to it, and deal with it.
+  await page.waitForFunction(() => (window as any).__rk.enemyTypes().includes('rainImp'), undefined, frame);
+  await walkTo(page, 'rainImp', 50);
+  await page.keyboard.down('Space');
+  await waitForStep(page, 'gems');
+  await page.keyboard.up('Space');
 
   // 4 GEMS: three gems appear around the knight. Walk to each one.
   await walkToGems(page);
   await waitForStep(page, 'levelup');
 
-  // 5 LEVEL UP: the level gave 3 points; open the Bag (I) to see them, then close it.
+  // 5 LEVEL UP: the level gave 3 points; open the Bag (I), go to STATS and put one in Strength.
+  await page.waitForFunction(() => (window as any).__rk.statPoints() > 0, undefined, frame);
   await page.keyboard.press('KeyI');
   await expect(app).toHaveAttribute('data-bag-page', 'top');
-  await page.waitForTimeout(300);
+  for (const key of ['ArrowDown', 'ArrowDown', 'Space']) {
+    await page.waitForTimeout(90);
+    await page.keyboard.press(key);
+  }
+  await expect(app).toHaveAttribute('data-bag-page', 'stats');
+  await page.waitForTimeout(90);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(150);
   await page.keyboard.press('KeyI');
   await expect(app).not.toHaveAttribute('data-bag-page', /.+/);
   await waitForStep(page, 'dodge');
@@ -144,8 +188,8 @@ test('walks through every step with real input, then returns to the title', asyn
     throw new Error(`stuck at the storm step: ${state}\n${e.message}`);
   });
 
-  // 10 DONE: Space returns to the title.
-  await expect(app).toHaveAttribute('data-prompt', /^10\/10 ALL SET!/);
+  // 11 DONE: Space returns to the title.
+  await expect(app).toHaveAttribute('data-prompt', /^11\/11 ALL SET!/);
   await page.waitForTimeout(900);
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-scene', 'MenuScene');

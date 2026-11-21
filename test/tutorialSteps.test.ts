@@ -40,7 +40,7 @@ describe('tutorial text', () => {
   });
 
   it('covers the whole game, ending on a final step', () => {
-    expect(TUTORIAL_STEPS.map((s) => s.id)).toEqual(['move', 'swing', 'beam', 'gems', 'levelup', 'dodge', 'strike', 'wet', 'storm', 'done']);
+    expect(TUTORIAL_STEPS.map((s) => s.id)).toEqual(['move', 'swing', 'beam', 'notice', 'gems', 'levelup', 'dodge', 'strike', 'wet', 'storm', 'done']);
   });
 });
 
@@ -133,7 +133,9 @@ describe('TutorialRunner', () => {
     expect(by('beam', { beamHits: 2 })).toBe(true);
     expect(by('gems', { gems: 2 })).toBe(false);
     expect(by('gems', { gems: 3 })).toBe(true);
-    expect(by('levelup', { bagOpened: true })).toBe(true);
+    expect(by('levelup', { statSpent: true })).toBe(true);
+    expect(by('notice', { noticed: true })).toBe(false); // woken is not enough: it must be dealt with too
+    expect(by('notice', { noticed: true, sleeperDown: true })).toBe(true);
     expect(by('dodge', { dodgedCharge: true })).toBe(true);
     expect(by('strike', { cabKilled: true })).toBe(true);
     expect(by('wet', { wetShocks: true })).toBe(true);

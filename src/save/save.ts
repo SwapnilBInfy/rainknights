@@ -4,6 +4,7 @@ import { REGIONS } from '../config/regions';
 import { freshStory, sanitizeStory, type StoryState } from '../story/story';
 import { sanitizeCharms } from '../economy/charms';
 import { sanitizeHero } from '../systems/hero';
+import { sanitizeTips, type TipId } from '../systems/guide';
 import { newlyEarned, sanitizeUnlocked, type UnlockContext } from '../systems/unlocks';
 import { freshAllocation, pointsForLevel, pointsSpent, sanitizeAllocation, type Allocation } from '../systems/stats';
 import {
@@ -113,6 +114,8 @@ export interface SaveData {
   town: TownProfile;
   /** Story mode. Absent until the story is first started (older saves have none). */
   story?: StoryState;
+  /** One-time tips already shown (a foe spotting you, a locked gate...), so they are never repeated. Absent until the first. */
+  tips?: TipId[];
 }
 
 export type { TownProfile };
@@ -367,6 +370,20 @@ export function arriveInTown(): TownProfile {
   return gameSave.load().town;
 }
 
+/** Whether a one-time tip has been shown already. */
+export function tipSeen(id: TipId): boolean {
+  return (gameSave.load().tips ?? []).includes(id);
+}
+
+/** Remember that a one-time tip has been shown. Returns true the first time (so the caller shows it), false after. */
+export function markTip(id: TipId): boolean {
+  if (tipSeen(id)) return false;
+  gameSave.update((save) => {
+    save.tips = [...(save.tips ?? []), id];
+  });
+  return true;
+}
+
 /** Hand over any knight the player has now earned. Returns their names, for a "new knight!" message. */
 export function grantUnlocks(): string[] {
   const save = gameSave.load();
@@ -456,7 +473,15 @@ function normalizeSave(doc: Record<string, unknown>): SaveData | null {
   const meta = readMeta(doc.meta) ?? defaultSave().meta;
   const run = doc.run == null ? null : readRun(doc.run);
   const town = readTown(doc.town);
-  return { version: 2, settings, meta, run, town, ...(doc.story === undefined ? {} : { story: sanitizeStory(doc.story) }) };
+  return {
+    version: 2,
+    settings,
+    meta,
+    run,
+    town,
+    ...(doc.story === undefined ? {} : { story: sanitizeStory(doc.story) }),
+    ...(doc.tips === undefined ? {} : { tips: sanitizeTips(doc.tips) }),
+  };
 }
 
 const CONSUMABLE_IDS = new Set(CONSUMABLES.map((item) => item.id));

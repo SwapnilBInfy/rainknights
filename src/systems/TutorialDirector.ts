@@ -29,6 +29,8 @@ export interface TutorialHost {
   /** Is this open ground (not rock or water)? */
   isOpen(x: number, y: number): boolean;
   spawnDummy(x: number, y: number): Enemy;
+  /** A resident imp that stands still until the knight comes close (or hits it). */
+  spawnSleeper(x: number, y: number): Enemy;
   spawnCab(x: number, y: number): Enemy;
   spawnGems(count: number): void;
   /** How many XP gems are lying on the ground. */
@@ -42,7 +44,7 @@ export interface TutorialHost {
 }
 
 /** What the scene tells the director happened. */
-export type TutorialNote = 'meleeHit' | 'beamHit' | 'gem' | 'bag' | 'wetShock' | 'hurt';
+export type TutorialNote = 'meleeHit' | 'beamHit' | 'gem' | 'spend' | 'spotted' | 'wetShock' | 'hurt';
 
 /**
  * Sets up and watches each tutorial step in the real game: dummies to hit,
@@ -89,8 +91,11 @@ export class TutorialDirector {
       case 'gem':
         if (this.stepId === 'gems') s.gems += 1;
         break;
-      case 'bag':
-        if (this.stepId === 'levelup') s.bagOpened = true;
+      case 'spend':
+        if (this.stepId === 'levelup') s.statSpent = true;
+        break;
+      case 'spotted':
+        if (this.stepId === 'notice') s.noticed = true;
         break;
       case 'wetShock':
         if (this.stepId === 'wet') s.wetShocks = true;
@@ -151,6 +156,9 @@ export class TutorialDirector {
         // Two in a row along the way the knight faces: the beam goes through both.
         this.placeAhead([44, 78]);
         break;
+      case 'notice':
+        this.dummy = this.placeSleeper();
+        break;
       case 'gems':
         this.host.spawnGems(3);
         break;
@@ -181,7 +189,12 @@ export class TutorialDirector {
    * ground (the knight's own facing if possible), and turn the knight to face them.
    * Rocks and water are random, so the target is never left out of reach or behind them.
    */
-  private placeAhead(distances: number[]): Enemy[] {
+  /** A sleeping imp well out of its own sight (it sees about 70px), in clear ground the knight is facing. */
+  private placeSleeper(): Enemy {
+    return this.placeAhead([115], (x, y) => this.host.spawnSleeper(x, y))[0];
+  }
+
+  private placeAhead(distances: number[], spawn: (x: number, y: number) => Enemy = (x, y) => this.host.spawnDummy(x, y)): Enemy[] {
     const p = this.host.player;
     const base = Math.atan2(p.aim.y, p.aim.x);
     let chosen = base;
@@ -195,7 +208,7 @@ export class TutorialDirector {
     const dx = Math.cos(chosen);
     const dy = Math.sin(chosen);
     p.faceToward(dx, dy);
-    return distances.map((d) => this.host.spawnDummy(p.x + dx * d, p.y + dy * d));
+    return distances.map((d) => spawn(p.x + dx * d, p.y + dy * d));
   }
 
   /**
@@ -239,7 +252,7 @@ export class TutorialDirector {
 
   private watchStep(dt: number) {
     const s = this.runner.state;
-    if (this.stepId === 'swing' || this.stepId === 'beam' || this.stepId === 'wet') this.faceTarget();
+    if (this.stepId === 'swing' || this.stepId === 'beam' || this.stepId === 'wet' || this.stepId === 'notice') this.faceTarget();
     switch (this.stepId) {
       case 'swing':
         if (!this.dummy?.active) this.dummy = this.placeAhead([SWING_DIST])[0];
@@ -250,6 +263,12 @@ export class TutorialDirector {
           this.placeAhead([44, 78]);
         }
         break;
+      case 'notice': {
+        // the sleeper is down once it has been woken and is gone; if it vanished some other way, put a new one out
+        if (s.noticed && !this.dummy?.active) s.sleeperDown = true;
+        else if (!s.noticed && !this.dummy?.active) this.dummy = this.placeSleeper();
+        break;
+      }
       case 'gems': {
         // Never leave the step short of gems (one lost behind a wall, say): drop replacements.
         this.gemCheckMs += dt;

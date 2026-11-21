@@ -119,7 +119,7 @@ export class MenuScene extends Phaser.Scene {
     this.add.text(width / 2, 22, 'RAIN', title).setOrigin(0.5, 0).setDepth(5);
     this.add.text(width / 2, 42, 'KNIGHTS', title).setOrigin(0.5, 0).setDepth(5);
     if (!choices) {
-      this.add.text(width / 2, 66, 'A STORM SURVIVAL', textStyle('#c8c8e8')).setOrigin(0.5, 0).setDepth(5);
+      this.add.text(width / 2, 66, 'A WEATHER ADVENTURE', textStyle('#c8c8e8')).setOrigin(0.5, 0).setDepth(5);
     }
 
     if (this.best) {
@@ -153,8 +153,15 @@ export class MenuScene extends Phaser.Scene {
       ? this.add.text(4, 4, 'T: TUTORIAL', linkStyle).setOrigin(0, 0)
       : this.add.text(width / 2, 134, 'T: TUTORIAL', linkStyle).setOrigin(0.5, 0);
     link.setDepth(8).setInteractive({ useHandCursor: true });
+    // A player with nothing saved is new: the tutorial link glows gold and pulses, so it is the thing they see
+    const fresh = !choices;
+    const linkColor = fresh ? '#ffe9a0' : '#a8e0ff';
+    if (fresh) {
+      link.setColor(linkColor);
+      this.tweens.add({ targets: link, alpha: 0.45, duration: 700, yoyo: true, repeat: -1 });
+    }
     link.on('pointerover', () => link.setColor('#f8f8f8'));
-    link.on('pointerout', () => link.setColor('#a8e0ff'));
+    link.on('pointerout', () => link.setColor(linkColor));
     link.on('pointerdown', () => this.startTutorial());
     // Story mode: "The Long Rain". Beside the tutorial link (under it on a saved game's menu).
     const story = loadStory();

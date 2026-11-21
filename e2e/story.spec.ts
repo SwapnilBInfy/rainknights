@@ -128,13 +128,14 @@ test('the title offers the story; starting it plays the prologue, then Mistford 
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
-test('a game that never chose the story has no story: no objective, no weathervane, no Marrow', async ({ page }) => {
+test('a game that never chose the story has no story: no story objective, no weathervane, no Marrow', async ({ page }) => {
   await page.goto('/');
   await expect(app(page)).toHaveAttribute('data-scene', 'MenuScene');
   await page.keyboard.press('Space');
   await expect(app(page)).toHaveAttribute('data-scene', 'TownScene');
   expect(await hub<boolean>(page, 'story().started')).toBe(false);
-  expect(await app(page).getAttribute('data-objective')).toBeNull();
+  // (the strip tells a new player what to do first, not what the story wants)
+  expect(await app(page).getAttribute('data-objective')).toBe('FLY: STAND ON THE BLUE PAD');
   await page.evaluate(`window.__hub.tp(10, 2)`); // where Marrow stands once the story begins
   await page.waitForTimeout(200);
   expect(await app(page).getAttribute('data-interact')).toBe('');
@@ -218,7 +219,8 @@ test('a win in the wrong city gives nothing: Miami is not wanted in stage 2', as
   await seed(page, stageAt(2));
   await intoMistford(page);
   await runIn(page, 'miami');
-  expect(await app(page).getAttribute('data-objective'), 'no story line in a city the story does not want').toBeNull();
+  // the story wants nothing in Miami: the strip gives the city's own goal instead of a story line
+  expect(await app(page).getAttribute('data-objective'), 'no story line in a city the story does not want').toBe('REACH LV4: OPENS THE GATE');
   await page.evaluate(`window.__rk.spawnBoss()`);
   await page.evaluate(`window.__rk.killBoss()`);
   await expect(app(page)).toHaveAttribute('data-scene', 'GameOverScene', { timeout: 8_000 });
