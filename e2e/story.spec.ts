@@ -351,6 +351,9 @@ async function downTo(page: Page, pick: (rows: { id: number; kind: string; pair?
   await rk(page, `tpToPoi('entrance', ${n})`);
   await page.waitForFunction(() => (window as any).__rk?.depth?.() === 'underground', undefined, frame);
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, frame);
+  // the tunnel has residents of its own (midtown strength now): this is about the tablet, not the fight
+  await page.evaluate(`window.__rk.clearEnemies()`);
+  await rk(page, 'heal()');
 }
 
 /** Start a run in a city the real way: onto the pad in Mistford, up into the flight map, and down onto the city's star. */
