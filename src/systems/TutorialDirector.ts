@@ -42,7 +42,7 @@ export interface TutorialHost {
 }
 
 /** What the scene tells the director happened. */
-export type TutorialNote = 'meleeHit' | 'beamHit' | 'gem' | 'powerup' | 'wetShock' | 'hurt';
+export type TutorialNote = 'meleeHit' | 'beamHit' | 'gem' | 'bag' | 'wetShock' | 'hurt';
 
 /**
  * Sets up and watches each tutorial step in the real game: dummies to hit,
@@ -89,8 +89,8 @@ export class TutorialDirector {
       case 'gem':
         if (this.stepId === 'gems') s.gems += 1;
         break;
-      case 'powerup':
-        if (this.stepId === 'levelup') s.powerupPicked = true;
+      case 'bag':
+        if (this.stepId === 'levelup') s.bagOpened = true;
         break;
       case 'wetShock':
         if (this.stepId === 'wet') s.wetShocks = true;

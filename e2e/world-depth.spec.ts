@@ -20,26 +20,21 @@ async function begin(page: Page, city = 'nyc', query = '?seed=33') {
   return errors;
 }
 
-/** A quiet moment: nothing around to knock the knight about, a full health bar, and no level-up menu open. */
+/** A quiet moment: nothing around to knock the knight about, a full health bar, and no Bag open. */
 async function quiet(page: Page) {
   for (let i = 0; i < 6; i++) {
     await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
     await rk(page, 'heal()');
-    if ((await app(page).getAttribute('data-level-up')) !== 'open') return;
-    await page.waitForTimeout(450);
-    await page.keyboard.press('Space');
+    if ((await app(page).getAttribute('data-bag-page')) === null) return;
+    await page.keyboard.press('KeyI');
     await page.waitForTimeout(250);
   }
 }
 
-/** Wait for the level to change, taking the first choice of any level-up menu that opens meanwhile (a crate's gems can level the knight up, which pauses the run). */
+/** Wait for the level to change. */
 async function waitForDepth(page: Page, want: 'surface' | 'underground') {
   for (let i = 0; i < 160; i++) {
     if ((await app(page).getAttribute('data-scene')) === 'GameScene' && (await page.evaluate(`window.__rk?.depth?.()`)) === want && (await page.evaluate(`window.__rk?.hp?.() > 0`))) return;
-    if ((await app(page).getAttribute('data-level-up')) === 'open') {
-      await page.waitForTimeout(450);
-      await page.keyboard.press('Space');
-    }
     await page.waitForTimeout(120);
   }
   throw new Error(`never reached ${want}`);
@@ -69,14 +64,20 @@ test('the surface has four entrances, three shrines and ten crates, every one on
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
-test('N turns the minimap on and off; it starts on', async ({ page }) => {
-  await begin(page);
-  expect(await rk<string>(page, 'minimap()')).toBe('on');
-  await expect(app(page)).toHaveAttribute('data-minimap', 'on');
+test('the map is in the Bag, not on the screen: N opens it, and it stops the game until you close it', async ({ page }) => {
+  const errors = await begin(page);
+  await expect(app(page)).not.toHaveAttribute('data-minimap', /.+/); // no corner minimap any more
+  expect(await rk<string | null>(page, 'bagPage()')).toBeNull();
   await page.keyboard.press('KeyN');
-  await expect(app(page)).toHaveAttribute('data-minimap', 'off');
-  await page.keyboard.press('KeyN');
-  await expect(app(page)).toHaveAttribute('data-minimap', 'on');
+  await expect(app(page)).toHaveAttribute('data-bag-page', 'map');
+  expect(await rk<boolean>(page, 'isScenePaused()')).toBe(true);
+  await page.screenshot({ path: 'e2e-artifacts/bag-map.png' });
+  await page.keyboard.press('Escape'); // back to the Bag
+  await expect(app(page)).toHaveAttribute('data-bag-page', 'top');
+  await page.keyboard.press('KeyI'); // and out
+  await expect(app(page)).not.toHaveAttribute('data-bag-page', /.+/);
+  expect(await rk<boolean>(page, 'isScenePaused()')).toBe(false);
+  expect(errors, errors.join('\n')).toEqual([]);
 });
 
 test('a supply crate opens when touched, once: drips and gems, and it stays open', async ({ page }) => {

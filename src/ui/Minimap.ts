@@ -11,23 +11,28 @@ export interface MiniDot {
 let counter = 0;
 
 /**
- * A corner minimap: the whole map, one pixel for every 2x2 tiles, with a blip for the knight and for what is worth
- * finding. N turns it on and off. Drawn once from the grid (and again if the map changes, as a flood does), with
- * the blips on top each frame.
+ * The map: the whole world, one pixel for every 2x2 tiles, with a blip for the knight and for what is worth finding.
+ * It lives in the Bag (N or I, then MAP), drawn at 2x when the Bag opens, not on the battle screen.
  */
 export class Minimap {
   private image: Phaser.GameObjects.Image | null = null;
   private readonly frame: Phaser.GameObjects.Graphics;
   private readonly dots: Phaser.GameObjects.Graphics;
   private key = '';
-  private on = true;
   private w = 0;
   private h = 0;
   private flooding = '';
 
-  constructor(private readonly scene: Phaser.Scene, private readonly x = 187, private readonly y = 16) {
-    this.frame = scene.add.graphics().setScrollFactor(0).setDepth(139);
-    this.dots = scene.add.graphics().setScrollFactor(0).setDepth(141);
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly x = 187,
+    private readonly y = 16,
+    /** Whole-number zoom: the Bag draws the map at 2x. */
+    private readonly scale = 1,
+    private readonly depth = 139
+  ) {
+    this.frame = scene.add.graphics().setScrollFactor(0).setDepth(depth);
+    this.dots = scene.add.graphics().setScrollFactor(0).setDepth(depth + 2);
   }
 
   /** Draw (or redraw) the map's picture. */
@@ -51,9 +56,10 @@ export class Minimap {
     });
     ctx.putImageData(img, 0, 0);
     tex.refresh();
-    this.image = this.scene.add.image(this.x, this.y, this.key).setOrigin(0, 0).setScrollFactor(0).setDepth(140).setAlpha(0.82);
-    this.frame.clear().lineStyle(1, 0x14121f, 1).strokeRect(this.x - 0.5, this.y - 0.5, w + 1, h + 1).lineStyle(1, 0xe8f0f8, 0.8).strokeRect(this.x - 1.5, this.y - 1.5, w + 3, h + 3);
-    this.apply();
+    this.image = this.scene.add.image(this.x, this.y, this.key).setOrigin(0, 0).setScale(this.scale).setScrollFactor(0).setDepth(this.depth + 1).setAlpha(0.95);
+    const sw = w * this.scale;
+    const sh = h * this.scale;
+    this.frame.clear().lineStyle(1, 0x14121f, 1).strokeRect(this.x - 0.5, this.y - 0.5, sw + 1, sh + 1).lineStyle(1, 0xe8f0f8, 0.8).strokeRect(this.x - 1.5, this.y - 1.5, sw + 3, sh + 3);
   }
 
   /** The map's picture is out of date if this stamp (the flood level) has changed. */
@@ -64,39 +70,15 @@ export class Minimap {
   update(player: { x: number; y: number }, dots: MiniDot[], blink: boolean) {
     const g = this.dots;
     g.clear();
-    if (!this.on || !this.image) return;
+    if (!this.image) return;
+    const k = this.scale;
     for (const d of dots) {
       const p = miniPoint(d.x, d.y);
-      g.fillStyle(0x14121f, 1).fillRect(Math.round(this.x + p.x) - 1, Math.round(this.y + p.y) - 1, 3, 3);
-      g.fillStyle(d.color, 1).fillRect(Math.round(this.x + p.x) - 1 + 0, Math.round(this.y + p.y) - 1 + 0, 2, 2);
+      g.fillStyle(0x14121f, 1).fillRect(Math.round(this.x + p.x * k) - 1, Math.round(this.y + p.y * k) - 1, 3, 3);
+      g.fillStyle(d.color, 1).fillRect(Math.round(this.x + p.x * k) - 1, Math.round(this.y + p.y * k) - 1, 2, 2);
     }
     const me = miniPoint(player.x, player.y);
-    if (blink) g.fillStyle(0xffffff, 1).fillRect(Math.round(this.x + me.x) - 1, Math.round(this.y + me.y) - 1, 3, 3);
-    else g.fillStyle(0xff4a4a, 1).fillRect(Math.round(this.x + me.x) - 1, Math.round(this.y + me.y) - 1, 3, 3);
-  }
-
-  toggle(): boolean {
-    this.on = !this.on;
-    this.apply();
-    return this.on;
-  }
-
-  get visible(): boolean {
-    return this.on;
-  }
-
-  setHidden(hidden: boolean) {
-    this.image?.setVisible(this.on && !hidden);
-    this.frame.setVisible(this.on && !hidden);
-    this.dots.setVisible(this.on && !hidden);
-  }
-
-  private apply() {
-    this.image?.setVisible(this.on);
-    this.frame.setVisible(this.on);
-    this.dots.setVisible(this.on);
-    const app = document.getElementById('app');
-    if (app) app.dataset.minimap = this.on ? 'on' : 'off';
+    g.fillStyle(blink ? 0xffffff : 0xff4a4a, 1).fillRect(Math.round(this.x + me.x * k) - 1, Math.round(this.y + me.y * k) - 1, 3, 3);
   }
 
   get size(): { w: number; h: number } {
@@ -112,7 +94,5 @@ export class Minimap {
     if (this.key) this.scene.textures.remove(this.key);
     this.frame.destroy();
     this.dots.destroy();
-    const app = document.getElementById('app');
-    if (app) delete app.dataset.minimap;
   }
 }

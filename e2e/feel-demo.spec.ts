@@ -43,13 +43,13 @@ test('feel follow-ups demo', async ({ page }) => {
   await page.waitForTimeout(500);
 
   await page.evaluate(() => window.__rk?.grantLevel());
-  await expect(app).toHaveAttribute('data-level-up', 'open');
-  expect(await page.evaluate(() => window.__rk?.isScenePaused())).toBe(true);
   await page.waitForTimeout(1600);
-  await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(350);
-  await page.keyboard.press('Space');
-  await expect(app).not.toHaveAttribute('data-level-up', 'open');
+  await page.keyboard.press('KeyI');
+  await expect(app).toHaveAttribute('data-bag-page', 'top');
+  expect(await page.evaluate(() => window.__rk?.isScenePaused())).toBe(true);
+  await page.waitForTimeout(600);
+  await page.keyboard.press('KeyI');
+  await expect(app).not.toHaveAttribute('data-bag-page', /.+/);
   await page.waitForTimeout(900);
 });
 

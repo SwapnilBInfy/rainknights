@@ -2,6 +2,8 @@ import { CHARACTERS } from '../config/characters';
 import { WEATHER_FRONTS, WORLD } from '../config/constants';
 import { REGIONS } from '../config/regions';
 import { freshStory, sanitizeStory, type StoryState } from '../story/story';
+import { sanitizeCharms } from '../economy/charms';
+import { freshAllocation, pointsForLevel, pointsSpent, sanitizeAllocation, type Allocation } from '../systems/stats';
 import {
   ARMOR,
   BAG_CAP,
@@ -70,6 +72,10 @@ export interface PlayerSnapshot {
   xpToNext: number;
   kills: number;
   powerups: PowerupSnapshot;
+  /** Stat points spent so far; unspent points are what the level earned less this. Absent in older saves. */
+  statAlloc?: Allocation;
+  /** Powers from shrines (the charms' powers are added on top). Absent in older saves, where `powerups` is all there was. */
+  bonusPowers?: PowerupSnapshot;
   facing: (typeof FACINGS)[number];
   flipX: boolean;
   aimX: number;
@@ -444,6 +450,7 @@ function readTown(value: unknown): TownProfile {
     ? value.ownedArmor.filter((id): id is string => typeof id === 'string' && ARMOR_IDS.has(id))
     : [];
   const armorId = typeof value.armorId === 'string' && ownedArmor.includes(value.armorId) ? value.armorId : null;
+  const charms = sanitizeCharms(value.charms, value.worn);
   const max = townMaxHp(characterId, armorId);
   const hpRaw = readInt(value.hp, 1, 10_000);
   const coins = readInt(value.coins, 0, MAX_DRIPS) ?? 0;
@@ -454,6 +461,8 @@ function readTown(value: unknown): TownProfile {
     stash: readStacks(value.stash, STASH_CAP),
     ownedArmor,
     armorId,
+    charms: charms.owned,
+    worn: charms.worn,
     hp: hpRaw === null ? max : Math.min(max, hpRaw),
     visited: value.visited === true,
     fromLegacy: value.fromLegacy === true,
@@ -554,6 +563,7 @@ function readPlayer(value: unknown): PlayerSnapshot | null {
   const xpToNext = readNum(value.xpToNext, 1, 1_000_000);
   const kills = readInt(value.kills, 0, 1_000_000);
   const powerups = readPowerups(value.powerups);
+  const bonusPowers = readPowerups(value.bonusPowers) ?? undefined;
   const facing = FACINGS.find((entry) => entry === value.facing);
   const aimX = readNum(value.aimX, -1, 1);
   const aimY = readNum(value.aimY, -1, 1);
@@ -598,11 +608,19 @@ function readPlayer(value: unknown): PlayerSnapshot | null {
     xpToNext,
     kills,
     powerups,
+    ...(isRecord(value.statAlloc) ? { statAlloc: readAlloc(value.statAlloc, level) } : {}),
+    ...(bonusPowers ? { bonusPowers } : {}),
     facing,
     flipX: value.flipX,
     aimX,
     aimY,
   };
+}
+
+/** Spent stat points, trusted only if the level could have earned them. */
+function readAlloc(value: unknown, level: number): Allocation {
+  const alloc = sanitizeAllocation(value);
+  return pointsSpent(alloc) <= pointsForLevel(level) ? alloc : freshAllocation();
 }
 
 function readPowerups(value: unknown): PowerupSnapshot | null {

@@ -8,7 +8,10 @@ declare global {
       grantLevel: () => void;
       isScenePaused: () => boolean;
       elapsedSeconds: () => number;
-      levelUpOpen: () => boolean;
+      bagPage: () => string | null;
+      statPoints: () => number;
+      maxHp: () => number;
+      spend: (stat: string, dir: number) => boolean;
       level: () => number;
       x: () => number;
       y: () => number;
@@ -281,71 +284,64 @@ test.describe('feel follow-ups', () => {
     });
   });
 
-  test('pausing during the level-up heal holds the menu back until you resume', async ({ page }) => {
+  test('a level is a reward, not an interruption: three points, a message, and play goes on', async ({ page }) => {
     const errors = collectErrors(page);
     await beginRun(page);
-    const app = page.locator('#app');
+    expect(await page.evaluate(() => window.__rk?.statPoints())).toBe(0);
 
     await page.evaluate(() => window.__rk?.grantLevel());
-    // The level is gained on the next frame; the menu follows about half a second later. Pause in between.
     await page.waitForFunction(() => (window.__rk?.level() ?? 1) > 1, undefined, { polling: 'raf', timeout: 10_000 });
-    await page.keyboard.press('Escape');
-    const pause = page.getByRole('dialog', { name: 'Paused' });
-    await expect(pause).toBeVisible();
-
-    // The menu must not open on top of the pause overlay.
-    await page.waitForTimeout(900);
-    await expect(app).not.toHaveAttribute('data-level-up', 'open');
-    await expect(pause).toBeVisible();
-
-    // Resuming brings the owed level-up menu.
-    await page.keyboard.press('KeyP');
-    await expect(pause).toBeHidden();
-    await expect(app).toHaveAttribute('data-level-up', 'open');
-    await page.waitForTimeout(450); // the menu ignores confirms for a short beat
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Space');
-    await expect(app).not.toHaveAttribute('data-level-up', 'open');
+    expect(await page.evaluate(() => window.__rk?.statPoints())).toBe(3);
+    // no menu, no pause: the clock keeps running
+    expect(await page.evaluate(() => window.__rk?.bagPage())).toBeNull();
     expect(await page.evaluate(() => window.__rk?.isScenePaused())).toBe(false);
+    const before = await page.evaluate(() => window.__rk?.elapsedSeconds() ?? 0);
+    await page.waitForTimeout(600);
+    expect(await page.evaluate(() => window.__rk?.elapsedSeconds() ?? 0)).toBeGreaterThan(before);
+    await page.screenshot({ path: `${SHOTS}/desktop-level-points.png` });
 
     expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
   });
 
-  test('level-up pauses the scene and ignores the swing that opened it', async ({ page }) => {
+  test('the Bag (I) stops the game, spends points on a stat, and I closes it', async ({ page }) => {
     const errors = collectErrors(page);
     await beginRun(page);
-
-    await page.evaluate(() => window.__rk?.grantLevel());
     const app = page.locator('#app');
-    // The swing key (and touch A, which emits Space) must not confirm yet. Send it in the very frame the menu is
-    // seen open: a separate round trip can outlast the menu's short arm delay on a busy machine, and then Space
-    // would rightly confirm.
-    await page.waitForFunction(
-      () => {
-        if (document.getElementById('app')?.dataset.levelUp !== 'open') return false;
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true }));
-        return true;
-      },
-      undefined,
-      { polling: 'raf', timeout: 10_000 }
-    );
-    await expect(app).toHaveAttribute('data-level-up', 'open');
-    await page.waitForTimeout(120);
-    await expect(app).toHaveAttribute('data-level-up', 'open');
+    await page.evaluate(() => window.__rk?.grantLevel());
+    await page.waitForFunction(() => (window.__rk?.statPoints() ?? 0) === 3, undefined, { polling: 'raf', timeout: 10_000 });
+    const hpMax = await page.evaluate(() => window.__rk?.maxHp() ?? 0);
 
+    await page.keyboard.press('KeyI');
+    await expect(app).toHaveAttribute('data-bag-page', 'top');
+    expect(await page.evaluate(() => window.__rk?.isScenePaused())).toBe(true);
     const before = await page.evaluate(() => window.__rk?.elapsedSeconds());
     await page.waitForTimeout(400);
-    const after = await page.evaluate(() => window.__rk?.elapsedSeconds());
-    expect(after).toBe(before);
-    expect(await page.evaluate(() => window.__rk?.isScenePaused())).toBe(true);
-    await page.screenshot({ path: `${SHOTS}/desktop-levelup-pause.png` });
+    expect(await page.evaluate(() => window.__rk?.elapsedSeconds())).toBe(before);
+    await page.screenshot({ path: `${SHOTS}/desktop-bag.png` });
 
-    // After the guard, a fresh confirm still selects an upgrade and resumes.
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Space');
-    await expect(app).not.toHaveAttribute('data-level-up', 'open');
+    // STATS is the third row; ENDURANCE the third stat. Right adds a point.
+    const tapMenu = async (key: string) => {
+      await page.keyboard.press(key);
+      await page.waitForTimeout(80); // one key per menu frame
+    };
+    await tapMenu('ArrowDown');
+    await tapMenu('ArrowDown');
+    await tapMenu('Space');
+    await expect(app).toHaveAttribute('data-bag-page', 'stats');
+    await tapMenu('ArrowDown');
+    await tapMenu('ArrowDown');
+    await tapMenu('ArrowRight');
+    await tapMenu('ArrowRight');
+    await page.waitForFunction(() => (window.__rk?.statPoints() ?? 9) === 1);
+    expect(await page.evaluate(() => window.__rk?.maxHp() ?? 0)).toBe(hpMax + 16);
+    await page.screenshot({ path: `${SHOTS}/desktop-bag-stats.png` });
+
+    // Esc steps back to the Bag; I closes it and the game runs again.
+    await page.keyboard.press('Escape');
+    await expect(app).toHaveAttribute('data-bag-page', 'top');
+    await page.keyboard.press('KeyI');
+    await expect(app).not.toHaveAttribute('data-bag-page', /.+/);
     expect(await page.evaluate(() => window.__rk?.isScenePaused())).toBe(false);
-    expect(await page.evaluate(() => window.__rk?.levelUpOpen())).toBe(false);
 
     expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
   });
@@ -359,10 +355,7 @@ test('a run and the mute setting survive reload and Continue', async ({ page }) 
 
   await page.evaluate(() => window.__rk?.grantLevel());
   const app = page.locator('#app');
-  await expect(app).toHaveAttribute('data-level-up', 'open');
-  await page.waitForTimeout(500);
-  await page.keyboard.press('Digit1');
-  await expect(app).not.toHaveAttribute('data-level-up', 'open');
+  await page.waitForFunction(() => (window.__rk?.level() ?? 1) > 1, undefined, { polling: 'raf', timeout: 10_000 });
 
   const before = await page.evaluate(() => {
     const raw = localStorage.getItem('rainknights:save');

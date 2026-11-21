@@ -93,12 +93,12 @@ test('walks through every step with real input, then returns to the title', asyn
   await walkToGems(page);
   await waitForStep(page, 'levelup');
 
-  // 5 LEVEL UP: pick a powerup (a fresh confirm after the open-guard).
-  await expect(app).toHaveAttribute('data-level-up', 'open');
-  await page.waitForTimeout(400);
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Space');
-  await expect(app).not.toHaveAttribute('data-level-up', 'open');
+  // 5 LEVEL UP: the level gave 3 points; open the Bag (I) to see them, then close it.
+  await page.keyboard.press('KeyI');
+  await expect(app).toHaveAttribute('data-bag-page', 'top');
+  await page.waitForTimeout(300);
+  await page.keyboard.press('KeyI');
+  await expect(app).not.toHaveAttribute('data-bag-page', /.+/);
   await waitForStep(page, 'dodge');
 
   // 6 DODGE: roll just as the cab's charge reaches us (the roll's untouchable window covers the pass).

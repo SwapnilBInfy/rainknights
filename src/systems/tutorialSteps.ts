@@ -14,7 +14,7 @@ export interface TutorialState {
   /** Beam hits landed (a piercing beam can score several at once). */
   beamHits: number;
   gems: number;
-  powerupPicked: boolean;
+  bagOpened: boolean;
   /** A Cab Wraith charged and the player was not touched. */
   dodgedCharge: boolean;
   cabKilled: boolean;
@@ -32,7 +32,7 @@ export function freshState(): TutorialState {
     swingHits: 0,
     beamHits: 0,
     gems: 0,
-    powerupPicked: false,
+    bagOpened: false,
     dodgedCharge: false,
     cabKilled: false,
     wetShocks: false,
@@ -48,10 +48,11 @@ export interface ControlNames {
   beam: string;
   roll: string;
   pause: string;
+  bag: string;
 }
 
-export const KEYBOARD_CONTROLS: ControlNames = { move: 'WASD', swing: 'SPACE', beam: 'J', roll: 'SHIFT or K', pause: 'ESC' };
-export const TOUCH_CONTROLS: ControlNames = { move: 'the STICK', swing: 'A', beam: 'B', roll: 'R', pause: 'START' };
+export const KEYBOARD_CONTROLS: ControlNames = { move: 'WASD', swing: 'SPACE', beam: 'J', roll: 'SHIFT or K', pause: 'ESC', bag: 'I' };
+export const TOUCH_CONTROLS: ControlNames = { move: 'the STICK', swing: 'A', beam: 'B', roll: 'R', pause: 'START', bag: 'BAG' };
 
 export type TutorialStepId =
   | 'move'
@@ -103,8 +104,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'levelup',
     title: 'LEVEL UP',
-    lines: () => ['Levelling up lets you pick', 'a weather powerup. Choose!'],
-    done: (s) => s.powerupPicked,
+    lines: (c) => ['Each level: 3 stat points.', `Press ${c.bag} for the Bag.`],
+    done: (s) => s.bagOpened,
   },
   {
     id: 'dodge',

@@ -96,6 +96,17 @@ export class HUD {
     g.fillRect(1, 17, hpLabel.length * 4 + 1, 7);
     drawDigits(g, 2, 18, hpLabel, 0xf8f8f0);
 
+    // Unspent stat points: a gold "+" and the count, blinking, until they are spent in the Bag.
+    const points = player.statPoints;
+    if (points > 0 && Math.floor(this.scene.time.now / 450) % 3 !== 2) {
+      g.fillStyle(0x14121f, 0.85);
+      g.fillRect(17, 17, 4 + String(points).length * 4 + 3, 7);
+      g.fillStyle(0xf8d020, 1);
+      g.fillRect(19, 20, 3, 1);
+      g.fillRect(20, 19, 1, 3);
+      drawDigits(g, 24, 18, String(points), 0xf8d020);
+    }
+
     const xpPct = Phaser.Math.Clamp(player.xp / player.xpToNext, 0, 1);
     g.fillStyle(UI.hpTrack, 1);
     g.fillRect(36, 18, 32, 2);

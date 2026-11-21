@@ -1,5 +1,6 @@
 import { getCharacter } from '../config/characters';
 import { PLAYER_BASE } from '../config/constants';
+import { CHARMS, charm as charmDef, charmSlots, gain, nextPrice, rankLabel, randomCharm, type CharmBox } from './charms';
 
 /**
  * Mistford's economy: Drips (coins), food, and armor.
@@ -63,6 +64,7 @@ const LOOT: Record<string, { coins: number; itemId: string | null; chance: numbe
   cabWraith: { coins: 12, itemId: 'rainBun', chance: 0.15 },
   tornadoBoss: { coins: 90, itemId: 'sunBean', chance: 1 },
   phantomBus: { coins: 110, itemId: 'sunBean', chance: 1 },
+  tempestRegent: { coins: 200, itemId: 'sunBean', chance: 1 },
   trainingDummy: { coins: 0, itemId: null, chance: 0 },
 };
 
@@ -73,6 +75,9 @@ export interface TownProfile {
   stash: Record<string, number>;
   ownedArmor: string[];
   armorId: string | null;
+  /** Charms owned (rank 1 to 3) and which are worn. */
+  charms: Record<string, number>;
+  worn: string[];
   hp: number;
   /** Set the first time Mistford is entered, so the title can offer a way back. */
   visited: boolean;
@@ -108,6 +113,8 @@ export function freshProfile(characterId = 'rainKnight'): TownProfile {
     stash: {},
     ownedArmor: [],
     armorId: null,
+    charms: {},
+    worn: [],
     hp: townMaxHp(id, null),
     visited: false,
     fromLegacy: false,
@@ -141,6 +148,41 @@ export function battleGear(characterId: string, armorId: string | null, hp: numb
   };
 }
 
+/** The chance an enemy leaves a charm behind. Bosses always do. */
+const CHARM_DROP: Record<string, number> = {
+  rainImp: 0.02,
+  windWraith: 0.025,
+  hailBrute: 0.045,
+  lightningWisp: 0.04,
+  snowGolem: 0.07,
+  cabWraith: 0.04,
+  tornadoBoss: 1,
+  phantomBus: 1,
+  tempestRegent: 1,
+};
+
+/** The id to put in a pickup for a charm (so it travels like any other item). */
+export const charmPickup = (id: string): string => `charm:${id}`;
+export const charmOfPickup = (itemId: string | null | undefined): string | null => (itemId && itemId.startsWith('charm:') ? itemId.slice(6) : null);
+
+/**
+ * A charm an enemy leaves behind, or null. `roll` decides whether it drops, `pick` which one (both in [0, 1)); it is
+ * always one the knight can still improve.
+ */
+export function charmDrop(enemyKey: string, roll: number, pick: number, box: CharmBox): string | null {
+  const chance = CHARM_DROP[enemyKey] ?? 0;
+  if (roll < 0 || roll >= chance) return null;
+  const id = randomCharm(box, pick);
+  return id ? charmPickup(id) : null;
+}
+
+/** A charm in a supply crate (a buried chest is better): `roll` decides if, `pick` which, both in [0, 1). */
+export function crateCharm(buried: boolean, roll: number, pick: number, box: CharmBox): string | null {
+  if (roll < 0 || roll >= (buried ? 0.22 : 0.1)) return null;
+  const id = randomCharm(box, pick);
+  return id ? charmPickup(id) : null;
+}
+
 export function lootFor(enemyKey: string, roll: number): { coins: number; itemId: string | null } {
   const row = LOOT[enemyKey];
   if (!row || roll < 0 || roll >= 1) return { coins: row?.coins ?? 0, itemId: null };
@@ -148,11 +190,21 @@ export function lootFor(enemyKey: string, roll: number): { coins: number; itemId
   return { coins: row.coins, itemId };
 }
 
-export type BuyFail = 'unknown' | 'coins' | 'owned' | 'full';
+export type BuyFail = 'unknown' | 'coins' | 'owned' | 'full' | 'maxed';
 
 export function buy(profile: TownProfile, id: string): { ok: true; profile: TownProfile } | { ok: false; reason: BuyFail; profile: TownProfile } {
   const food = consumable(id);
   const piece = armor(id);
+  const ch = charmDef(id);
+  if (ch) {
+    // a charm: its next rank (the first, or a better one of a charm you own)
+    const price = nextPrice({ owned: profile.charms, worn: profile.worn }, id);
+    if (price === null) return { ok: false, reason: 'maxed', profile };
+    if (profile.coins < price) return { ok: false, reason: 'coins', profile };
+    const got = gain({ owned: profile.charms, worn: profile.worn }, id, charmSlots(1));
+    if (!got) return { ok: false, reason: 'maxed', profile };
+    return { ok: true, profile: { ...profile, coins: profile.coins - price, charms: got.box.owned, worn: got.box.worn } };
+  }
   if (!food && !piece) return { ok: false, reason: 'unknown', profile };
   const price = food?.price ?? piece!.price;
   if (profile.coins < price) return { ok: false, reason: 'coins', profile };
@@ -233,8 +285,20 @@ export function transfer(profile: TownProfile, id: string, dir: 'store' | 'take'
 }
 
 /** Pickup during a run. A full bag refuses the item (the coin still lands). */
-export function collect(profile: TownProfile, coins: number, itemId: string | null): { profile: TownProfile; storedItem: boolean } {
+export function collect(
+  profile: TownProfile,
+  coins: number,
+  itemId: string | null,
+  slots = charmSlots(1)
+): { profile: TownProfile; storedItem: boolean; charm?: { id: string; rank: number; wornNow: boolean } } {
   const next: TownProfile = { ...profile, coins: Math.min(MAX_DRIPS, profile.coins + Math.max(0, coins)), bag: { ...profile.bag } };
+  const found = charmOfPickup(itemId);
+  if (found) {
+    // a charm: it is owned for good (or ranks up one you have), and worn at once if there is room
+    const got = gain({ owned: profile.charms, worn: profile.worn }, found, slots);
+    if (!got) return { profile: next, storedItem: true }; // already rank III: the coins land, the charm is a spent find
+    return { profile: { ...next, charms: got.box.owned, worn: got.box.worn }, storedItem: true, charm: { id: found, rank: got.rank, wornNow: got.wornNow } };
+  }
   if (!itemId || !consumable(itemId)) return { profile: next, storedItem: false };
   const count = next.bag[itemId] ?? 0;
   if (count >= BAG_CAP) return { profile: next, storedItem: false };
@@ -278,6 +342,23 @@ export function shopRows(profile: TownProfile): ShopRow[] {
       blurb: owned && profile.armorId === piece.id ? `${piece.blurb}  WORN` : piece.blurb,
     });
   }
+  rows.push({ id: 'charms', label: 'CHARMS', blurb: 'Rings and stones. They make you stronger.' });
+  rows.push({ id: 'leave', label: 'LEAVE', blurb: 'Back to the shop.' });
+  return rows;
+}
+
+/** The charm shop: every charm, what it does, its next rank and what that costs. */
+export function charmShopRows(profile: TownProfile): ShopRow[] {
+  const rows: ShopRow[] = CHARMS.map((def) => {
+    const rank = profile.charms[def.id] ?? 0;
+    const price = nextPrice({ owned: profile.charms, worn: profile.worn }, def.id);
+    return {
+      id: def.id,
+      label: rank > 0 ? `${def.name} ${rankLabel(rank)}` : def.name,
+      value: price === null ? undefined : String(price),
+      blurb: price === null ? `${def.blurb}  MAX` : rank > 0 ? `${def.blurb}  Next: ${rankLabel(rank + 1)}` : def.blurb,
+    };
+  });
   rows.push({ id: 'leave', label: 'LEAVE', blurb: 'Back to the shop.' });
   return rows;
 }
@@ -286,6 +367,7 @@ export function buyFailText(reason: BuyFail): string {
   if (reason === 'coins') return 'Not enough drips.';
   if (reason === 'owned') return 'You already own it.';
   if (reason === 'full') return 'Your bag is full.';
+  if (reason === 'maxed') return 'Already at its best.';
   return 'They do not sell that.';
 }
 

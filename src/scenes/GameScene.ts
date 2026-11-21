@@ -20,7 +20,6 @@ import type { TutorialStepId } from '../systems/tutorialSteps';
 import { resolveHit, STATUS_TUNING, type DamageKind, type StatusId } from '../systems/status';
 import { hazardsEnabled, ruleFor, type HazardKind, type WeatherRule } from '../config/weatherRules';
 import { FONT } from '../ui/Window';
-import { LevelUpSystem } from '../systems/LevelUpSystem';
 import { applyFrostAura, applySunbeamPulse, applyStaticChain } from '../systems/PowerupSystem';
 import { buildTerrain, buildUndergroundTerrain, randomSeed, seedFromUrl, type TerrainResult } from '../systems/Terrain';
 import { generateMap } from '../systems/mapGen';
@@ -28,7 +27,10 @@ import { placePois, poiCenter, poisOf, tunnelFor, type Poi } from '../systems/po
 import { generateUnderground, type Tunnel } from '../systems/underground';
 import { PoiDirector, type PoiItem } from '../systems/PoiDirector';
 import { Darkness } from '../gfx/darkness';
-import { Minimap, type MiniDot } from '../ui/Minimap';
+import type { MiniDot } from '../ui/Minimap';
+import { BagMenu, type BagHost } from '../ui/BagMenu';
+import { charm as charmDef, fit, rankLabel, toggle as toggleCharm, charmSlots, type CharmBox } from '../economy/charms';
+import { addPoint, removePoint, type StatId } from '../systems/stats';
 import { Enemy as EnemyBase } from '../entities/enemies/Enemy';
 import { floodRingsFor } from '../systems/terrainRules';
 import { HUD } from '../ui/HUD';
@@ -38,19 +40,20 @@ import { attackHint, beamKeyLabel, rollHint, rollKeyLabel } from '../input/promp
 import { isTouchControlsActive, onTouchControlsChange } from '../input/touchControls';
 import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
 import { clearRun, loadGame, loadStory, recordRunResult, resetGameSave, saveRun, writeProfile, writeStory } from '../save/save';
-import { DEFEAT_HP_FRACTION, battleGear, collect, consumable, lootFor, spendItem, townMaxHp } from '../economy/economy';
-import { ListMenu } from '../ui/listMenu';
+import { DEFEAT_HP_FRACTION, battleGear, charmDrop, charmOfPickup, charmPickup, collect, consumable, crateCharm, lootFor, spendItem, townMaxHp } from '../economy/economy';
 
 interface RunBridge {
   /** Queue exactly enough XP for one level. Applied on the next scene update. */
   grantLevel: () => void;
   isScenePaused: () => boolean;
   elapsedSeconds: () => number;
-  levelUpOpen: () => boolean;
   level: () => number;
   x: () => number;
   y: () => number;
   hp: () => number;
+  maxHp: () => number;
+  /** Spend (or take back) a stat point by name (automation). */
+  spend: (stat: string, dir: number) => boolean;
   characterId: () => string;
   regionId: () => string;
   /** Player status ids, e.g. ['wet','shocked']. */
@@ -146,7 +149,14 @@ interface RunBridge {
   /** Underground: put the knight on the stairs back (`back`), or the stairs on (`far`), or by a chest (`chest`). */
   tpToStairs: (which: 'back' | 'far' | 'chest' | 'tablet', n?: number) => boolean;
   tunnelChests: () => number;
-  minimap: () => 'on' | 'off';
+  /** Drop a charm at the knight's feet, to be picked up like any find (automation). */
+  dropCharm: (id: string) => void;
+  /** The numbers charms and stat points feed (automation). */
+  combat: () => { damage: number; range: number; cooldown: number; pierce: number; magnet: number; moveSpeed: number; worn: string[] };
+  /** Open the Bag on a page (automation); the page name when it is open, else null. */
+  bagPage: () => string | null;
+  statPoints: () => number;
+  openBag: (page?: 'top' | 'items' | 'map' | 'stats' | 'charms') => void;
   /** The darkness has a light round the knight (underground only). */
   dark: () => boolean;
   /** The flight pad: where it is, how full its ring is (0..1), and a way onto it. */
@@ -192,20 +202,16 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private pickupGroup!: Phaser.Physics.Arcade.Group;
   private weather!: WeatherDirector;
   private hud!: HUD;
-  private levelUpSystem!: LevelUpSystem;
   private boss: Enemy | null = null;
   private region!: RegionDef;
   private signatureSeen = false;
   private bossSummonEvent: Phaser.Time.TimerEvent | null = null;
   private paused = false;
-  private levelUpOpen = false;
   private userPaused = false;
   private detachPause: (() => void) | null = null;
   private ambientDrops: Phaser.GameObjects.Image[] = [];
   private terrain!: TerrainResult;
   private lastFrontIndex = 0;
-  private pendingLevelUps = 0;
-  private levelCue = false;
   private ended = false;
   private xpGrant = 0;
   private detachTouch: (() => void) | null = null;
@@ -238,13 +244,12 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private tunnelPlan: { tun: Tunnel; entry: number; exitId: number; tunnel: number; reversed: boolean } | null = null;
   private poiDirector: PoiDirector | null = null;
   private darkness: Darkness | null = null;
-  private minimap: Minimap | null = null;
   private tunnelSpawnTimer = 0;
   private castCount = 0;
   private lantern = false;
   private wasWet = false;
   private runDrips = 0;
-  private bagMenu: ListMenu | null = null;
+  private bagMenu: BagMenu | null = null;
 
   constructor() {
     super('GameScene');
@@ -252,9 +257,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   create(data: GameSceneData = {}) {
     this.paused = false;
-    this.levelUpOpen = false;
     this.userPaused = false;
-    this.pendingLevelUps = 0;
     this.ended = false;
     this.boss = null;
     this.bossSummonEvent = null;
@@ -266,7 +269,6 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.signatureSeen = false;
     this.tutorial = null;
     this.tutorialBadge = '';
-    this.levelCue = false;
     this.terrainClock = 0;
     this.crashCount = 0;
     this.rollCount = 0;
@@ -313,25 +315,22 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     }
 
     this.player = new Player(this, this.terrain.spawn.x, this.terrain.spawn.y, character);
+    if (!data.tutorial) {
+      // What the knight is made of: the character and the armor, and (in the finale) the Stormglass. Stat points and
+      // the worn charms are added on top (see Player.recompute); a continued run keeps its level, XP and points.
+      const town = loadGame().town;
+      this.player.applyBattleGear(battleGear(this.runCharacterId, town.armorId, town.hp));
+      const buff = region.id === 'stormhold' ? finaleBuff(loadStory()) : null;
+      if (buff && buff.hp > 0) this.player.boostBase(buff.hp, 1 + buff.damage);
+      this.player.setCharms(fit({ owned: town.charms, worn: town.worn }, charmSlots(resume?.player.level ?? 1)));
+      if (!resume && buff && buff.hp > 0) this.finaleBuffText = `The Stormglass hums:\n+${buff.hp} HP, +${Math.round(buff.damage * 100)}% damage.`;
+    }
     if (resume) {
       this.player.applySnapshot(resume.player);
       // An older save has no map seed, so the map is new: make sure the knight is not inside a building.
       const spot = this.openSpot(this.player.x, this.player.y);
       this.player.setPosition(spot.x, spot.y);
       if (this.level === 'underground') this.player.setPosition(this.terrain.spawn.x, this.terrain.spawn.y);
-    } else if (!data.tutorial) {
-      const town = loadGame().town;
-      this.player.applyBattleGear(battleGear(this.runCharacterId, town.armorId, town.hp));
-      // The finale: the shards on the altar, the Stormglass restored, make the knight tougher and sharper.
-      if (region.id === 'stormhold') {
-        const buff = finaleBuff(loadStory());
-        if (buff.hp > 0) {
-          this.player.maxHp += buff.hp;
-          this.player.hp += buff.hp;
-          this.player.attackDamage = Math.round(this.player.attackDamage * (1 + buff.damage));
-          this.finaleBuffText = `The Stormglass hums:\n+${buff.hp} HP, +${Math.round(buff.damage * 100)}% damage.`;
-        }
-      }
     }
     this.player.onDied = () => this.endRun(false);
     this.padCharge = 0;
@@ -340,7 +339,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.lantern = !data.tutorial && region.id === 'stormhold' && finaleBuff(loadStory()).lantern;
     this.padHinted = -1e9;
     this.padGfx = data.tutorial || this.level === 'underground' ? null : this.add.graphics().setDepth(0.6);
-    this.player.onLevelUp = () => this.pauseForLevelUp();
+    this.player.onLevelUp = () => this.onLevelGained();
     this.player.on('hurt', (amount: number) => {
       this.tutorial?.note('hurt');
       this.floatText(this.player.x, this.player.y - 12, `-${amount}`, '#f04040');
@@ -396,24 +395,24 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.setAmbience(this.level === 'underground' ? null : resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
     this.hud = new HUD(this);
     this.hud.setObjective(data.tutorial ? '' : runObjective(loadStory(), region.id));
-    this.levelUpSystem = new LevelUpSystem(this);
     this.detachTouch = onTouchControlsChange((touch) => {
       this.hud.setBeamKeyLabel(beamKeyLabel(touch));
       this.hud.setRollKeyLabel(rollKeyLabel(touch));
     });
     const bridge: RunBridge = {
       grantLevel: () => {
-        if (this.ended || this.levelUpOpen || this.paused || this.userPaused) return;
+        if (this.ended || this.paused || this.userPaused) return;
         const need = this.player.xpToNext - this.player.xp;
         if (need > 0) this.xpGrant += need;
       },
       isScenePaused: () => this.sys.isPaused(),
       elapsedSeconds: () => this.weather.elapsedSeconds,
-      levelUpOpen: () => this.levelUpOpen,
       level: () => this.player.level,
       x: () => this.player.x,
       y: () => this.player.y,
       hp: () => this.player.hp,
+      maxHp: () => this.player.maxHp,
+      spend: (stat, dir) => this.spendPoint(stat as StatId, dir),
       characterId: () => this.runCharacterId,
       regionId: () => this.runRegionId,
       statuses: () => this.player.statuses.list(),
@@ -494,7 +493,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         for (let i = 0; i < count; i++) this.spawnEnemyAroundPlayer(type);
       },
       givePowerup: (name, level) => {
-        this.player.powerups[name] = level;
+        this.player.setBonusPowers({ ...this.player.bonusPowers, [name]: level });
       },
       throwNextFrame: () => {
         this.faultNextFrame = true;
@@ -536,7 +535,19 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         return true;
       },
       tunnelChests: () => this.tunnelPlan?.tun.chests.length ?? 0,
-      minimap: () => (this.minimap?.visible ? 'on' : 'off'),
+      dropCharm: (id) => this.spawnPickup(this.player.x + 3, this.player.y + 2, 0, charmPickup(id)),
+      combat: () => ({
+        damage: this.player.attackDamage,
+        range: this.player.attackRange,
+        cooldown: this.player.attackCooldown,
+        pierce: this.player.pierce,
+        magnet: this.player.magnetRadius,
+        moveSpeed: this.player.baseMoveSpeed,
+        worn: [...this.player.charms.worn],
+      }),
+      bagPage: () => (this.bagMenu?.isOpen ? this.bagMenu.current : null),
+      statPoints: () => this.player.statPoints,
+      openBag: (page = 'top') => this.openBag(page),
       dark: () => !!this.darkness,
       padAt: () => padCenterFor(this.terrain.spawn),
       padCharge: () => this.padCharge,
@@ -553,9 +564,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     };
     window.__rk = bridge;
     this.detachPause = bindGameplayPause({
-      canPause: () => this.sys.isActive() && !this.ended && !this.levelUpOpen && !this.userPaused,
+      canPause: () => this.sys.isActive() && !this.ended && !this.userPaused,
       isUserPaused: () => this.userPaused,
-      isLevelUp: () => this.levelUpOpen,
+      isMenuOpen: () => !!this.bagMenu?.isOpen,
       isEnded: () => this.ended,
       pause: () => this.enterUserPause(),
       resume: () => this.resumeFromUserPause(),
@@ -565,12 +576,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     });
     this.hud.setWeatherCondition(data.tutorial ? 'tutorial' : this.level === 'underground' ? 'clear' : this.runWeatherCondition, data.tutorial ? 'Tutorial' : this.level === 'underground' ? 'Underground' : this.runWeatherLabel);
     this.lastFrontIndex = this.weather.currentFrontIndex;
-    if (resume && resume.pendingLevelUps > 0) {
-      this.pendingLevelUps = resume.pendingLevelUps;
-      this.time.delayedCall(0, () => {
-        if (!this.ended && this.pendingLevelUps > 0 && !this.levelUpOpen) this.showLevelUpMenu();
-      });
-    } else if (!data.tutorial) {
+    if (!data.tutorial && !resume) {
       this.time.delayedCall(3000, () => this.showAttackHint());
       this.time.delayedCall(10000, () => this.showRollHint());
     }
@@ -609,7 +615,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.hazards = new HazardDirector(hazardHost, this.rule);
     }
     if (!data.tutorial) this.setupWorldDepth(resume?.usedPois ?? []);
-    if (!data.tutorial && this.rule.terrainHint && this.level === 'surface' && !(resume && resume.pendingLevelUps > 0)) {
+    if (!data.tutorial && this.rule.terrainHint && this.level === 'surface' ) {
       this.time.delayedCall(14000, () => {
         if (this.ended || this.paused || !this.rule.terrainHint) return;
         this.hud.showMessage(this.rule.terrainHint);
@@ -617,17 +623,19 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         if (app) app.dataset.terrainHint = this.rule.terrainHint;
       });
     }
-    if (!data.tutorial && this.rule.hint && !(resume && resume.pendingLevelUps > 0)) {
+    if (!data.tutorial && this.rule.hint && !resume) {
       this.time.delayedCall(6000, () => this.showWeatherHint());
     }
     this.checkpoint();
     this.input.keyboard?.on('keydown-I', (event: KeyboardEvent) => {
       if (!event.repeat) this.openBag();
     });
+    this.input.keyboard?.on('keydown-N', (event: KeyboardEvent) => {
+      if (!event.repeat) this.openBag('map');
+    });
 
     this.events.once('shutdown', () => {
-      this.bagMenu?.hide();
-      this.bagMenu = null;
+      this.closeBagNow();
       this.detachPause?.();
       this.detachPause = null;
       this.detachTouch?.();
@@ -636,7 +644,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.hazards?.destroy();
       this.hazards = null;
       this.hud.destroy();
-      this.levelUpSystem.close();
+      this.closeBagNow();
       audio.setMuffled(false);
     });
   }
@@ -866,7 +874,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.add.existing(proj);
     this.physics.add.existing(proj);
     proj.setDepth(6);
-    proj.damage = Math.max(1, Math.round(this.player.attackDamage * AUTO_ATTACK.damageMult));
+    proj.damage = Math.max(1, Math.round(this.player.attackDamage * AUTO_ATTACK.damageMult * this.player.rangedMult));
     proj.pierceLeft = this.player.pierce;
 
     const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, target.x, target.y);
@@ -903,7 +911,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     audio.play('swing', p.weaponType);
 
     const cosHalf = Math.cos(Phaser.Math.DegToRad(stats.arcDeg / 2));
-    const damage = Math.round(p.attackDamage * stats.damageMult);
+    const damage = Math.round(p.attackDamage * stats.damageMult * p.meleeMult);
     for (const enemy of this.getActiveEnemies()) {
       if (!enemy.isLive) continue; // an earlier hit's Static Charge chain may have killed this one
       const dx = enemy.x - p.x;
@@ -940,7 +948,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const ex = ox + abx;
     const ey = oy + aby;
 
-    const damage = Math.round(p.attackDamage * stats.damageMult);
+    const damage = Math.round(p.attackDamage * stats.damageMult * p.rangedMult);
     for (const enemy of this.getActiveEnemies()) {
       if (!enemy.isLive) continue;
       const t = Phaser.Math.Clamp(((enemy.x - ox) * abx + (enemy.y - oy) * aby) / (len * len), 0, 1);
@@ -1004,10 +1012,13 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const loot = lootFor(enemy.stats.key, Math.random());
     if (loot.coins > 0) this.spawnPickup(enemy.x + 5, enemy.y - 3, loot.coins, null);
     if (loot.itemId) this.spawnPickup(enemy.x - 6, enemy.y + 4, 0, loot.itemId);
+    const found = charmDrop(enemy.stats.key, Math.random(), Math.random(), this.townCharms());
+    if (found) this.spawnPickup(enemy.x + 1, enemy.y - 9, 0, found);
   }
 
   private spawnPickup(x: number, y: number, coins: number, itemId: string | null) {
     const drop = this.physics.add.sprite(x, y, itemId ? TEX.supply : TEX.coin).setDepth(3);
+    if (charmOfPickup(itemId)) drop.setTint(0xffd84a); // a charm glints gold
     drop.setData('coins', coins);
     drop.setData('item', itemId ?? '');
     drop.setData('ready', 0);
@@ -1048,7 +1059,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private collectPickup(drop: Phaser.Physics.Arcade.Sprite) {
     const coins = Number(drop.getData('coins')) || 0;
     const item = String(drop.getData('item') || '') || null;
-    const got = collectIntoTown(coins, item);
+    const got = collectIntoTown(coins, item, charmSlots(this.player.level));
     if (item && !got.storedItem) {
       drop.setData('full', 1);
       this.popup(drop.x, drop.y - 8, 'BAG FULL', '#f8f8f8');
@@ -1059,9 +1070,15 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       audio.play('coin');
       this.popup(drop.x, drop.y - 8, `+${coins}`, '#f8d020');
     }
-    if (item && got.storedItem) {
+    if (got.charm) {
+      const def = charmDef(got.charm.id);
+      this.syncCharms();
+      audio.play('levelUp');
+      this.popup(drop.x, drop.y - 12, `${def?.name.toUpperCase() ?? 'CHARM'} ${rankLabel(got.charm.rank)}`, '#ffd84a');
+      this.hud.showMessage(`${def?.name ?? 'A charm'} ${rankLabel(got.charm.rank)}!\n${got.charm.wornNow ? 'Worn.' : 'Wear it from the Bag (I).'}`, 2400);
+    } else if (item && got.storedItem) {
       audio.play('gem');
-      this.popup(drop.x, drop.y - 12, consumable(item)?.short ?? 'ITEM', '#f8f8f8');
+      this.popup(drop.x, drop.y - 12, charmOfPickup(item) ? 'MAXED' : consumable(item)?.short ?? 'ITEM', '#f8f8f8');
     }
     const pop = this.add.image(drop.x, drop.y, drop.texture.key).setDepth(4);
     this.tweens.add({ targets: pop, scale: 1.7, alpha: 0, duration: 140, onComplete: () => pop.destroy() });
@@ -1104,51 +1121,20 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   // --- level up / end of run ---
 
-  private pauseForLevelUp() {
-    this.pendingLevelUps += 1;
-    if (this.paused || this.levelCue) return; // a menu is already open — this level is queued behind it
-    this.levelCue = true;
-    audio.play('sunbeam');
-    // Leave the HP bar up for a moment so the full heal reads before the menu covers it. This runs on the scene's own
-    // clock, not the wall clock: it holds still while the game is paused (so the menu never opens on top of the pause
-    // overlay; resuming opens it) and is dropped with the scene.
-    this.time.delayedCall(480, () => {
-      this.levelCue = false;
-      if (!this.ended && this.pendingLevelUps > 0 && !this.levelUpOpen) this.showLevelUpMenu();
-    });
-  }
-
-  private showLevelUpMenu() {
-    this.levelUpOpen = true;
-    this.paused = true;
-    this.hud.setVisible(false);
+  /**
+   * A level is a reward, not an interruption: the knight is mended, three stat points are earned, and play goes on.
+   * The points are spent from the Bag (I, then STATS) whenever the player likes.
+   */
+  private onLevelGained() {
     audio.play('levelUp');
-    audio.setMuffled(true);
-    // If several levels were gained at once, show each level's menu in turn.
-    const level = this.player.level - (this.pendingLevelUps - 1);
+    const n = this.player.statPoints;
+    this.floatText(this.player.x, this.player.y - 16, `LEVEL ${this.player.level}!`, '#f8d020');
+    this.hud.showMessage(`Level ${this.player.level}!\n${n} point${n === 1 ? '' : 's'} to spend: press I.`, 2600);
     this.checkpoint();
-    this.levelUpSystem.presentChoices(this.player, level, () => {
-      this.pendingLevelUps -= 1;
-      this.tutorial?.note('powerup');
-      this.checkpoint();
-      if (this.pendingLevelUps > 0) return this.showLevelUpMenu();
-      this.levelUpOpen = false;
-      if (this.sys.isPaused()) this.sys.resume();
-      this.input.keyboard?.resetKeys();
-      replayHeldKeys();
-      this.hud.setVisible(true);
-      audio.setMuffled(false);
-      this.paused = false;
-    });
-    // Same full-scene pause as Esc/Start. Enemy AI and auras run in preUpdate,
-    // and the storm clock lives in this scene's update — physics.pause() left
-    // both of those running. Phaser drops the scene's own input while paused,
-    // so the menu listens on window (see LevelUpSystem).
-    if (this.sys.isActive()) this.sys.pause();
   }
 
   private enterUserPause() {
-    if (!this.sys.isActive() || this.ended || this.levelUpOpen || this.userPaused) return;
+    if (!this.sys.isActive() || this.ended || this.userPaused || this.bagMenu?.isOpen) return;
     this.userPaused = true;
     this.paused = true;
     this.hud.setVisible(false);
@@ -1167,18 +1153,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.sys.isPaused()) this.sys.resume();
     this.input.keyboard?.resetKeys();
     replayHeldKeys();
-    if (this.pendingLevelUps > 0 && !this.ended) {
-      this.showLevelUpMenu();
-      return;
-    }
     audio.setMuffled(false);
     this.hud.setVisible(true);
     this.paused = false;
   }
 
-  // --- the world's depth: crates, shrines, stairs, tunnels, the minimap ---
+  // --- the world's depth: crates, shrines, stairs, tunnels ---
 
-  /** Put the crates, shrines and stairs in the world (or the chests and stairs in a tunnel), the dark underground, and the minimap. */
+  /** Put the crates, shrines and stairs in the world (or the chests and stairs in a tunnel), and the dark underground. */
   private setupWorldDepth(used: string[]) {
     const items: PoiItem[] = [];
     if (this.level === 'surface') {
@@ -1205,21 +1187,29 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.darkness = new Darkness(this);
     }
     this.poiDirector = new PoiDirector(this, { trigger: (item) => this.onPoi(item) }, items, used);
-    this.minimap = new Minimap(this);
-    this.minimap.setGrid(this.terrain.field.currentGrid, this.minimapKey());
-    this.input.keyboard?.on('keydown-N', () => this.minimap?.toggle());
     this.events.once('shutdown', () => {
       this.poiDirector?.destroy();
       this.darkness?.destroy();
-      this.minimap?.destroy();
       this.poiDirector = null;
       this.darkness = null;
-      this.minimap = null;
     });
   }
 
   private minimapKey(): string {
     return `${this.level}:${this.terrain.field.floodRings}`;
+  }
+
+  /** The blips on the Bag's map: stairs, crates, shrines, the pad, and the boss. */
+  private mapDots(): MiniDot[] {
+    const dots: MiniDot[] = [];
+    for (const item of this.poiDirector?.items ?? []) {
+      if (this.poiDirector!.isUsed(item.key) && item.kind !== 'entrance' && item.kind !== 'back' && item.kind !== 'far') continue;
+      const color = item.kind === 'entrance' ? 0x58e0d0 : item.kind === 'crate' ? 0xffd84a : item.kind === 'shrine' ? 0xc080ff : item.kind === 'tablet' ? 0xff9ad8 : item.kind === 'far' ? 0x58d8ff : 0xffe680;
+      dots.push({ x: item.x, y: item.y, color });
+    }
+    if (this.level === 'surface' && !this.tutorial) dots.push({ ...padCenterFor(this.terrain.spawn), color: 0x3f8cf0 });
+    if (this.boss?.active) dots.push({ x: this.boss.x, y: this.boss.y, color: 0xff4a4a });
+    return dots;
   }
 
   private updateWorldDepth(time: number, delta: number) {
@@ -1233,20 +1223,6 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       const lights = [{ x: this.player.x - cam.x, y: this.player.y - cam.y, r: 62 + Math.sin(time / 230) * 2 }];
       for (const item of this.poiDirector.items) if (!this.poiDirector.isUsed(item.key)) lights.push({ x: item.x - cam.x, y: item.y - cam.y, r: item.kind === 'crate' ? 22 : 30 });
       this.darkness?.update(lights);
-    }
-
-    if (this.minimap) {
-      if (this.minimap.stale(this.minimapKey())) this.minimap.setGrid(this.terrain.field.currentGrid, this.minimapKey());
-      const dots: MiniDot[] = [];
-      for (const item of this.poiDirector.items) {
-        if (this.poiDirector.isUsed(item.key) && item.kind !== 'entrance' && item.kind !== 'back' && item.kind !== 'far') continue;
-        const color = item.kind === 'entrance' ? 0x58e0d0 : item.kind === 'crate' ? 0xffd84a : item.kind === 'shrine' ? 0xc080ff : item.kind === 'tablet' ? 0xff9ad8 : item.kind === 'far' ? 0x58d8ff : 0xffe680;
-        dots.push({ x: item.x, y: item.y, color });
-      }
-      if (this.level === 'surface' && !this.tutorial) dots.push({ ...padCenterFor(this.terrain.spawn), color: 0x3f8cf0 });
-      if (this.boss?.active) dots.push({ x: this.boss.x, y: this.boss.y, color: 0xff4a4a });
-      this.minimap.setHidden(this.levelUpOpen || this.userPaused);
-      this.minimap.update(this.player, dots, Math.floor(time / 320) % 2 === 0);
     }
   }
 
@@ -1275,8 +1251,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const buried = item.key.startsWith('u');
     this.spawnPickup(item.x + 6, item.y - 6, Phaser.Math.Between(buried ? 18 : 8, buried ? 34 : 18), null);
     if (Math.random() < (buried ? 0.8 : 0.45)) this.spawnPickup(item.x - 7, item.y + 4, 0, 'rainBun');
+    const found = crateCharm(buried, Math.random(), Math.random(), this.townCharms());
+    if (found) this.spawnPickup(item.x + 1, item.y - 10, 0, found);
     for (let i = 0; i < 3; i++) this.spawnXpGem(item.x + Phaser.Math.Between(-10, 10), item.y + Phaser.Math.Between(-8, 8), buried ? 14 : 8);
-    this.hud.showMessage(buried ? 'A buried chest!\nDrips, gems, maybe a bun.' : 'A supply crate!\nDrips and gems spill out.', 1900);
+    this.hud.showMessage(buried ? 'A buried chest!\nDrips, gems, a bun, a charm?' : 'A supply crate!\nDrips and gems spill out.', 1900);
   }
 
   /** One of Aurel's tablets: his words, a few lines at a time. The first from each city counts toward the three. */
@@ -1297,8 +1275,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   /** A weather shrine: its power gains a level, and the knight is mended a little. */
   private blessKnight(item: PoiItem) {
     const power = (item.power ?? 'sunbeam') as keyof typeof this.player.powerups;
-    const level = Math.min(4, this.player.powerups[power] + 1);
-    this.player.powerups[power] = level;
+    const level = this.player.addBonusPower(power);
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + Math.round(this.player.maxHp * 0.25));
     this.cameras.main.flash(260, 255, 255, 255, false);
     this.hud.showMessage(`${POWER_NAME[power] ?? power} shrine!\nPower up: level ${level}.`, 2400);
@@ -1325,7 +1302,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     saveRun({
       ...base,
       player: { ...this.player.toSnapshot(), x: at.x, y: at.y + 24 },
-      pendingLevelUps: this.pendingLevelUps,
+      pendingLevelUps: 0,
       usedPois: [...(this.poiDirector?.used ?? [])],
     });
     this.changeLevel({ resume: true });
@@ -1336,10 +1313,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.ended) return;
     this.ended = true;
     this.paused = true;
-    this.levelUpOpen = false;
     this.userPaused = false;
     closePauseMenu();
-    this.levelUpSystem.close();
+    this.closeBagNow();
     if (this.sys.isPaused()) this.sys.resume();
     audio.setMuffled(false);
     this.physics.pause();
@@ -1401,10 +1377,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private flyOut() {
     if (this.tutorial || this.ended) return;
     this.ended = true;
-    this.levelUpOpen = false;
     this.userPaused = false;
     closePauseMenu();
-    this.levelUpSystem.close();
+    this.closeBagNow();
     if (this.sys.isPaused()) this.sys.resume();
     audio.setMuffled(false);
     audio.play('confirm');
@@ -1428,12 +1403,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.ended = true;
     clearRun();
     this.userPaused = false;
-    this.levelUpOpen = false;
     closePauseMenu();
     audio.setMuffled(false);
     if (this.sys.isPaused()) this.sys.resume();
     this.paused = true;
-    this.levelUpSystem.close();
+    this.closeBagNow();
     this.scene.start('MenuScene');
   }
 
@@ -1442,12 +1416,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     resetGameSave();
     audio.applyMuted(false);
     this.userPaused = false;
-    this.levelUpOpen = false;
     closePauseMenu();
     audio.setMuffled(false);
     if (this.sys.isPaused()) this.sys.resume();
     this.paused = true;
-    this.levelUpSystem.close();
+    this.closeBagNow();
     this.scene.start('MenuScene');
   }
 
@@ -1467,7 +1440,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       startFrontIndex: this.runStartFront,
       elapsedSeconds: this.weather.elapsedSeconds,
       bossHp: this.boss?.active ? this.boss.hp : null,
-      pendingLevelUps: this.pendingLevelUps,
+      pendingLevelUps: 0,
       mapSeed: this.mapSeed,
       ...(this.poiDirector && this.poiDirector.used.size > 0 ? { usedPois: [...this.poiDirector.used] } : {}),
       player: this.player.toSnapshot(),
@@ -1478,10 +1451,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.tutorial) return; // the tutorial cannot be lost, and records nothing
     if (this.ended) return; // (a level-up menu being open must not block the ending)
     this.ended = true;
-    this.levelUpOpen = false;
     this.userPaused = false;
     closePauseMenu();
-    this.levelUpSystem.close();
+    this.closeBagNow();
     if (this.sys.isPaused()) this.sys.resume();
     audio.setMuffled(false);
     this.paused = true;
@@ -1504,62 +1476,96 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.time.delayedCall(400, () => this.scene.start('GameOverScene', { ...data, drips: this.runDrips, story: outcome.messages }));
   }
 
-  private openBag() {
-    if (this.tutorial || this.ended || this.levelUpOpen || this.userPaused || this.paused || this.bagMenu) return;
-    const profile = loadGame().town;
-    const rows = Object.keys(profile.bag)
-      .filter((id) => (profile.bag[id] ?? 0) > 0 && consumable(id))
-      .map((id) => ({ id, label: `${consumable(id)!.name} x${profile.bag[id]}` }));
-    if (rows.length === 0) {
-      this.popup(this.player.x, this.player.y - 14, 'BAG EMPTY', '#f8f8f8');
-      return;
-    }
-    rows.push({ id: 'close', label: 'CLOSE' });
-    this.bagMenu = new ListMenu(this);
+  /** The charms the knight owns and wears, as the town profile keeps them (that is where they live for good). */
+  private townCharms(): CharmBox {
+    const t = loadGame().town;
+    return { owned: t.charms, worn: t.worn };
+  }
+
+  /** Make the knight wear what the profile says (after a find, a purchase or a swap). */
+  private syncCharms() {
+    this.player.setCharms(fit(this.townCharms(), charmSlots(this.player.level)));
+  }
+
+  private closeBagNow() {
+    this.bagMenu?.hide();
+    this.bagMenu = null;
+  }
+
+  private bagHost(): BagHost {
+    return {
+      items: () => {
+        const profile = loadGame().town;
+        return Object.keys(profile.bag)
+          .filter((id) => (profile.bag[id] ?? 0) > 0 && consumable(id))
+          .map((id) => ({ id, label: `${consumable(id)!.name} x${profile.bag[id]}` }));
+      },
+      useItem: (id) => this.useBagItem(id),
+      stats: () => ({ points: this.player.statPoints, alloc: this.player.statAlloc }),
+      spend: (id, dir) => this.spendPoint(id as StatId, dir),
+      charms: () => ({ box: this.townCharms(), level: this.player.level }),
+      toggleCharm: (id) => this.toggleWornCharm(id),
+      map: () => ({ grid: this.terrain.field.currentGrid, stamp: this.minimapKey(), dots: this.mapDots(), player: { x: this.player.x, y: this.player.y } }),
+      onClose: () => this.closeBag(),
+    };
+  }
+
+  /** The Bag: ITEMS, MAP, STATS, CHARMS. It stops the game while it is open, and the knight chooses when. */
+  private openBag(page: 'top' | 'items' | 'map' | 'stats' | 'charms' = 'top') {
+    if (this.ended || this.userPaused || this.paused || this.bagMenu) return;
+    this.bagMenu = new BagMenu(this, this.bagHost());
     this.paused = true;
     this.hud.setVisible(false);
     audio.setMuffled(true);
+    this.tutorial?.note('bag');
     if (this.sys.isActive()) this.sys.pause();
-    this.bagMenu.show({
-      title: 'BAG',
-      rows,
-      hint: 'Use one.',
-      onPick: (id) => this.pickBag(id),
-      onClose: () => this.closeBag(),
-    });
+    this.bagMenu.show(page);
   }
 
-  private pickBag(id: string) {
-    if (id === 'close') {
-      this.closeBag();
-      return;
-    }
+  /** Eat or drink something from the bag. A line back is a hint to show; null means it worked and the Bag closes. */
+  private useBagItem(id: string): string | null {
     const item = consumable(id);
     const next = spendItem(loadGame().town, id);
-    if (!item || !next) {
-      this.bagMenu?.setHint('None left.');
-      return;
-    }
+    if (!item || !next) return 'None left.';
     const before = this.player.hp;
     if (item.fullHeal) this.player.hp = this.player.maxHp;
     else this.player.hp = Math.min(this.player.maxHp, this.player.hp + item.heal);
     const healed = this.player.hp - before;
-    if (healed === 0 && item.hasteMs === 0) {
-      this.bagMenu?.setHint('HP is full.');
-      return;
-    }
+    if (healed === 0 && item.hasteMs === 0) return 'HP is full.';
     writeProfile(next);
     if (item.hasteMs > 0) this.player.applyHaste(item.hasteMs);
-    this.closeBag();
-    this.popup(this.player.x, this.player.y - 16, healed > 0 ? `+${healed}` : 'QUICK', '#70e090');
-    audio.play(healed > 0 ? 'sunbeam' : 'confirm');
+    this.time.delayedCall(0, () => {
+      this.popup(this.player.x, this.player.y - 16, healed > 0 ? `+${healed}` : 'QUICK', '#70e090');
+      audio.play(healed > 0 ? 'sunbeam' : 'confirm');
+    });
     this.checkpoint();
+    return null;
+  }
+
+  private spendPoint(id: StatId, dir: number): boolean {
+    const state = { points: this.player.statPoints, alloc: this.player.statAlloc };
+    const next = dir > 0 ? addPoint(state, id) : removePoint(state, id);
+    if (!next) return false;
+    this.player.setAllocation(next.alloc);
+    this.checkpoint();
+    return true;
+  }
+
+  /** Wear or take off an owned charm. A line back says why it could not be done; null means it was. */
+  private toggleWornCharm(id: string): string | null {
+    const profile = loadGame().town;
+    const next = toggleCharm({ owned: profile.charms, worn: profile.worn }, id, charmSlots(this.player.level));
+    if (!next) return 'No free slot.';
+    writeProfile({ ...profile, charms: next.owned, worn: next.worn });
+    this.syncCharms();
+    this.checkpoint();
+    return null;
   }
 
   private closeBag() {
     this.bagMenu?.hide();
     this.bagMenu = null;
-    if (this.levelUpOpen || this.userPaused || this.ended) return;
+    if (this.userPaused || this.ended) return;
     if (this.sys.isPaused()) this.sys.resume();
     this.input.keyboard?.resetKeys();
     replayHeldKeys();
@@ -1737,12 +1743,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (this.ended) return;
     this.ended = true;
     this.userPaused = false;
-    this.levelUpOpen = false;
     closePauseMenu();
     audio.setMuffled(false);
     if (this.sys.isPaused()) this.sys.resume();
     this.paused = true;
-    this.levelUpSystem.close();
+    this.closeBagNow();
     this.scene.start('MenuScene');
   }
 
@@ -1864,8 +1869,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 }
 
-function collectIntoTown(coins: number, item: string | null): { storedItem: boolean } {
-  const got = collect(loadGame().town, coins, item);
+function collectIntoTown(coins: number, item: string | null, slots: number): { storedItem: boolean; charm?: { id: string; rank: number; wornNow: boolean } } {
+  const got = collect(loadGame().town, coins, item, slots);
   writeProfile(got.profile);
-  return { storedItem: got.storedItem };
+  return { storedItem: got.storedItem, charm: got.charm };
 }

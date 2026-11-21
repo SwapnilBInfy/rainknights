@@ -4,7 +4,8 @@ import { audio } from '../audio/engine';
 import { ListMenu } from '../ui/listMenu';
 import { HubChrome } from '../ui/hubChrome';
 import { loadGame, writeProfile } from '../save/save';
-import { bagLabel, buy, buyFailText, shopRows, townMaxHp } from '../economy/economy';
+import { bagLabel, buy, buyFailText, charmShopRows, shopRows, townMaxHp, type ShopRow } from '../economy/economy';
+import { charm, charmSlots, rankLabel, toggle as toggleCharm } from '../economy/charms';
 import { Avatar } from '../town/avatar';
 import { mountMap } from '../town/mapView';
 import { Speech, clearHub, publishHub } from '../town/speech';
@@ -126,13 +127,84 @@ export class MarketScene extends Phaser.Scene {
         { id: 'hp', label: 'HP', value: String(profile.hp) },
         { id: 'max', label: 'MAX', value: String(max) },
         { id: 'worn', label: profile.armorId ? `WORN ${profile.armorId.toUpperCase()}` : 'NO ARMOR' },
+        { id: 'charms', label: 'CHARMS' },
         { id: 'close', label: 'CLOSE' },
       ],
       hint: 'Drips, health, armor.',
       onPick: (id) => {
         if (id === 'close') this.menu.hide();
+        else if (id === 'charms') this.openCharms();
       },
       onClose: () => this.menu.hide(),
+    });
+  }
+
+  /** Charms the knight owns, to wear or take off (three slots here; a run's levels add more). */
+  private charmRows() {
+    const profile = loadGame().town;
+    const rows = Object.keys(profile.charms)
+      .filter((id) => charm(id))
+      .map((id) => ({ id, label: `${profile.worn.includes(id) ? '+' : '-'} ${charm(id)!.name} ${rankLabel(profile.charms[id])}` }));
+    rows.push({ id: 'back', label: 'BACK' });
+    return rows;
+  }
+
+  private charmsTitle() {
+    return `CHARMS ${loadGame().town.worn.length}/${charmSlots(1)}`;
+  }
+
+  private openCharms() {
+    const rows = this.charmRows();
+    this.menu.show({
+      title: this.charmsTitle(),
+      rows,
+      hint: rows.length === 1 ? 'None yet. Buy or find!' : '+ is worn. Enter swaps.',
+      onMove: (id) => this.menu.setHint(charm(id)?.blurb ?? ''),
+      onPick: (id) => {
+        if (id === 'back') return this.openStatus();
+        const profile = loadGame().town;
+        const next = toggleCharm({ owned: profile.charms, worn: profile.worn }, id, charmSlots(1));
+        if (!next) {
+          this.menu.setHint('No free slot.');
+          return;
+        }
+        writeProfile({ ...profile, charms: next.owned, worn: next.worn });
+        audio.play('confirm');
+        this.menu.refresh(this.charmsTitle(), this.charmRows(), charm(id)?.blurb ?? '');
+        this.publish();
+      },
+      onClose: () => this.openStatus(),
+    });
+  }
+
+  /** The charm counter: every charm, its next rank and price. */
+  private openCharmShop() {
+    const profile = loadGame().town;
+    const rows: ShopRow[] = charmShopRows(profile);
+    this.menu.show({
+      title: 'CHARMS',
+      titleValue: String(profile.coins),
+      rows,
+      hint: rows[0]?.blurb ?? '',
+      onMove: (id) => {
+        const row = charmShopRows(loadGame().town).find((entry) => entry.id === id);
+        if (row) this.menu.setHint(row.blurb);
+      },
+      onPick: (id) => {
+        if (id === 'leave') return this.openShop();
+        const result = buy(loadGame().town, id);
+        if (!result.ok) {
+          this.menu.setHint(buyFailText(result.reason));
+          audio.play('move');
+          return;
+        }
+        writeProfile(result.profile);
+        audio.play('confirm');
+        const next = charmShopRows(result.profile);
+        this.menu.refresh('CHARMS', next, `Bought. ${next.find((entry) => entry.id === id)?.blurb ?? ''}`, String(result.profile.coins));
+        this.publish();
+      },
+      onClose: () => this.openShop(),
     });
   }
 
@@ -159,6 +231,7 @@ export class MarketScene extends Phaser.Scene {
           this.publish();
           return;
         }
+        if (id === 'charms') return this.openCharmShop();
         const result = buy(loadGame().town, id);
         if (!result.ok) {
           this.menu.setHint(buyFailText(result.reason));

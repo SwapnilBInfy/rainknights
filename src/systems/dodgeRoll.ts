@@ -19,6 +19,9 @@ export const ROLL = {
 export class DodgeRoll {
   private startedAt = -Infinity;
   private readyAt = 0;
+  /** Multiplies the recharge (the Speed stat shortens it). */
+  cooldownScale = 1;
+  private lastCooldown: number = ROLL.cooldownMs;
   /** Unit vector of the current / last roll. */
   readonly dir = { x: 0, y: 1 };
 
@@ -38,7 +41,8 @@ export class DodgeRoll {
       this.dir.y = dy / len;
     }
     this.startedAt = time;
-    this.readyAt = time + ROLL.cooldownMs;
+    this.lastCooldown = ROLL.cooldownMs * this.cooldownScale;
+    this.readyAt = time + this.lastCooldown;
     return true;
   }
 
@@ -59,7 +63,7 @@ export class DodgeRoll {
   /** 0..1 recharge, for the HUD gauge. */
   charge(time: number): number {
     if (time >= this.readyAt) return 1;
-    return Math.min(1, Math.max(0, 1 - (this.readyAt - time) / ROLL.cooldownMs));
+    return Math.min(1, Math.max(0, 1 - (this.readyAt - time) / this.lastCooldown));
   }
 
   reset() {

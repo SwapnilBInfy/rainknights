@@ -133,7 +133,7 @@ describe('TutorialRunner', () => {
     expect(by('beam', { beamHits: 2 })).toBe(true);
     expect(by('gems', { gems: 2 })).toBe(false);
     expect(by('gems', { gems: 3 })).toBe(true);
-    expect(by('levelup', { powerupPicked: true })).toBe(true);
+    expect(by('levelup', { bagOpened: true })).toBe(true);
     expect(by('dodge', { dodgedCharge: true })).toBe(true);
     expect(by('strike', { cabKilled: true })).toBe(true);
     expect(by('wet', { wetShocks: true })).toBe(true);

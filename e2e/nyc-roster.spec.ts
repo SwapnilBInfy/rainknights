@@ -51,17 +51,8 @@ test('NYC spawns Cab Wraiths as the storm builds, and the first one announces it
   // This test is about the hint, not survival: an idle knight in a storm would otherwise be overrun.
   await page.evaluate(`setInterval(() => window.__rk && window.__rk.heal(), 150)`);
   await page.waitForFunction(() => (window as any).__rk.enemyTypes().includes('cabWraith'), undefined, frame);
-  // The idle knight can level up from the storm's kills; the upgrade menu pauses the game on purpose, and the hint only
-  // shows while it is running. So pick an upgrade whenever the menu is open, until the hint appears.
   const app = page.locator('#app');
-  for (let i = 0; i < 80 && !(await app.getAttribute('data-signature-hint')); i++) {
-    if (await page.evaluate(`window.__rk.levelUpOpen()`)) {
-      await page.waitForTimeout(450);
-      await page.keyboard.press('ArrowDown');
-      await page.keyboard.press('Space');
-    }
-    await page.waitForTimeout(250);
-  }
+  for (let i = 0; i < 80 && !(await app.getAttribute('data-signature-hint')); i++) await page.waitForTimeout(250);
   await expect(app).toHaveAttribute('data-signature-hint', /Cab Wraiths charge/);
   expect(errors, errors.join('\n')).toEqual([]);
 });

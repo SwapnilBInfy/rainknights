@@ -8,6 +8,7 @@
  * - A            → Space (swing a weapon, confirm menus, start a run)
  * - B            → J (energy beam; X remains the keyboard alias)
  * - R            → K (dodge roll; Shift is the other keyboard key)
+ * - BAG          → I (open or close the Bag in a run)
  * - Start        → pause while a run is live, otherwise Enter
  *                  (title, menus, and the game-over "PRESS START")
  */
@@ -27,6 +28,7 @@ export const KEYS = {
   beam: { code: 'KeyJ', key: 'j', keyCode: 74 },
   roll: { code: 'KeyK', key: 'k', keyCode: 75 },
   confirm: { code: 'Enter', key: 'Enter', keyCode: 13 },
+  bag: { code: 'KeyI', key: 'i', keyCode: 73 },
 } as const satisfies Record<string, VirtualKey>;
 
 const held = new Map<number, VirtualKey>();

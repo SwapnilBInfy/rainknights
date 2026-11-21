@@ -7,7 +7,8 @@ import { watchScreen, type ScreenFrame } from './screenFrame';
 export interface PauseHost {
   canPause: () => boolean;
   isUserPaused: () => boolean;
-  isLevelUp: () => boolean;
+  /** A menu that stops play (the Bag) is open: Start belongs to it. */
+  isMenuOpen: () => boolean;
   isEnded: () => boolean;
   pause: () => void;
   resume: () => void;
@@ -146,7 +147,7 @@ export function bindGameplayPause(host: PauseHost): () => void {
 
   setStartConsumer(() => {
     if (host.isEnded()) return false;
-    if (host.isLevelUp()) return true;
+    if (host.isMenuOpen()) return true;
     if (host.isUserPaused()) {
       requestResume(host);
       return true;
