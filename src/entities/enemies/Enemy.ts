@@ -3,6 +3,7 @@ import type { EnemyStats } from '../../config/constants';
 import { FONT } from '../../ui/Window';
 import { StatusSet, type ApplyResult, type StatusId } from '../../systems/status';
 import type { TerrainField } from '../../systems/Terrain';
+import { HOME_RADIUS, HOME_SPEED, PATROL_SPEED, nextMode, patrolPoint, tuningFor, type AggroTuning, type Mode } from '../../systems/aggro';
 
 const STATUS_TINT: Partial<Record<StatusId, number>> = {
   frozen: 0xa0e8ff,
@@ -36,6 +37,85 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   private tintKey = '';
   /** A yellow "!" over the head while an attack is being wound up. */
   private alertMark: Phaser.GameObjects.Text | null = null;
+
+  /**
+   * Set for an enemy that lives at a spot (see `live`): it walks a small loop round `home`, ignores the knight until
+   * the knight is spotted, then chases, and walks home again if the knight gets away. A free enemy (a summoned one,
+   * one from the debug bridge) has no home and always chases.
+   */
+  home: { x: number; y: number } | null = null;
+  private mode: Mode = 'chase';
+  private tuning: AggroTuning | null = null;
+  private loopPhase = 0;
+  private loopRadius = 14;
+  private returningSince = 0;
+
+  /** Make this enemy a resident of the spot it stands on. A radius of 0 stands still (a boss waiting). */
+  live(home: { x: number; y: number }, phase = 0, loopRadius = 14) {
+    this.home = { ...home };
+    this.mode = 'idle';
+    this.tuning = tuningFor(this.stats.key);
+    this.loopPhase = phase;
+    this.loopRadius = loopRadius;
+  }
+
+  /** Chasing the knight (always true for a free enemy). */
+  get isAggro(): boolean {
+    return !this.home || this.mode === 'chase';
+  }
+
+  /** A resident that has not spotted the knight: it does no harm, and a knight brushing past it is not hurt. */
+  get isPassive(): boolean {
+    return !!this.home && this.mode !== 'chase';
+  }
+
+  /** A hit wakes a resident at once (a knight who sneaks up and swings is spotted). */
+  provoke() {
+    if (this.home && this.mode !== 'chase') this.setMode('chase');
+  }
+
+  private setMode(next: Mode) {
+    const before = this.mode;
+    this.mode = next;
+    if (next === 'chase' && before !== 'chase') this.emit('spotted', this);
+    if (next === 'idle' && before !== 'idle') this.emit('calmed', this);
+    if (next === 'return') this.returningSince = this.scene.time.now;
+  }
+
+  /** One step of a resident's life: loop at home, chase once spotted, give up and walk home. */
+  private liveStep(time: number, delta: number) {
+    const home = this.home!;
+    const tuning = this.tuning!;
+    const toKnight = Phaser.Math.Distance.Between(this.x, this.y, this.target.x, this.target.y);
+    const toHome = Phaser.Math.Distance.Between(this.x, this.y, home.x, home.y);
+    const next = nextMode(this.mode, toKnight, toHome, tuning);
+    if (next !== this.mode) this.setMode(next);
+    if (this.mode === 'chase') {
+      this.behavior(time, delta);
+      return;
+    }
+    this.telegraphing = false;
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    if (this.mode === 'return') {
+      // stuck behind something for too long: back it goes, in a blink
+      if (time - this.returningSince > 7000) {
+        this.setPosition(home.x, home.y);
+        this.setMode('idle');
+        return;
+      }
+      if (toHome <= HOME_RADIUS) this.setMode('idle');
+      else this.scene.physics.moveTo(this, home.x, home.y, this.stats.speed * HOME_SPEED);
+      return;
+    }
+    if (this.loopRadius <= 0) {
+      if (toHome > HOME_RADIUS) this.scene.physics.moveTo(this, home.x, home.y, this.stats.speed * HOME_SPEED);
+      else body.setVelocity(0, 0);
+      return;
+    }
+    const goal = patrolPoint(home, time, this.loopPhase, this.loopRadius);
+    if (Phaser.Math.Distance.Between(this.x, this.y, goal.x, goal.y) < 2) body.setVelocity(0, 0);
+    else this.scene.physics.moveTo(this, goal.x, goal.y, this.stats.speed * PATROL_SPEED);
+  }
 
   constructor(
     scene: Phaser.Scene,
@@ -81,7 +161,7 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
     return this.active && !!this.body;
   }
 
-  /** Damage dealt on contact; a charging vehicle hits harder than a cruising one. */
+  /** Damage dealt on contact; a charging vehicle hits harder than a cruising one. (A resident that has not spotted the knight does none.) */
   get contactDamage(): number {
     return this.stats.damage;
   }
@@ -92,6 +172,7 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   takeDamage(amount: number): boolean {
+    this.provoke();
     this.hp -= amount;
     this.flashMs = 70;
     if (this.hp <= 0) {
@@ -135,7 +216,8 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
       const body = this.body as Phaser.Physics.Arcade.Body;
       const prevX = body.velocity.x;
       const prevY = body.velocity.y;
-      this.behavior(time, delta);
+      if (this.home) this.liveStep(time, delta);
+      else this.behavior(time, delta);
       const slow = this.statuses.speedMult * this.terrainSpeed;
       if (slow !== 1) body.velocity.scale(slow);
       if (this.grip < 1) {

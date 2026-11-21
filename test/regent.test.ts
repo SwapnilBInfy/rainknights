@@ -62,15 +62,13 @@ describe('the Tempest Regent', () => {
 });
 
 describe('Stormhold, the finale', () => {
-  it('is a story-only place: not in the city list, with its own boss, song, emblem and an early boss', () => {
+  it('is a story-only place: not in the city list, with its own boss, song and emblem', () => {
     const region = getRegion('stormhold');
     expect(region.id).toBe('stormhold');
     expect(region.story).toBe(true);
     expect(CITIES.map((r) => r.id)).toEqual(['nyc', 'miami', 'london', 'tokyo', 'mumbai']);
     expect(REGIONS.map((r) => r.id)).toContain('stormhold');
     expect(region.boss).toBe('tempestRegent');
-    expect(region.bossAt).toBeGreaterThan(0);
-    expect(region.bossAt!).toBeLessThan(300);
     expect(region.bossIntro!.split('\n').every((line) => line.length <= 27)).toBe(true);
   });
 

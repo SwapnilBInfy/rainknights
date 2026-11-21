@@ -93,7 +93,7 @@ test('a flight pad lifts the knight over a world map: steer, climb, descend and 
   await page.evaluate(`window.__flight.teleportTo('nyc', 0.02)`);
   await page.keyboard.press('Space');
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, raf);
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.waitForTimeout(600);
   await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-city-pad.png`) });
   await page.evaluate(`window.__rk.tpToPad()`);

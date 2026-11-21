@@ -6,6 +6,7 @@ import { HubChrome } from '../ui/hubChrome';
 import { loadGame, writeProfile } from '../save/save';
 import { bagLabel, buy, buyFailText, charmShopRows, shopRows, townMaxHp, type ShopRow } from '../economy/economy';
 import { charm, charmSlots, rankLabel, toggle as toggleCharm } from '../economy/charms';
+import { addPoint, pointsForLevel, pointsSpent, removePoint, STAT_BLURBS, STAT_IDS, STAT_NAMES, type StatId } from '../systems/stats';
 import { Avatar } from '../town/avatar';
 import { mountMap } from '../town/mapView';
 import { Speech, clearHub, publishHub } from '../town/speech';
@@ -127,6 +128,8 @@ export class MarketScene extends Phaser.Scene {
         { id: 'hp', label: 'HP', value: String(profile.hp) },
         { id: 'max', label: 'MAX', value: String(max) },
         { id: 'worn', label: profile.armorId ? `WORN ${profile.armorId.toUpperCase()}` : 'NO ARMOR' },
+        { id: 'lv', label: 'LEVEL', value: String(profile.hero.level) },
+        { id: 'stats', label: 'STATS', value: this.points() > 0 ? String(this.points()) : undefined },
         { id: 'charms', label: 'CHARMS' },
         { id: 'close', label: 'CLOSE' },
       ],
@@ -134,12 +137,50 @@ export class MarketScene extends Phaser.Scene {
       onPick: (id) => {
         if (id === 'close') this.menu.hide();
         else if (id === 'charms') this.openCharms();
+        else if (id === 'stats') this.openStats();
       },
       onClose: () => this.menu.hide(),
     });
   }
 
-  /** Charms the knight owns, to wear or take off (three slots here; a run's levels add more). */
+  /** Stat points the knight has earned and not yet spent (the level lasts now, so they can be spent at home). */
+  private points(): number {
+    const hero = loadGame().town.hero;
+    return Math.max(0, pointsForLevel(hero.level) - pointsSpent(hero.alloc));
+  }
+
+  private statRows() {
+    const alloc = loadGame().town.hero.alloc;
+    return [...STAT_IDS.map((id) => ({ id, label: STAT_NAMES[id], value: String(alloc[id]) })), { id: 'back', label: 'BACK' }];
+  }
+
+  private spend(id: StatId, dir: number) {
+    const profile = loadGame().town;
+    const state = { points: this.points(), alloc: profile.hero.alloc };
+    const next = dir > 0 ? addPoint(state, id) : removePoint(state, id);
+    if (!next) {
+      this.menu.setHint(dir > 0 ? 'No points left.' : 'None to take back.');
+      return;
+    }
+    writeProfile({ ...profile, hero: { ...profile.hero, alloc: next.alloc } });
+    audio.play('confirm');
+    this.menu.refresh('STATS', this.statRows(), STAT_BLURBS[id], String(this.points()));
+  }
+
+  private openStats() {
+    this.menu.show({
+      title: 'STATS',
+      titleValue: String(this.points()),
+      rows: this.statRows(),
+      hint: 'Right: +1. Left: -1.',
+      onMove: (id) => this.menu.setHint(id === 'back' ? 'Right: +1. Left: -1.' : STAT_BLURBS[id as StatId] ?? ''),
+      onPick: (id) => (id === 'back' ? this.openStatus() : this.spend(id as StatId, 1)),
+      onSide: (id, dir) => id !== 'back' && this.spend(id as StatId, dir),
+      onClose: () => this.openStatus(),
+    });
+  }
+
+  /** Charms the knight owns, to wear or take off (as many slots as their level allows). */
   private charmRows() {
     const profile = loadGame().town;
     const rows = Object.keys(profile.charms)
@@ -150,7 +191,7 @@ export class MarketScene extends Phaser.Scene {
   }
 
   private charmsTitle() {
-    return `CHARMS ${loadGame().town.worn.length}/${charmSlots(1)}`;
+    return `CHARMS ${loadGame().town.worn.length}/${charmSlots(loadGame().town.hero.level)}`;
   }
 
   private openCharms() {
@@ -163,7 +204,7 @@ export class MarketScene extends Phaser.Scene {
       onPick: (id) => {
         if (id === 'back') return this.openStatus();
         const profile = loadGame().town;
-        const next = toggleCharm({ owned: profile.charms, worn: profile.worn }, id, charmSlots(1));
+        const next = toggleCharm({ owned: profile.charms, worn: profile.worn }, id, charmSlots(profile.hero.level));
         if (!next) {
           this.menu.setHint('No free slot.');
           return;

@@ -17,7 +17,7 @@ async function begin(page: Page, city: string) {
   await page.goto('/?seed=33');
   await beginCityRun(page, city);
   // a quiet plaza: no ambient enemies to knock the knight off the pad
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   return errors;
 }
 

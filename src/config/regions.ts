@@ -11,16 +11,14 @@ export interface RegionDef {
   emblemKey: string;
   terrainTilesKey: string;
   music: SongKey;
-  /** Enemy type that replaces some of each front's spawns here (none = just the shared roster). */
+  /** Enemy type that joins some of the camps here beyond the outskirts (none = just the shared roster). */
   signature?: string;
-  /** Message shown the first time the signature enemy appears (2 lines, 27 chars each). */
+  /** Message shown the first time the signature enemy spots the knight (2 lines, 27 chars each). */
   signatureHint?: string;
-  /** The boss that arrives at the 5:00 mark; defeating it wins the run. */
+  /** The boss that waits at the far end of the city; defeating it wins the run. */
   boss: string;
-  /** Message shown when the boss arrives (2 lines, 27 chars each). */
+  /** Message shown when the boss spots the knight (2 lines, 27 chars each). */
   bossIntro?: string;
-  /** Seconds into the run when the boss arrives (default 5:00). */
-  bossAt?: number;
   /** A place only the story takes you: not one of the cities (`CITIES`), and not on the flight map until the story marks it. */
   story?: boolean;
 
@@ -172,7 +170,6 @@ export const REGIONS: RegionDef[] = [
     music: 'stormhold',
     boss: 'tempestRegent',
     bossIntro: 'The Tempest Regent rises!\nIts storm answers its call.',
-    bossAt: 50,
     story: true,
     layout: 'coast',
     dress: 'beach',

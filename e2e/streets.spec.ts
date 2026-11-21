@@ -16,7 +16,7 @@ const raf = { polling: 'raf' as const, timeout: 25_000 };
 const rk = <T>(page: Page, expr: string) => page.evaluate(`window.__rk.${expr}`) as Promise<T>;
 
 async function quietMoment(page: Page) {
-  await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.waitForFunction(() => !(window as any).__rk.invulnerable(), undefined, raf);
 }
 

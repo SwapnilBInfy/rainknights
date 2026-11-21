@@ -61,7 +61,7 @@ test('the painted detail is there, and is repainted when the flood rises', async
 for (const [name, type] of [['a tree', TREE], ['a parked car', CAR], ['a street lamp or hydrant', PROP]] as const) {
   test(`the knight cannot walk through ${name}`, async ({ page }) => {
     const errors = await begin(page, '?seed=11');
-    await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`);
+    await page.evaluate(`window.__rk.clearEnemies()`);
     expect(await page.evaluate(`window.__rk.tpBesideSolid(${type})`)).toBe(true);
     await page.waitForTimeout(150);
     const start = (await page.evaluate(`window.__rk.x()`)) as number;

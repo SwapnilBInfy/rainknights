@@ -1,53 +1,23 @@
-import { WEATHER_FRONTS, TORNADO_SPAWN_TIME } from '../config/constants';
-import { pickEnemyType } from './spawnTable';
+import { WEATHER_FRONTS } from '../config/constants';
 
-export interface WeatherHost {
-  spawnEnemyAroundPlayer(typeKey: string): void;
-  spawnBoss(): void;
-}
-
+/**
+ * The storm's clock. It no longer sends waves of enemies or a boss (the enemies live at fixed spots now, see
+ * `CampDirector`): it only tells the weather how far along it is, which decides the front (and so the flooding and the
+ * mood) the city is in. The last front lasts as long as the knight stays.
+ */
 export class WeatherDirector {
-  private host: WeatherHost;
   private elapsed: number;
-  private spawnTimer = 0;
-  private tornadoSpawned = false;
-  private readonly bossAt: number;
   currentFrontIndex: number;
 
-  /** `signature` is the region's own enemy, mixed into the front's roster. */
-  constructor(host: WeatherHost, startFrontIndex = 0, private readonly signature?: string, bossAfter?: number) {
-    this.host = host;
+  constructor(startFrontIndex = 0) {
     const clamped = Math.max(0, Math.min(WEATHER_FRONTS.length - 1, startFrontIndex));
     this.currentFrontIndex = clamped;
     this.elapsed = WEATHER_FRONTS[clamped].start;
-    // `bossAfter` is seconds after the run begins (the finale's boss comes early); otherwise the usual 5:00 mark
-    this.bossAt = bossAfter === undefined ? TORNADO_SPAWN_TIME : this.elapsed + bossAfter;
   }
 
   update(delta: number) {
     this.elapsed += delta / 1000;
-
-    for (let i = WEATHER_FRONTS.length - 1; i >= 0; i--) {
-      if (this.elapsed >= WEATHER_FRONTS[i].start) {
-        this.currentFrontIndex = i;
-        break;
-      }
-    }
-
-    const front = WEATHER_FRONTS[this.currentFrontIndex];
-    this.spawnTimer -= delta;
-    if (this.spawnTimer <= 0) {
-      this.spawnTimer = front.spawnIntervalMs;
-      for (let i = 0; i < front.spawnCount; i++) {
-        const type = pickEnemyType(front.enemies, this.currentFrontIndex, this.signature, Math.random);
-        this.host.spawnEnemyAroundPlayer(type);
-      }
-    }
-
-    if (!this.tornadoSpawned && this.elapsed >= this.bossAt) {
-      this.tornadoSpawned = true;
-      this.host.spawnBoss();
-    }
+    this.settle();
   }
 
   get elapsedSeconds(): number {
@@ -58,25 +28,19 @@ export class WeatherDirector {
     return WEATHER_FRONTS[this.currentFrontIndex].name;
   }
 
-  get bossSpawned(): boolean {
-    return this.tornadoSpawned;
+  /** Jump the clock to a checkpoint. */
+  restoreClock(elapsedSeconds: number) {
+    this.elapsed = Math.max(0, elapsedSeconds);
+    this.settle();
   }
 
-  /**
-   * Jump the storm clock to a checkpoint. The next spawn waits out a full
-   * interval so continuing does not dump a catch-up wave on the first frame.
-   * A boss already on the field is marked spawned; the scene places it.
-   */
-  restoreClock(elapsedSeconds: number, bossOnField: boolean) {
-    this.elapsed = Math.max(0, elapsedSeconds);
-    this.currentFrontIndex = 0;
+  private settle() {
     for (let i = WEATHER_FRONTS.length - 1; i >= 0; i--) {
       if (this.elapsed >= WEATHER_FRONTS[i].start) {
         this.currentFrontIndex = i;
-        break;
+        return;
       }
     }
-    this.tornadoSpawned = bossOnField;
-    this.spawnTimer = WEATHER_FRONTS[this.currentFrontIndex].spawnIntervalMs;
+    this.currentFrontIndex = 0;
   }
 }

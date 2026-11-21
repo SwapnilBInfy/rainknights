@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WORLD, PLAYER_BASE, AUTO_ATTACK, BOSS_SUMMONS, BOSS_SPAWN_DISTANCE, MAX_LIVING_ENEMIES, frontIndexAt } from '../config/constants';
+import { WORLD, TILE, PLAYER_BASE, AUTO_ATTACK, BOSS_SUMMONS, BOSS_SPAWN_DISTANCE, MAX_LIVING_ENEMIES, frontIndexAt } from '../config/constants';
 import { MELEE, BEAM } from '../config/weapons';
 import { beamKey, SPARK_KEY } from '../gfx/weapons';
 import { TEX } from '../gfx/spriteDefs';
@@ -13,7 +13,10 @@ import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import type { Enemy } from '../entities/enemies/Enemy';
 import { createEnemy } from '../entities/enemies/factory';
-import { WeatherDirector, type WeatherHost } from '../systems/WeatherDirector';
+import { WeatherDirector } from '../systems/WeatherDirector';
+import { CampDirector } from '../systems/CampDirector';
+import { placeCamps, tunnelCamps } from '../systems/camps';
+import { laterHero } from '../systems/hero';
 import { HazardDirector, type HazardHost } from '../systems/HazardDirector';
 import { TutorialDirector } from '../systems/TutorialDirector';
 import type { TutorialStepId } from '../systems/tutorialSteps';
@@ -66,6 +69,8 @@ interface RunBridge {
   triggerHazard: (kind: HazardKind, dx?: number, dy?: number, instant?: boolean) => void;
   /** Put a status on the player or nearest enemy (debug / tests). */
   applyStatus: (target: 'player' | 'enemy', id: StatusId, ms?: number) => void;
+  /** Put the knight here (debug / tests). */
+  tpTo: (x: number, y: number) => void;
   /** Spawn an enemy a short way from the player (debug / tests). */
   spawnEnemy: (type: string, dx?: number, dy?: number) => void;
   /** Dodge roll state, for tests. */
@@ -96,6 +101,10 @@ interface RunBridge {
   gems: () => number[][];
   /** Defeat the nearest living enemy (debug / tests). */
   killNearest: () => void;
+  /** Quietly remove every living enemy but the boss, and stop the camps refilling: no XP, no loot (debug / tests). */
+  clearEnemies: () => void;
+  /** The camps: how many residents there are, how many stand now, and where the boss waits (debug / tests). */
+  camps: () => { count: number; alive: number; empty: number; spots: { x: number; y: number; type: string; alive: boolean; aggro: boolean; at: { x: number; y: number } | null }[]; boss: { x: number; y: number; aggro: boolean } | null };
   /** Defeat the boss, if one is on the field; how many times the Regent has called lightning; its phase (debug / tests). */
   killBoss: () => void;
   lightningCasts: () => number;
@@ -194,7 +203,7 @@ interface GameSceneData {
 const POWER_NAME: Record<string, string> = { sunbeam: 'Sunbeam', rainbowShield: 'Rainbow Shield', gale: 'Gale', frost: 'Frost Aura', staticCharge: 'Static Charge' };
 const SHRINE_POWERS = ['sunbeam', 'frost', 'gale', 'staticCharge', 'rainbowShield'] as const;
 
-export class GameScene extends Phaser.Scene implements WeatherHost {
+export class GameScene extends Phaser.Scene {
   player!: Player;
   private enemyGroup!: Phaser.Physics.Arcade.Group;
   private projectileGroup!: Phaser.Physics.Arcade.Group;
@@ -244,7 +253,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   private tunnelPlan: { tun: Tunnel; entry: number; exitId: number; tunnel: number; reversed: boolean } | null = null;
   private poiDirector: PoiDirector | null = null;
   private darkness: Darkness | null = null;
-  private tunnelSpawnTimer = 0;
+  private camps: CampDirector | null = null;
+  /** Where the boss waits (the far end of the map), in px. */
+  private bossHome: { x: number; y: number } | null = null;
   private castCount = 0;
   private lantern = false;
   private wasWet = false;
@@ -304,7 +315,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       if (link) this.tunnelPlan = { tun: generateUnderground(region.id, this.mapSeed, link.tunnel, region.dress), entry: data.underground.entry, exitId: link.exitId, tunnel: link.tunnel, reversed: link.reversed };
     }
     this.level = this.tunnelPlan ? 'underground' : 'surface';
-    this.tunnelSpawnTimer = 0;
+    this.camps = null;
+    this.bossHome = null;
     if (this.tunnelPlan) {
       // down in the tunnels: from the stairs at our end, a few steps in
       const { tun, reversed } = this.tunnelPlan;
@@ -320,13 +332,21 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       // the worn charms are added on top (see Player.recompute); a continued run keeps its level, XP and points.
       const town = loadGame().town;
       this.player.applyBattleGear(battleGear(this.runCharacterId, town.armorId, town.hp));
+      // The knight's growth lasts: the level, the XP and the spent points come from the profile.
+      this.player.setHero(town.hero);
       const buff = region.id === 'stormhold' ? finaleBuff(loadStory()) : null;
       if (buff && buff.hp > 0) this.player.boostBase(buff.hp, 1 + buff.damage);
-      this.player.setCharms(fit({ owned: town.charms, worn: town.worn }, charmSlots(resume?.player.level ?? 1)));
+      this.player.setCharms(fit({ owned: town.charms, worn: town.worn }, charmSlots(laterHero(town.hero, { level: resume?.player.level ?? 1, xp: 0, alloc: town.hero.alloc }).level)));
       if (!resume && buff && buff.hp > 0) this.finaleBuffText = `The Stormglass hums:\n+${buff.hp} HP, +${Math.round(buff.damage * 100)}% damage.`;
     }
     if (resume) {
       this.player.applySnapshot(resume.player);
+      // (a continued fight from before growth was kept may be further along than the profile: the later one wins)
+      if (!data.tutorial) {
+        const town = loadGame().town;
+        this.player.setHero(laterHero(town.hero, this.player.toHero()));
+        this.syncCharms();
+      }
       // An older save has no map seed, so the map is new: make sure the knight is not inside a building.
       const spot = this.openSpot(this.player.x, this.player.y);
       this.player.setPosition(spot.x, spot.y);
@@ -388,8 +408,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
     this.cameras.main.setZoom(1);
 
-    this.weather = new WeatherDirector(this, resume ? 0 : (data.startFrontIndex ?? 0), region.signature, region.bossAt);
-    if (resume) this.weather.restoreClock(resume.elapsedSeconds, resume.bossHp != null);
+    this.weather = new WeatherDirector(resume ? 0 : (data.startFrontIndex ?? 0));
+    if (resume) this.weather.restoreClock(resume.elapsedSeconds);
 
     audio.playMusic(region.music);
     audio.setAmbience(this.level === 'underground' ? null : resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
@@ -423,9 +443,11 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
         if (target === 'player') this.player.applyStatus(id, ms);
         else this.getActiveEnemies()[0]?.applyStatus(id, ms);
       },
+      tpTo: (x, y) => this.player.setPosition(x, y),
       spawnEnemy: (type, dx = 50, dy = 0) => {
         // (returns nothing: Playwright would try to serialize a returned Phaser sprite, which stalls the page)
         this.spawnEnemyAt(type, this.player.x + dx, this.player.y + dy);
+        this.noteSignature(type);
       },
       rolling: () => this.player.isRolling,
       rollCharge: () => this.player.rollCharge(this.time.now),
@@ -434,16 +456,26 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       alerts: () => this.getActiveEnemies().filter((e) => e.isTelegraphing).length,
       enemyPhases: () => this.getActiveEnemies().map((e) => e.debugPhase),
       enemyTypes: () => this.getActiveEnemies().map((e) => e.stats.key),
-      spawnBoss: () => {
-        if (!this.boss?.active) this.spawnBoss();
-      },
+      spawnBoss: () => this.callBoss(),
       bossHpFraction: () => (this.boss?.active ? this.boss.hp / this.boss.maxHp : null),
       enemyDistances: () => this.getActiveEnemies().map((e) => Phaser.Math.Distance.Between(e.x, e.y, this.player.x, this.player.y)),
       gems: () => this.gemGroup.getChildren().filter((g) => g.active).map((g) => [(g as Phaser.Physics.Arcade.Sprite).x, (g as Phaser.Physics.Arcade.Sprite).y]),
       killNearest: () => {
-        const target = this.findNearestEnemy(9999);
+        // (the boss has its own: killBoss)
+        const target = this.findNearestEnemy(9999, false);
         if (target) target.takeDamage(99999);
       },
+      clearEnemies: () => {
+        if (this.camps) this.camps.held = true; // a quiet city: nothing comes back
+        for (const enemy of this.getActiveEnemies()) if (enemy !== this.boss) enemy.destroy();
+      },
+      camps: () => ({
+        count: this.camps?.count ?? 0,
+        alive: this.camps?.alive ?? 0,
+        empty: this.camps?.empty ?? 0,
+        spots: this.camps?.positions() ?? [],
+        boss: this.boss?.active ? { x: this.boss.x, y: this.boss.y, aggro: this.boss.isAggro } : null,
+      }),
       killBoss: () => {
         if (this.boss?.active) this.boss.takeDamage(99999);
       },
@@ -589,7 +621,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     } else {
       this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
     }
-    if (resume?.bossHp != null && this.level === 'surface') this.spawnBoss(resume.bossHp);
+    if (!data.tutorial) this.setupCamps(surfaceMap, resume?.bossHp ?? null);
 
     this.setupAmbientWeather(this.runWeatherTint);
     const hazardHost: HazardHost = {
@@ -689,6 +721,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       this.updateAmbientWeather(delta);
       this.updateWeatherEffects(delta);
     }
+    this.camps?.update();
     this.updateTerrainEffects(delta);
     this.updateGems();
     this.updatePickups();
@@ -698,9 +731,9 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     if (!this.tutorial) this.handleAttack(time); // the tutorial teaches the manual attacks
     this.tutorial?.update(delta);
 
-    this.hud.update(this.player, this.weather.elapsedSeconds, this.tutorial ? this.tutorialBadge : this.weather.frontName, delta, this.player.beamCharge(time), this.player.rollCharge(time));
+    this.hud.update(this.player, this.tutorial ? this.tutorialBadge : this.weather.frontName, delta, this.player.beamCharge(time), this.player.rollCharge(time));
     this.hud.setStatuses(this.player.statuses.list());
-    this.hud.setBoss(this.boss?.active ? this.boss.hp : null, this.boss?.maxHp ?? 1, this.boss?.stats.name.toUpperCase());
+    this.hud.setBoss(this.boss?.active && this.boss.isAggro ? this.boss.hp : null, this.boss?.maxHp ?? 1, this.boss?.stats.name.toUpperCase());
     if (this.weather.currentFrontIndex !== this.lastFrontIndex) {
       this.lastFrontIndex = this.weather.currentFrontIndex;
       const flooded = this.terrain.field.setFloodRings(floodRingsFor(this.runWeatherCondition, this.weather.currentFrontIndex)) > 0;
@@ -711,8 +744,70 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     }
   }
 
-  // --- WeatherHost ---
+  // --- the residents: enemies at fixed spots, a boss waiting at the far end ---
 
+  /**
+   * Put the city's enemies where they live: camps spread over the map (or along a tunnel), tougher the further out,
+   * and the boss at the far end. They stand and loop at their spots until the knight comes close (see Enemy.live).
+   */
+  private setupCamps(surfaceMap: { grid: number[][]; spawn: { col: number; row: number } }, bossHp: number | null) {
+    let list;
+    if (this.tunnelPlan) {
+      const { tun, tunnel } = this.tunnelPlan;
+      list = tunnelCamps(tun.grid, tun.a, tun.b, (this.mapSeed + tunnel * 977) >>> 0);
+    } else {
+      const plan = placeCamps(surfaceMap.grid, surfaceMap.spawn, this.mapSeed, this.region.signature);
+      list = plan.camps;
+      const at = this.openSpot(plan.boss.col * TILE + TILE / 2, plan.boss.row * TILE + TILE / 2);
+      this.bossHome = this.region.boss === 'phantomBus' ? this.terrain.field.roadSpotNear(at.x, at.y, 8) ?? at : at;
+    }
+    this.camps = new CampDirector(
+      {
+        place: (type, x, y, phase) => this.placeResident(type, x, y, phase),
+        knight: () => ({ x: this.player.x, y: this.player.y }),
+      },
+      list
+    );
+    this.camps.start();
+    if (this.bossHome) this.createBoss(this.bossHome.x, this.bossHome.y, true, bossHp);
+  }
+
+  /** An enemy at its spot, looping round it, until the knight is spotted. */
+  private placeResident(type: string, x: number, y: number, phase: number): Enemy {
+    let spot = { x, y };
+    if (type === 'cabWraith') spot = this.terrain.field.roadSpotNear(x, y, 6) ?? spot; // vehicles live on streets
+    const enemy = this.spawnEnemyAt(type, spot.x, spot.y);
+    enemy.live(spot, phase, type === 'cabWraith' ? 10 : 14);
+    enemy.on('spotted', this.handleSpotted);
+    return enemy;
+  }
+
+  private handleSpotted = (enemy: Enemy) => {
+    if (this.ended || !enemy.active) return;
+    if (enemy === this.boss) return; // (the boss has its own entrance)
+    this.floatText(enemy.x, enemy.y - 14, '!', '#f8d020');
+    this.noteSignature(enemy.stats.key);
+  };
+
+  /** The first time the city's signature enemy shows itself, say what it does. */
+  private noteSignature(typeKey: string) {
+    if (this.tutorial || this.signatureSeen || typeKey !== this.region.signature || !this.region.signatureHint) return;
+    this.signatureSeen = true;
+    // Shown a moment after the first sighting; if a menu is open at that moment, try again rather than lose it.
+    const show = () => {
+      if (this.ended) return;
+      if (this.paused) {
+        this.time.delayedCall(1000, show);
+        return;
+      }
+      this.hud.showMessage(this.region.signatureHint!);
+      const app = document.getElementById('app');
+      if (app) app.dataset.signatureHint = this.region.signatureHint!;
+    };
+    this.time.delayedCall(1500, show);
+  }
+
+  /** A free enemy near the knight that chases at once: a boss's backup, or one from the debug bridge. */
   spawnEnemyAroundPlayer(typeKey: string) {
     if (this.enemyGroup.countActive(true) >= MAX_LIVING_ENEMIES) return; // see MAX_LIVING_ENEMIES
     const angle = Math.random() * Math.PI * 2;
@@ -722,6 +817,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     // Vehicles belong on streets: put them on the nearest road if there is one close by.
     if (typeKey === 'cabWraith') spot = this.terrain.field.roadSpotNear(spot.x, spot.y, 6) ?? spot;
     this.spawnEnemyAt(typeKey, spot.x, spot.y);
+    this.noteSignature(typeKey); // (a resident says it when it spots the knight: handleSpotted)
   }
 
   private spawnEnemyAt(typeKey: string, x: number, y: number): Enemy {
@@ -731,34 +827,14 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     enemy.once('enemyDied', this.handleEnemyDeath);
     this.enemyGroup.add(enemy);
     if (this.rule.wet) enemy.applyStatus('wet', STATUS_TUNING.wetMs);
-    if (!this.tutorial && !this.signatureSeen && typeKey === this.region.signature && this.region.signatureHint) {
-      this.signatureSeen = true;
-      // Shown a moment after the first sighting; if a menu is open at that moment, try again rather than lose it.
-      const show = () => {
-        if (this.ended) return;
-        if (this.paused) {
-          this.time.delayedCall(1000, show);
-          return;
-        }
-        this.hud.showMessage(this.region.signatureHint!);
-        const app = document.getElementById('app');
-        if (app) app.dataset.signatureHint = this.region.signatureHint!;
-      };
-      this.time.delayedCall(1500, show);
-    }
     return enemy;
   }
 
-  spawnBoss(remainingHp?: number) {
-    // The Regent arrives from above (the boss bar and the message box fill the bottom of the screen), so its entrance is seen.
-    const angle = this.region.boss === 'tempestRegent' ? -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 0.8 : Math.random() * Math.PI * 2;
-    const dist = BOSS_SPAWN_DISTANCE[this.region.boss] ?? 170;
-    let spot = this.openSpot(Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50), Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50));
-    if (this.region.boss === 'phantomBus') spot = this.terrain.field.roadSpotNear(spot.x, spot.y, 8) ?? spot;
-    const x = spot.x;
-    const y = spot.y;
-    audio.play('bossAppears');
-    audio.playMusic('boss');
+  /**
+   * The boss. It waits at the far end of the map (`resident`) and stands still until the knight comes close, then the
+   * fight begins; or it is a free one that comes at the knight now (the debug bridge).
+   */
+  private createBoss(x: number, y: number, resident: boolean, remainingHp?: number | null): Enemy {
     const boss = createEnemy(this, this.region.boss, x, y, this.player);
     boss.terrain = this.terrain.field;
     boss.on('crash', this.handleCrash);
@@ -773,21 +849,61 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.enemyGroup.add(boss);
     this.boss = boss;
     if (remainingHp != null) boss.hp = Math.min(boss.maxHp, remainingHp);
-    else if (this.region.bossIntro) this.hud.showMessage(this.region.bossIntro);
-    if (!remainingHp && this.finaleBuffText) this.time.delayedCall(2800, () => this.hud.showMessage(this.finaleBuffText));
-    if (!remainingHp && this.lantern) this.time.delayedCall(5600, () => this.hud.showMessage("Aurel's Lantern glows:\nstrike warnings last longer."));
-
-    const summon = BOSS_SUMMONS[boss.stats.key];
-    if (summon) {
-      this.bossSummonEvent = this.time.addEvent({
-        delay: summon.everyMs,
-        loop: true,
-        callback: () => {
-          if (!this.boss?.active) return;
-          for (let i = 0; i < summon.count; i++) this.spawnEnemyAroundPlayer(Phaser.Utils.Array.GetRandom(summon.types));
-        },
-      });
+    const entrance = () => this.bossEntrance(boss, remainingHp != null);
+    if (resident) {
+      boss.live({ x, y }, 0, 0); // it waits where it stands
+      boss.once('spotted', entrance);
+      boss.on('calmed', () => !this.ended && audio.playMusic(this.region.music));
+    } else {
+      entrance();
     }
+    return boss;
+  }
+
+  /** The knight has come to the boss: the music, the message and the summons begin. */
+  private bossEntrance(boss: Enemy, resumed: boolean) {
+    if (this.ended || !boss.active) return;
+    audio.play('bossAppears');
+    audio.playMusic('boss');
+    if (!resumed && this.region.bossIntro) this.hud.showMessage(this.region.bossIntro);
+    if (!resumed && this.finaleBuffText) this.time.delayedCall(2800, () => this.hud.showMessage(this.finaleBuffText));
+    if (!resumed && this.lantern) this.time.delayedCall(5600, () => this.hud.showMessage("Aurel's Lantern glows:\nstrike warnings last longer."));
+    boss.on('calmed', () => this.bossSummonEvent?.remove(false));
+    boss.on('spotted', () => this.startSummons(boss));
+    this.startSummons(boss);
+  }
+
+  private startSummons(boss: Enemy) {
+    this.bossSummonEvent?.remove(false);
+    this.bossSummonEvent = null;
+    const summon = BOSS_SUMMONS[boss.stats.key];
+    if (!summon) return;
+    this.bossSummonEvent = this.time.addEvent({
+      delay: summon.everyMs,
+      loop: true,
+      callback: () => {
+        if (!this.boss?.active || !this.boss.isAggro) return;
+        for (let i = 0; i < summon.count; i++) this.spawnEnemyAroundPlayer(Phaser.Utils.Array.GetRandom(summon.types));
+      },
+    });
+  }
+
+  /** The debug bridge: bring the boss to the knight (the waiting one, or a new one if there is none). */
+  private callBoss() {
+    if (this.boss?.active) {
+      const dist = BOSS_SPAWN_DISTANCE[this.region.boss] ?? 170;
+      const angle = Math.random() * Math.PI * 2;
+      const spot = this.openSpot(Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50), Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50));
+      this.boss.setPosition(spot.x, spot.y);
+      if (this.boss.home) this.boss.home = { x: spot.x, y: spot.y };
+      this.boss.provoke();
+      return;
+    }
+    const dist = BOSS_SPAWN_DISTANCE[this.region.boss] ?? 170;
+    const angle = Math.random() * Math.PI * 2;
+    let spot = this.openSpot(Phaser.Math.Clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD.width - 50), Phaser.Math.Clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD.height - 50));
+    if (this.region.boss === 'phantomBus') spot = this.terrain.field.roadSpotNear(spot.x, spot.y, 8) ?? spot;
+    this.createBoss(spot.x, spot.y, false);
   }
 
   // --- combat ---
@@ -808,7 +924,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   private onPlayerHitEnemy = (_playerObj: unknown, enemyObj: unknown) => {
     const enemy = enemyObj as Enemy;
-    if (!enemy.active) return;
+    if (!enemy.active || enemy.isPassive) return; // one that has not spotted the knight does no harm
     this.player.takeDamage(enemy.contactDamage, this.time.now);
   };
 
@@ -863,7 +979,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   /** Automatic Storm Bolt — a weaker backup to the manual swing and beam. */
   private handleAttack(time: number) {
     if (time - this.player.lastAttackAt < this.player.attackCooldown * AUTO_ATTACK.cooldownMult) return;
-    const target = this.findNearestEnemy(this.player.attackRange);
+    // The backup bolt fights what is fighting the knight; it does not wake what has not spotted them.
+    const target = this.findNearestEnemy(this.player.attackRange, true, true);
     if (!target) return;
     this.player.lastAttackAt = time;
     this.fireProjectile(target);
@@ -977,10 +1094,12 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     this.cameras.main.shake(70, 0.0015);
   }
 
-  private findNearestEnemy(range: number): Enemy | null {
+  private findNearestEnemy(range: number, includeBoss = true, onlyAggro = false): Enemy | null {
     let nearest: Enemy | null = null;
     let nearestDist = range;
     for (const enemy of this.getActiveEnemies()) {
+      if (!includeBoss && enemy === this.boss) continue;
+      if (onlyAggro && !enemy.isAggro) continue;
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y);
       if (dist <= nearestDist) {
         nearest = enemy;
@@ -995,7 +1114,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   }
 
   private updatePull() {
-    if (!this.boss || !this.boss.active || this.boss.stats.key !== 'tornadoBoss') return; // only the Tornado pulls
+    if (!this.boss || !this.boss.active || !this.boss.isAggro || this.boss.stats.key !== 'tornadoBoss') return; // only the Tornado pulls, and only once it has noticed the knight
     const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);
     if (dist < 140 && dist > 25) {
       const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, this.boss.x, this.boss.y);
@@ -1208,7 +1327,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
       dots.push({ x: item.x, y: item.y, color });
     }
     if (this.level === 'surface' && !this.tutorial) dots.push({ ...padCenterFor(this.terrain.spawn), color: 0x3f8cf0 });
-    if (this.boss?.active) dots.push({ x: this.boss.x, y: this.boss.y, color: 0xff4a4a });
+    if (this.boss?.active && this.level === 'surface') dots.push({ x: this.boss.x, y: this.boss.y, color: 0xff4a4a });
     return dots;
   }
 
@@ -1219,21 +1338,10 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
     const cam = this.cameras.main.worldView;
 
     if (this.level === 'underground') {
-      this.updateTunnelSpawns(delta);
       const lights = [{ x: this.player.x - cam.x, y: this.player.y - cam.y, r: 62 + Math.sin(time / 230) * 2 }];
       for (const item of this.poiDirector.items) if (!this.poiDirector.isUsed(item.key)) lights.push({ x: item.x - cam.x, y: item.y - cam.y, r: item.kind === 'crate' ? 22 : 30 });
       this.darkness?.update(lights);
     }
-  }
-
-  /** A trickle of enemies in the tunnels (there is no storm down here): a few at a time, mostly the small ones. */
-  private updateTunnelSpawns(delta: number) {
-    this.tunnelSpawnTimer -= delta;
-    if (this.tunnelSpawnTimer > 0) return;
-    this.tunnelSpawnTimer = 1800;
-    if (this.getActiveEnemies().length >= 9) return;
-    const roll = Math.random();
-    this.spawnEnemyAroundPlayer(roll < 0.62 ? 'rainImp' : roll < 0.88 ? 'windWraith' : 'hailBrute');
   }
 
   private onPoi(item: PoiItem) {
@@ -1376,6 +1484,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
   /** Leave the run by air: it ends as a retreat (not a win), the knight's HP carries home, and the flight map opens here. */
   private flyOut() {
     if (this.tutorial || this.ended) return;
+    this.saveHero();
     this.ended = true;
     this.userPaused = false;
     closePauseMenu();
@@ -1400,6 +1509,7 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   private quitToTitle() {
     if (this.tutorial) return this.leaveTutorial(); // never touches the saved run
+    this.saveHero();
     this.ended = true;
     clearRun();
     this.userPaused = false;
@@ -1426,11 +1536,22 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   /** Write the in-progress run. No-op once the run has ended or been abandoned. */
   checkpoint() {
+    this.saveHero();
     if (this.tutorial || this.ended || this.level === 'underground' || !this.player?.active || !this.weather) return;
     saveRun(this.captureRun());
   }
 
+  /** Keep the knight's growth (level, XP, spent points) with the profile: it outlasts the fight, a defeat and a flight. */
+  private saveHero() {
+    if (this.tutorial || !this.player) return;
+    const hero = this.player.toHero();
+    const town = loadGame().town;
+    const same = town.hero.level === hero.level && town.hero.xp === hero.xp && JSON.stringify(town.hero.alloc) === JSON.stringify(hero.alloc);
+    if (!same) writeProfile({ ...town, hero });
+  }
+
   private captureRun() {
+    this.saveHero();
     return {
       characterId: this.runCharacterId,
       regionId: this.runRegionId,
@@ -1449,7 +1570,8 @@ export class GameScene extends Phaser.Scene implements WeatherHost {
 
   private endRun(won: boolean) {
     if (this.tutorial) return; // the tutorial cannot be lost, and records nothing
-    if (this.ended) return; // (a level-up menu being open must not block the ending)
+    if (this.ended) return;
+    this.saveHero();
     this.ended = true;
     this.userPaused = false;
     closePauseMenu();

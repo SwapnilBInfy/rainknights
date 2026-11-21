@@ -32,7 +32,7 @@ async function expectRunning(page: Page) {
 }
 
 const quiet = async (page: Page) => {
-  await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.waitForFunction(() => !(window as any).__rk.invulnerable(), undefined, raf);
 };
 const key = (code: string, keyCode: number, type: 'keydown' | 'keyup') =>

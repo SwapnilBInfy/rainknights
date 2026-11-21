@@ -16,7 +16,7 @@ async function begin(page: Page) {
   await page.goto('/?seed=5&weather=clear');
   await beginCityRun(page, 'nyc');
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0);
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   return errors;
 }
 

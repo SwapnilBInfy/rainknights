@@ -29,7 +29,7 @@ const seeRollSince = (page: Page, before: number) =>
  * invulnerability, so clear the ambient enemies and wait that out. New ones take seconds to arrive.
  */
 async function quietMoment(page: Page) {
-  await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.waitForFunction(() => !(window as any).__rk.invulnerable(), undefined, { polling: 'raf', timeout: 3000 });
 }
 const pos = async (page: Page) => [await rk<number>(page, 'x()'), await rk<number>(page, 'y()')] as const;

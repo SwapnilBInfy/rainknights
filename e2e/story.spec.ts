@@ -297,7 +297,7 @@ test('the finale: land on the Eye, face the Tempest Regent (its lightning, its p
   await expect(app(page)).toHaveAttribute('data-objective', 'DEFEAT THE REGENT');
   expect(await rk<boolean>(page, 'lantern()'), "Aurel's Lantern, taken in the Undercroft, is lit").toBe(true);
   // the Stormglass's strength shows in the knight's health: 4 shards on the altar
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
 
   await page.evaluate(`window.__rk.spawnBoss()`);
   await expect(app(page)).toHaveAttribute('data-boss', 'REGENT');
@@ -346,7 +346,7 @@ test('after the story is complete, Mistford is sunny, the people are glad, and t
 async function downTo(page: Page, pick: (rows: { id: number; kind: string; pair?: number; tunnel?: number }[]) => number) {
   const rows = (await rk<{ id: number; kind: string; pair?: number; tunnel?: number }[]>(page, 'pois()')).filter((r) => r.kind === 'entrance');
   const n = pick(rows);
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await rk(page, 'heal()');
   await rk(page, `tpToPoi('entrance', ${n})`);
   await page.waitForFunction(() => (window as any).__rk?.depth?.() === 'underground', undefined, frame);
