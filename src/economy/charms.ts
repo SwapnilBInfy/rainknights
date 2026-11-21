@@ -39,7 +39,7 @@ const ROMAN = ['', 'I', 'II', 'III'];
 export const rankLabel = (rank: number): string => ROMAN[Math.max(0, Math.min(MAX_RANK, rank))];
 
 export const CHARMS: CharmDef[] = [
-  { id: 'boltRing', name: 'Bolt Ring', blurb: 'Auto-attack damage +6.', price: 90, kind: 'knight' },
+  { id: 'boltRing', name: 'Bolt Ring', blurb: 'Attack damage +6.', price: 90, kind: 'knight' },
   { id: 'squallBand', name: 'Squall Band', blurb: 'Attack cooldown -12%.', price: 110, kind: 'knight' },
   { id: 'gustLens', name: 'Gust Lens', blurb: 'Attack range +25.', price: 80, kind: 'knight' },
   { id: 'hailTip', name: 'Hail Tip', blurb: 'Bolts pierce +1 enemy.', price: 140, kind: 'knight' },

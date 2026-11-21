@@ -176,6 +176,13 @@ export function charmDrop(enemyKey: string, roll: number, pick: number, box: Cha
   return id ? charmPickup(id) : null;
 }
 
+/** A charm in a supply crate (a buried chest is better): `roll` decides if, `pick` which, both in [0, 1). */
+export function crateCharm(buried: boolean, roll: number, pick: number, box: CharmBox): string | null {
+  if (roll < 0 || roll >= (buried ? 0.22 : 0.1)) return null;
+  const id = randomCharm(box, pick);
+  return id ? charmPickup(id) : null;
+}
+
 export function lootFor(enemyKey: string, roll: number): { coins: number; itemId: string | null } {
   const row = LOOT[enemyKey];
   if (!row || roll < 0 || roll >= 1) return { coins: row?.coins ?? 0, itemId: null };
@@ -335,6 +342,7 @@ export function shopRows(profile: TownProfile): ShopRow[] {
       blurb: owned && profile.armorId === piece.id ? `${piece.blurb}  WORN` : piece.blurb,
     });
   }
+  rows.push({ id: 'charms', label: 'CHARMS', blurb: 'Rings and stones. They make you stronger.' });
   rows.push({ id: 'leave', label: 'LEAVE', blurb: 'Back to the shop.' });
   return rows;
 }

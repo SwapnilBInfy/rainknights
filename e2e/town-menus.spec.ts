@@ -247,6 +247,46 @@ test('market and chest open and close without freezing, and items move', async (
   expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
 });
 
+test('the market has a CHARMS counter: buy one, and it is worn and shown in the bag', async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+  // a pocketful of drips, so a charm is within reach
+  await page.goto('/');
+  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'MenuScene');
+  await page.keyboard.press('Space');
+  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'TownScene');
+  await page.evaluate(() => {
+    const doc = JSON.parse(localStorage.getItem('rainknights:save') ?? 'null');
+    doc.town.coins = 500;
+    localStorage.setItem('rainknights:save', JSON.stringify(doc));
+  });
+  const app = await startTown(page);
+  await steer(page, cellCenter(TOWN.shopExit));
+  await steer(page, { ...cellCenter(TOWN.shopMat), scene: 'MarketScene' });
+  await steer(page, { ...cellCenter({ col: MARKET.spawn.col, row: MARKET.counterRow }), interact: 'shop' });
+  await page.keyboard.press('Space');
+  await expect(app).toHaveAttribute('data-shop', 'open');
+  // LEAVE is the last row and CHARMS the one before it: up from the top wraps to LEAVE
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(100);
+  await page.keyboard.press('ArrowUp');
+  await expect(app).toHaveAttribute('data-shop-item', 'charms');
+  await page.waitForTimeout(100);
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: 'e2e-artifacts/market-charms.png' });
+  await page.keyboard.press('Space'); // the first charm on the list: Bolt Ring
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('rainknights:save') ?? 'null')?.town?.charms?.boltRing === 1);
+  const town = await page.evaluate(() => JSON.parse(localStorage.getItem('rainknights:save') ?? 'null').town);
+  expect(town.worn).toEqual(['boltRing']);
+  expect(town.coins).toBeLessThan(500);
+  expect(errors, errors.join('\n')).toEqual([]);
+});
+
 test.describe('touch', () => {
   const pixel = devices['Pixel 7'];
   test.use({
@@ -284,7 +324,9 @@ test.describe('touch', () => {
     await releaseStick(page);
     await assertLoop(page);
 
-    for (let i = 0; i < 6; i++) await nudgeStick(page, 'down');
+    // down past every row (the CHARMS counter is the one before LEAVE) to LEAVE
+    for (let i = 0; i < 7; i++) await nudgeStick(page, 'down');
+    await expect(app).toHaveAttribute('data-shop-item', 'leave');
     await tapButton(page, 'a');
     await expect(app).toHaveAttribute('data-shop', 'closed');
     await expect(app).toHaveAttribute('data-coins', '20');

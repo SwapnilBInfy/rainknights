@@ -27,9 +27,9 @@ are AI-generated (via `npm run art:generate`).
 - **Energy beam**: hold **J** or **X** to fire a piercing beam in your facing
   direction (short recharge, shown by the gauge under your HP)
 - **Auto-attack**: a weaker Storm Bolt still fires at the nearest enemy as a backup
-- **Level up**: collect XP gems from defeated enemies, then pick one of three
-  upgrades (weapon, stat, or weather power). Each level restores HP to full,
-  armor included. The fight freezes until you pick
+- **Level up**: collect XP gems from defeated enemies. Each level restores HP to full, armor included,
+  and earns **3 stat points** (see "Stat points and charms"). The fight never stops for it: spend the points
+  from the Bag whenever you like
 - **Pause**: **Esc** or **P** during a run (see Controls)
 - **Goal**: survive the escalating storm fronts and defeat the **Tornado**
   boss that arrives at the 5-minute mark
@@ -47,7 +47,8 @@ Keyboard, the on-screen buttons on a touch screen, and a gamepad Start button.
 | Enter | Confirm a menu, start a run, or continue from game over. On the title menu, confirms Continue, New game, or Reset save. |
 | Esc or P | Pause or resume a live run. On the title's "Erase save?" question, backs out without erasing. |
 | M | Mute or unmute. The choice is remembered between visits, and M still works while paused. |
-| I | Open the bag during a fight and use a food item. |
+| I | Open the **Bag** during a fight: ITEMS (food), MAP, STATS (spend points) and CHARMS (what you wear). I again closes it. |
+| N | Open the Bag on the **map**. |
 | 1–3, Z, mouse | Number keys pick a listed option. Z confirms, the same as Enter. Hover and click work on menus, the title, and game over. |
 
 Touch controls show up when the device has a touch screen (or after the first
@@ -84,7 +85,7 @@ time, and each step finishes when you actually do the thing:
 2. **Swing** at a training dummy
 3. **Energy beam** through two dummies in a line
 4. **XP gems**: collect them
-5. **Level up**: pick a weather powerup
+5. **Level up**: a level gives 3 stat points; open the Bag (I) to see them
 6. **Dodge roll** across a Cab Wraith's charge lane
 7. **Stall strike**: hit the cab while it is stalled (+50%)
 8. **Wet + shock**: beam a wet foe
@@ -114,7 +115,7 @@ wipes the save — the run, bests, and the mute setting — and returns to the
 title. Esc, P, touch Start, and gamepad Start leave that question too.
 
 The run also pauses if the window loses focus or the tab is hidden, while a
-run is underway and a level-up menu is not already open.
+run is underway.
 
 ### Continue
 
@@ -140,18 +141,19 @@ best time.
 
 Progress is stored only in this browser (`localStorage`, key
 `rainknights:save`, schema version 2). There is no account and no server.
-The game writes that save when a fight starts, when you pick a level-up,
+The game writes that save when a fight starts, when you spend a point or change a charm,
 when the weather front changes, when you pause, and when the tab is hidden
 or the page closes.
 
 A checkpoint keeps the knight, city, weather, storm clock, position, HP,
-level, XP, upgrades, and the tornado's HP if it is already on the field.
+level, XP, spent stat points, shrine powers, and the tornado's HP if it is already on the field.
+Charms live with the drips and the bag, so you keep them between fights.
 Drips, the bag, the chest, and worn armor live beside the run, so they
 stay when a fight ends. A save from version 1 still loads: Continue
 resumes that fight, and the knight arrives in Mistford afterwards with
 an empty purse.
 Enemies, shots, and XP gems are not stored; the storm keeps spawning after
-you continue. A level-up menu that was open is opened again.
+you continue.
 
 Mute used to live in its own key (`rainknights:muted`). The first load
 folds that into the save and then removes the old key.
@@ -161,13 +163,9 @@ next time it writes. A save from a newer version is left untouched and this
 build plays as if nothing was stored. If storage is blocked (private mode),
 the fight still runs and nothing is written.
 
-A level-up menu freezes the scene the same way and stays up until you pick an
-upgrade. Esc, P, and Start leave that menu alone, and Start cannot confirm a
-choice. A swing that was already held (Space or touch A) waits out a short
-beat before it can select anything; after that, Enter, Space, or Z confirms
-the highlighted row, and 1–3 pick directly. A level gained while the pause
-menu is open waits until you resume. Several levels in a row show one menu
-after another.
+The Bag freezes the scene the same way. It is not a level-up menu: it opens when you ask (I, N, or the touch BAG
+button) and closes the same way. Its list takes the arrow keys and WASD, Enter, Space or Z to pick, Esc to step back a
+page, and 1–9 to pick a row; it listens to the window rather than the (paused) scene, so it works while play is stopped.
 
 ### Music & sound
 
@@ -265,7 +263,7 @@ the drips count (drawn as pixels, so an 8 is not an S) sits in the
 top-right. The place name fades in when you arrive, then goes away. A
 small A bubble appears over a door, neighbour, or piece of furniture only
 while you are close enough to use it. **I** opens the bag: HP, armor, and
-what you are carrying.
+what you are carrying, and your charms.
 
 A new knight finds 20 drips in a jar — one Rain Bun, not a suit of armor.
 Enemies drop drips (and, sometimes, food). Bosses drop more, plus a Sun
@@ -281,7 +279,7 @@ Bean. About eight foes is a short run; two of those pay for the Cloth Vest.
 | Storm Mail | 240 | +28 HP, +3 damage |
 
 Armor is worn into the next fight (a continued fight keeps the stats it
-already had). In a fight, **I** opens the bag. Food can also be used from
+already had). In a fight, **I** opens the Bag (see "Stat points and charms"). Food can also be used from
 the chest at home. A defeat walks you home at about 30% HP; the bed puts
 you back to full. Drips and items picked up during the optional tutorial
 are not saved.
@@ -468,7 +466,7 @@ on the field waits for you, as hurt as you left it. Continue after leaving a run
 the stairs. The same map always has the same entrances and the same tunnels (they come from the map's seed).
 
 **Supply crates and weather shrines.** Ten **crates** are scattered over each map: walk into one for drips, maybe a
-bun, and a spill of gems. Three **weather shrines** grant a power: stand at one for a moment and one of Sunbeam,
+bun, now and then a **charm**, and a spill of gems. Three **weather shrines** grant a power: stand at one for a moment and one of Sunbeam,
 Rainbow Shield, Gale, Frost Aura or Static Charge gains a level and the knight is mended by a quarter. Each is used
 once, and what has been used is remembered when you go underground and when you continue a saved run. None of this is
 in the tutorial.
@@ -476,10 +474,10 @@ in the tutorial.
 **Mud.** Rain churns open grass into **mud**, most of all beside water and most in a downpour: it slows you to 60%
 without soaking you. Clear skies, heat and cold leave none. (Roads, buildings and the plaza never turn to mud.)
 
-**The minimap.** In the top-right corner, the whole map (a pixel for every 2x2 tiles): water, roads, buildings, rock,
-ice and mud in different colours, with blips for the knight (blinking), stairs (teal), crates (yellow), shrines
-(purple), the flight pad (blue) and the boss (red). It shows the tunnel when you are underground. **N** turns it off
-and on.
+**The map** is in the Bag, not on the screen. Press **N** (or I, then MAP) for the whole map (a pixel for every 2x2 tiles,
+drawn at 2x): water, roads, buildings, rock, ice and mud in different colours, with blips for the knight, stairs (teal),
+crates (yellow), shrines (purple), the flight pad (blue) and the boss (red). It shows the tunnel when you are underground.
+The game is stopped while you look.
 
 Where things go is a pure function of the map (`src/systems/pois.ts`, `src/systems/underground.ts`, no Phaser) and is
 unit-tested: every one is on open ground the knight can walk to, away from the plaza and from each other, on every city
@@ -524,13 +522,41 @@ cruises, faster charges, a red lane, and its backup arrives sooner. Every few
 seconds it calls Cab Wraiths and Rain Imps. Defeating it wins the run, same as
 the Tornado. The Tornado alone pulls you toward it.
 
-### Weather powerups (picked at level-up)
+### Stat points and charms
 
-- **Sunbeam** — periodic heal + damage pulse around you
-- **Rainbow Shield** — periodic brief invulnerability
-- **Gale Force** — passive move speed boost
-- **Frost Aura** — slows enemies near you
-- **Static Charge** — attacks chain to a second enemy
+A level used to open a menu of upgrades. Now a level earns **3 stat points**, and the upgrades are **charms** you buy,
+find or win.
+
+**Stat points** are spent in the Bag (I, STATS): right adds a point, left takes one back (so a build can be rethought
+any time). Each stat caps at 30.
+
+- **Strength**: swing damage +7% per point
+- **Power**: beam and Storm Bolt damage +7% per point
+- **Endurance**: +8 max HP and 2% less damage taken per point (at most 40% less)
+- **Speed**: move speed +4% and a 3% shorter dodge-roll wait per point (at most 40% shorter)
+
+A new flash of gold "+3" beside your HP shows points you have not spent yet.
+
+**Charms** are the old level-up skills, as items. Own one and it is yours for good; own a second of the same kind and it
+ranks up (I to III). You wear three at a time, a fourth at level 5 and a fifth at level 10; a new charm is worn at once
+if there is a free slot, and you swap them in the Bag (CHARMS, Enter) or at the market's bag. Buy them at the market's
+**CHARMS** counter (rank II and III cost 2x and 3x), find them in crates and buried chests, or win them from enemies
+(rare from the small ones, tougher ones more often, bosses always).
+
+- **Bolt Ring** — attack damage +6 per rank
+- **Squall Band** — attack cooldown -12% per rank
+- **Gust Lens** — attack range +25 per rank
+- **Hail Tip** — bolts pierce +1 enemy per rank
+- **Vital Stone** — max HP +20 per rank
+- **Lodestone** — XP magnet radius +20 per rank
+- **Sun Charm** — periodic heal + damage pulse around you
+- **Rainbow Charm** — periodic brief invulnerability
+- **Gale Charm** — move speed +20% per rank
+- **Frost Charm** — slows enemies near you
+- **Static Charm** — attacks chain to a second enemy
+
+The weather shrines still raise those five powers, on top of any charm. The maths is in `src/systems/stats.ts` and
+`src/economy/charms.ts` (no Phaser, unit-tested).
 
 ## Development & CI
 
@@ -569,7 +595,7 @@ smoke config (`playwright.smoke.config.ts`) starts `vite preview` on
 `127.0.0.1:4173` and runs `e2e/smoke.spec.ts`: page title, the meta description,
 canonical URL, Open Graph and Twitter tags, favicon, web manifest, robots.txt,
 the 240×160 Phaser canvas, region emblems, a clean console, the pause menu,
-touch controls under phone emulation, the quit confirmation, the level-up
+touch controls under phone emulation, the quit confirmation, the Bag
 freeze, and a save that survives reload (Continue restores the run and the
 mute; Reset save clears it). It skips `e2e/feel-demo.spec.ts`. Passing runs
 also write screenshots under `e2e-artifacts/` (gitignored).
@@ -616,7 +642,7 @@ src/
   save/            versioned localStorage save, migration, run checkpoints
   scenes/          Boot, Menu, Town, House, Market, CharacterSelect, RegionSelect, Game, GameOver, Overlay
   entities/        Player, Projectile, enemy classes
-  systems/         WeatherDirector, WeatherService, Terrain, LevelUpSystem, PowerupSystem
+  systems/         WeatherDirector, WeatherService, Terrain, PowerupSystem, stats (stat points)
   gfx/             procedural pixel sprites, tiles, weapons, palette
   ui/              HUD, pause menu, windows
   input/           keyboard mapping, touch d-pad, on-screen hints

@@ -1,5 +1,5 @@
 import type Phaser from 'phaser';
-import { KEYS, releaseAllKeys, setKeyDown, type VirtualKey } from './keys';
+import { KEYS, releaseAllKeys, setKeyDown, tapKey, type VirtualKey } from './keys';
 import { emitStart } from './start';
 import { watchScreen, type ScreenFrame } from '../ui/screenFrame';
 
@@ -78,10 +78,11 @@ export function mountTouchControls(game: Phaser.Game) {
   actions.dataset.testid = 'touch-actions';
 
   const start = button('start', 'Start', 'START');
+  const bag = button('bag', 'Bag', 'BAG');
   const roll = button('r', 'Dodge roll', 'R');
   const beam = button('b', 'B', 'B');
   const swing = button('a', 'A', 'A');
-  actions.append(start, roll, beam, swing);
+  actions.append(start, bag, roll, beam, swing);
 
   root.append(wrap, actions);
   document.body.append(root);
@@ -163,6 +164,7 @@ export function mountTouchControls(game: Phaser.Game) {
   bindHold(beam, KEYS.beam);
   bindHold(roll, KEYS.roll);
   bindTap(start, () => emitStart());
+  bindTap(bag, () => tapKey(KEYS.bag));
 
   // Backstop for browsers that still pan or pinch when touch-action is ignored.
   const blockGesture = (e: Event) => e.preventDefault();
@@ -177,6 +179,7 @@ export function mountTouchControls(game: Phaser.Game) {
     beam.classList.remove('down');
     roll.classList.remove('down');
     start.classList.remove('down');
+    bag.classList.remove('down');
     applyDirs({ ...NO_DIRS });
     moveNub(0, 0);
     releaseAllKeys();

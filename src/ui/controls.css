@@ -132,6 +132,19 @@ body {
     inset -1px -1px 0 #12131c;
 }
 
+/* The Bag (items, map, stats, charms), under Start. */
+#touch-controls .bag {
+  left: 0;
+  top: 29px;
+  width: 46px;
+  height: 22px;
+  color: #f8f8f8;
+  background: #7a3a98;
+  box-shadow:
+    inset 1px 1px 0 #c890e0,
+    inset -1px -1px 0 #3a1850;
+}
+
 /* Dodge roll: the GBA's R shoulder, beside Start. */
 #touch-controls .r {
   left: 50px;

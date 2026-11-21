@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { buy, charmDrop, charmOfPickup, charmPickup, charmShopRows, collect, crateCharm, freshProfile, lootFor, shopRows } from '../src/economy/economy';
+import { defaultSave, parseStored, serialize, type RunSnapshot } from '../src/save/save';
 import {
   addPoint,
   freshAllocation,
@@ -219,5 +221,146 @@ describe('charms', () => {
     expect(randomCharm(nearly, 0.5)).toBe(CHARMS[0].id);
     const all: CharmBox = { owned: Object.fromEntries(CHARMS.map((c) => [c.id, MAX_RANK])), worn: [] };
     expect(randomCharm(all, 0.5)).toBeNull();
+  });
+});
+
+// ---- charms in the economy and the save ----
+describe('charms in the town profile', () => {
+  const rich = { ...freshProfile(), coins: 1000 };
+
+  it('a new profile owns none', () => {
+    expect(freshProfile().charms).toEqual({});
+    expect(freshProfile().worn).toEqual([]);
+  });
+
+  it('buying a charm owns it, wears it, and the next purchase ranks it up at a higher price', () => {
+    const first = buy(rich, 'boltRing');
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.profile.charms.boltRing).toBe(1);
+    expect(first.profile.worn).toEqual(['boltRing']);
+    expect(first.profile.coins).toBe(1000 - charm('boltRing')!.price);
+    const second = buy(first.profile, 'boltRing');
+    expect(second.ok && second.profile.charms.boltRing).toBe(2);
+    expect(second.ok && second.profile.coins).toBe(first.profile.coins - charm('boltRing')!.price * 2);
+  });
+
+  it('cannot afford a charm, and cannot go past rank III', () => {
+    const poor = buy({ ...freshProfile(), coins: 5 }, 'boltRing');
+    expect(poor.ok).toBe(false);
+    if (!poor.ok) expect(poor.reason).toBe('coins');
+    const maxed = buy({ ...rich, charms: { boltRing: 3 }, worn: ['boltRing'] }, 'boltRing');
+    expect(maxed.ok).toBe(false);
+    if (!maxed.ok) expect(maxed.reason).toBe('maxed');
+  });
+
+  it('a bought charm is not worn when every slot is taken (it can be swapped in from the Bag)', () => {
+    const full = { ...rich, charms: { boltRing: 1, squallBand: 1, gustLens: 1 }, worn: ['boltRing', 'squallBand', 'gustLens'] };
+    const next = buy(full, 'hailTip');
+    expect(next.ok && next.profile.charms.hailTip).toBe(1);
+    expect(next.ok && next.profile.worn).toEqual(['boltRing', 'squallBand', 'gustLens']);
+  });
+
+  it('lists every charm in the shop, with its price, and a CHARMS row in the main shop', () => {
+    const rows = charmShopRows(rich);
+    expect(rows.slice(0, -1).map((r) => r.id)).toEqual(CHARMS.map((c) => c.id));
+    expect(rows[0].value).toBe(String(CHARMS[0].price));
+    expect(rows[rows.length - 1].id).toBe('leave');
+    expect(shopRows(rich).some((r) => r.id === 'charms')).toBe(true);
+  });
+
+  it('a charm found as a pickup is owned, worn if there is room, and ranks up on a second find', () => {
+    const got = collect(freshProfile(), 5, charmPickup('gustLens'));
+    expect(got.charm).toEqual({ id: 'gustLens', rank: 1, wornNow: true });
+    expect(got.profile.coins).toBe(5);
+    const again = collect(got.profile, 0, charmPickup('gustLens'));
+    expect(again.charm).toEqual({ id: 'gustLens', rank: 2, wornNow: false });
+    expect(again.profile.worn).toEqual(['gustLens']);
+  });
+
+  it('a charm found with no free slot is owned but not worn', () => {
+    const got = collect(freshProfile(), 0, charmPickup('hailTip'), 0);
+    expect(got.charm?.wornNow).toBe(false);
+    expect(got.profile.charms.hailTip).toBe(1);
+    expect(got.profile.worn).toEqual([]);
+  });
+
+  it('knows a charm pickup from a plain item', () => {
+    expect(charmOfPickup('charm:hailTip')).toBe('hailTip');
+    expect(charmOfPickup('rainBun')).toBeNull();
+    expect(charmOfPickup(null)).toBeNull();
+  });
+});
+
+describe('charm drops', () => {
+  const none = { owned: {}, worn: [] };
+
+  it('bosses always drop one; the small fry rarely do', () => {
+    expect(charmDrop('tornadoBoss', 0.99, 0, none)).toMatch(/^charm:/);
+    expect(charmDrop('rainImp', 0.5, 0, none)).toBeNull();
+    expect(charmDrop('rainImp', 0.01, 0, none)).toMatch(/^charm:/);
+    expect(charmDrop('somethingElse', 0, 0, none)).toBeNull();
+  });
+
+  it('never drops a charm that is already at rank III, and nothing once all are', () => {
+    const owned = Object.fromEntries(CHARMS.map((c) => [c.id, 3]));
+    expect(charmDrop('tornadoBoss', 0, 0, { owned, worn: [] })).toBeNull();
+    const nearly = { ...owned, hailTip: 2 };
+    expect(charmDrop('tornadoBoss', 0, 0.9, { owned: nearly, worn: [] })).toBe('charm:hailTip');
+  });
+
+  it('crates give a charm now and then, buried chests more often', () => {
+    expect(crateCharm(false, 0.5, 0, none)).toBeNull();
+    expect(crateCharm(false, 0.05, 0, none)).toMatch(/^charm:/);
+    expect(crateCharm(true, 0.15, 0, none)).toMatch(/^charm:/);
+    expect(crateCharm(false, 0.15, 0, none)).toBeNull();
+  });
+
+  it('the old drop table still stands', () => {
+    expect(lootFor('tornadoBoss', 0).itemId).toBe('sunBean');
+  });
+});
+
+describe('stat points and charms in a saved run', () => {
+  const run = (statAlloc?: object, level = 4): RunSnapshot => ({
+    characterId: 'rainKnight',
+    regionId: 'nyc',
+    weatherLabel: 'Clear',
+    weatherCondition: 'clear',
+    weatherTint: 0x8fe0ff,
+    startFrontIndex: 0,
+    elapsedSeconds: 10,
+    bossHp: null,
+    pendingLevelUps: 0,
+    player: {
+      x: 100, y: 100, hp: 80, maxHp: 100, baseMoveSpeed: 80, attackDamage: 12, attackRange: 110, attackCooldown: 550, magnetRadius: 34, pierce: 0,
+      xp: 1, level, xpToNext: 50, kills: 0,
+      powerups: { sunbeam: 0, rainbowShield: 0, gale: 0, frost: 0, staticCharge: 0 },
+      ...(statAlloc ? { statAlloc: statAlloc as never } : {}),
+      facing: 'down', flipX: false, aimX: 0, aimY: 1,
+    },
+  });
+  const roundTrip = (r: RunSnapshot) => parseStored(serialize({ ...defaultSave(), run: r }), 0).save.run;
+
+  it('round-trips the spent points', () => {
+    const alloc = { strength: 2, power: 1, endurance: 0, speed: 3 };
+    expect(roundTrip(run(alloc))?.player.statAlloc).toEqual(alloc);
+  });
+
+  it('an older run (no points recorded) still loads', () => {
+    expect(roundTrip(run())?.player.statAlloc).toBeUndefined();
+  });
+
+  it('refuses points the level could not have earned', () => {
+    const cheat = { strength: 30, power: 30, endurance: 30, speed: 30 };
+    expect(roundTrip(run(cheat, 2))?.player.statAlloc).toEqual(freshAllocation());
+  });
+
+  it('round-trips the charms a knight owns and wears, and cleans junk', () => {
+    const save = defaultSave();
+    const dirty = JSON.parse(serialize({ ...save, town: { ...save.town, charms: { boltRing: 2, nonsense: 9, gustLens: 99 }, worn: ['boltRing', 'boltRing', 'hailTip', 'gustLens'] } }));
+    const back = parseStored(JSON.stringify(dirty), 0).save.town;
+    expect(back.charms).toEqual({ boltRing: 2, gustLens: 3 });
+    expect(back.worn).toEqual(['boltRing', 'gustLens']);
   });
 });

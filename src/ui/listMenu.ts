@@ -105,6 +105,8 @@ export class ListMenu {
     onSide?: (id: string, dir: number) => void;
     /** Open over a paused scene: see `driven`. */
     driven?: boolean;
+    /** The row the cursor starts on (the first, if there is no such row). */
+    start?: string;
   }) {
     this.onPick = opts.onPick;
     this.onClose = opts.onClose;
@@ -114,7 +116,7 @@ export class ListMenu {
     this.top = 0;
     if (opts.driven) this.startDriving();
     this.titleValue = opts.titleValue ?? '';
-    this.index = 0;
+    this.index = Math.max(0, opts.rows.findIndex((row) => row.id === opts.start));
     this.isOpen = true;
     this.pendingDir = 0;
     this.pendingConfirm = false;
@@ -127,7 +129,7 @@ export class ListMenu {
     this.blockDown = this.downHeld();
     this.render(opts.title, opts.rows, opts.hint ?? '');
     this.listen();
-    this.onMove(this.rows[0]?.id ?? '');
+    this.onMove(this.rows[this.index]?.id ?? '');
   }
 
   refresh(title: string, rows: MenuRow[], hint: string, titleValue = this.titleValue) {

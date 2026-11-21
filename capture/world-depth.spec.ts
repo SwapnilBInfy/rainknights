@@ -14,15 +14,9 @@ const raf = { polling: 'raf' as const, timeout: 20_000 };
 const rk = <T>(page: Page, expr: string) => page.evaluate(`window.__rk.${expr}`) as Promise<T>;
 const shot = (page: Page, name: string) => page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-${name}.png`) });
 
-/** The crate's gems can level the knight up, which opens a menu and pauses the run: take the first choice. */
+/** A beat for a crate's spill to settle (a level is a message now, not a menu). */
 async function dismissMenus(page: Page) {
-  for (let i = 0; i < 4; i++) {
-    if ((await page.locator('#app').getAttribute('data-level-up')) === 'open') {
-      await page.waitForTimeout(450);
-      await page.keyboard.press('Space');
-      await page.waitForTimeout(300);
-    } else await page.waitForTimeout(150);
-  }
+  await page.waitForTimeout(600);
 }
 
 async function begin(page: Page, query: string, digit: string) {
@@ -50,7 +44,11 @@ for (const [city, digit] of [['nyc', 'Digit1'], ['miami', 'Digit2']] as const) {
     const page = await context.newPage();
     await begin(page, '?seed=33&weather=rain', digit);
     await page.waitForTimeout(800);
-    await shot(page, `${city}-minimap`);
+    await page.keyboard.press('KeyN'); // the map lives in the Bag
+    await page.waitForTimeout(400);
+    await shot(page, `${city}-map`);
+    await page.keyboard.press('KeyI');
+    await page.waitForTimeout(300);
 
     await rk(page, `tpToPoi('crate', 0)`);
     await page.waitForTimeout(350);

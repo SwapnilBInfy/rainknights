@@ -24,9 +24,9 @@ export interface Allocation {
 export const STAT_NAMES: Record<StatId, string> = { strength: 'STRENGTH', power: 'POWER', endurance: 'ENDURANCE', speed: 'SPEED' };
 export const STAT_BLURBS: Record<StatId, string> = {
   strength: 'Swing damage +7% each.',
-  power: 'Beam and bolt damage +7% each.',
-  endurance: '+8 HP and 2% less damage each.',
-  speed: 'Move +4%, roll recharge -3% each.',
+  power: 'Beam damage +7% each.',
+  endurance: '+8 HP, -2% damage taken.',
+  speed: 'Move +4%, roll wait -3%.',
 };
 
 export const freshAllocation = (): Allocation => ({ strength: 0, power: 0, endurance: 0, speed: 0 });

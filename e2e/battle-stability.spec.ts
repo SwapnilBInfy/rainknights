@@ -19,22 +19,12 @@ async function begin(page: Page, query = '?seed=11') {
 }
 
 /**
- * The game clock keeps advancing: the loop is alive. Kills can open the level-up menu, which pauses on purpose, and
- * several can queue up one after another, so this polls both together: pick an upgrade whenever a menu is open, and
- * succeed once the clock has moved on by half a second.
+ * The game clock keeps advancing: the loop is alive. Succeeds once the clock has moved on by half a second.
  */
 async function expectRunning(page: Page) {
   const clock = () => page.evaluate(`window.__rk.elapsedSeconds()`) as Promise<number>;
   let base = await clock();
   for (let i = 0; i < 120; i++) {
-    if (await page.evaluate(`window.__rk.levelUpOpen()`)) {
-      await page.waitForTimeout(450); // the menu ignores the key that opened it for a moment
-      await page.keyboard.press('ArrowDown');
-      await page.keyboard.press('Space');
-      await page.waitForTimeout(150);
-      base = await clock();
-      continue;
-    }
     await page.waitForTimeout(150);
     if ((await clock()) > base + 0.5) return;
   }
@@ -125,11 +115,6 @@ test('a Static Charge build can fight a crowd for a while without a frame ever t
   await page.keyboard.down('KeyJ');
   for (let i = 0; i < 12; i++) {
     await page.evaluate(`window.__rk.spawnAround('rainImp', 14)`);
-    if (await page.evaluate(`window.__rk.levelUpOpen()`)) {
-      await page.waitForTimeout(400);
-      await page.keyboard.press('ArrowDown');
-      await page.keyboard.press('Enter');
-    }
     await page.waitForTimeout(900);
   }
   await page.keyboard.up('Space');
