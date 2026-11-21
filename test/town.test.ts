@@ -43,18 +43,25 @@ describe('the Undercroft', () => {
 });
 
 describe('Mistford map', () => {
-  it('is a small rectangle with a clear road from the plaza to the house, the market, and the south gate', () => {
+  it('is a small rectangle with a clear road from the plaza to the house, the market and the flight pad', () => {
     expect(TOWN_ROWS.every((row) => row.length === TOWN_ROWS[0].length)).toBe(true);
     expect(townGrid.length).toBeGreaterThan(10);
     expect(townGrid[0].length).toBeGreaterThan(15);
     const reached = reachableFrom(townGrid, TOWN.spawn);
-    for (const cell of [TOWN.houseMat, TOWN.shopMat, TOWN.houseExit, TOWN.shopExit, TOWN.padSpawn, TOWN.hatch, TOWN.hatchExit, ...TOWN.pad, ...TOWN.gates]) {
+    for (const cell of [TOWN.houseMat, TOWN.shopMat, TOWN.houseExit, TOWN.shopExit, TOWN.padSpawn, TOWN.hatch, TOWN.hatchExit, ...TOWN.pad]) {
       expect(reached.has(`${cell.col},${cell.row}`), `${cell.col},${cell.row}`).toBe(true);
     }
     expect(isSolid(townGrid[TOWN.spawn.row][TOWN.spawn.col])).toBe(false);
     expect(townGrid[2][3]).toBe(TileType.BUILDING);
     expect(reached.has('3,2')).toBe(false);
-    expect(sameCell(TOWN.spawn, TOWN.gates[0])).toBe(false);
+  });
+
+  it('has no way out on foot: cities are reached only by flying from the pad', () => {
+    expect('gates' in TOWN).toBe(false);
+    // the south edge is a closed row of floor against the wall, with nothing that leads anywhere
+    const bottom = townGrid.length - 1;
+    for (let c = 0; c < townGrid[0].length; c++) expect(isSolid(townGrid[bottom][c]), `edge ${c}`).toBe(true);
+    expect(TOWN_ROWS.some((row) => row.includes('*'))).toBe(false);
   });
 
   it('has a 2x2 flight pad, clear of the road, the pond and the villagers, that you land on', () => {
@@ -63,7 +70,6 @@ describe('Mistford map', () => {
     expect(new Set(TOWN.pad.map((c) => c.row)).size).toBe(2);
     expect(TOWN.pad.some((c) => sameCell(c, TOWN.padSpawn))).toBe(true);
     for (const cell of TOWN.pad) {
-      expect(TOWN.gates.some((g) => sameCell(g, cell))).toBe(false);
       expect(isSolid(townGrid[cell.row][cell.col])).toBe(false);
       expect(townGrid[cell.row][cell.col]).not.toBe(TileType.SHALLOW);
     }

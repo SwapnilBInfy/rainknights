@@ -18,24 +18,42 @@ export async function stubWeather(context: BrowserContext) {
 }
 
 /**
- * New game wakes up in Mistford. Hold south to the road, then pick a city the way the old
- * title flow picked a region. Callers still `goto` first and wait until the title is up.
+ * Start a run in a city. Cities are only reachable by flying, so this uses the automation-only `window.__start` (see
+ * main.ts) to skip the trip: it is for the many tests that are about something else. Callers `goto` first and wait for
+ * the title. The real route (Mistford's pad, the flight map, landing) is `flyToCity`, and is tested in flight.spec.
  */
 export async function beginCityRun(page: Page, region: string = 'nyc') {
+  const app = page.locator('#app');
+  expect(REGIONS.some((r) => r.id === region), `unknown city ${region}`).toBe(true);
+  await expect(app).toHaveAttribute('data-scene', 'MenuScene');
+  await page.waitForFunction(() => typeof (window as unknown as { __start?: unknown }).__start === 'function');
+  await page.evaluate((id) => (window as unknown as { __start: (id: string) => Promise<void> }).__start(id), region);
+  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+}
+
+/**
+ * The real route, with real input: from the title into Mistford, onto the blue pad, up into the flight map, over the
+ * city's star, and down onto it (holding A all the way down lands). Leaves the run started.
+ */
+export async function flyToCity(page: Page, region: string = 'nyc') {
   const app = page.locator('#app');
   await expect(app).toHaveAttribute('data-scene', 'MenuScene');
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-scene', 'TownScene');
-  await page.keyboard.down('ArrowDown');
+  await page.waitForFunction(() => (window as any).__hub?.frames() > 2);
+  await page.evaluate(`window.__hub.tp(14, 11)`);
+  await expect(app).toHaveAttribute('data-interact', 'pad');
+  await page.keyboard.press('Space');
+  await expect(app).toHaveAttribute('data-scene', 'FlightScene');
+  await page.waitForFunction(() => (window as any).__flight?.frames() > 3);
+  await page.evaluate(`window.__flight.teleportTo('${region}', 0.02)`);
+  await page.waitForFunction((id) => (window as any).__flight.near() === id, region);
+  await page.keyboard.down('Space');
   try {
-    await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene', { timeout: 8_000 });
+    await expect(app).toHaveAttribute('data-scene', 'GameScene', { timeout: 10_000 });
   } finally {
-    await page.keyboard.up('ArrowDown');
+    await page.keyboard.up('Space');
   }
-  const slot = REGIONS.findIndex((r) => r.id === region) + 1;
-  expect(slot, `unknown city ${region}`).toBeGreaterThan(0);
-  await page.keyboard.press(`Digit${slot}`);
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
 }
 
 export const test = base.extend({

@@ -194,14 +194,8 @@ export class TownScene extends Phaser.Scene {
   }
 
   private stepOn() {
-    const here = cellOf(this.avatar.x, this.avatar.y);
     if (this.near(TOWN.houseMat)) return this.go('HouseScene');
     if (this.near(TOWN.shopMat)) return this.go('MarketScene');
-    if (TOWN.gates.some((gate) => sameCell(gate, here))) {
-      this.leaving = true;
-      audio.play('confirm');
-      this.scene.start('RegionSelectScene', { characterId: loadGame().town.characterId });
-    }
   }
 
   /** The mat, or standing against the door just shy of its centre. */

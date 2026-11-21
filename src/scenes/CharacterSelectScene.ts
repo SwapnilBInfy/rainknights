@@ -108,6 +108,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       this.scene.start('HouseScene');
       return;
     }
-    this.scene.start('RegionSelectScene', { characterId: character.id });
+    writeProfile(chooseKnight(loadGame().town, character.id));
+    this.scene.start('TownScene');
   }
 }

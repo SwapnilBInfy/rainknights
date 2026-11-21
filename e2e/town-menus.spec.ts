@@ -1,6 +1,6 @@
 import { devices, type Page } from '@playwright/test';
 import { test, expect } from './fixtures';
-import { HOUSE, MARKET, TOWN, cellCenter } from '../src/town/mistford';
+import { HOUSE, MARKET, TOWN, cellCenter, padCenter } from '../src/town/mistford';
 
 // Opening the market or the chest used to swallow keyup. Space's keyup bought the
 // first item, and a held direction stayed down, so the knight walked into the
@@ -236,11 +236,12 @@ test('market and chest open and close without freezing, and items move', async (
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-dialog', '');
 
-  const gate = cellCenter(TOWN.gates[Math.floor(TOWN.gates.length / 2)]);
-  await steer(page, { x: gate.x, y: cellCenter(TOWN.spawn).y });
-  await steer(page, { ...gate, scene: 'RegionSelectScene' });
+  // onto the flight pad and up into the map, then Esc flies home
+  await steer(page, { ...padCenter(), interact: 'pad' });
+  await page.keyboard.press('Space');
+  await expect(app).toHaveAttribute('data-scene', 'FlightScene');
   await page.keyboard.press('Escape');
-  await expect(app).toHaveAttribute('data-scene', 'TownScene');
+  await expect(app).toHaveAttribute('data-scene', 'TownScene', { timeout: 8_000 });
   await assertLoop(page);
 
   expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);

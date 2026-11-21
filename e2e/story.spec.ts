@@ -200,12 +200,7 @@ test('winning in New York recovers the Gray Shard: the HUD says so, the game-ove
   await seed(page, stageAt(2));
   const errors = watchErrors(page);
   await intoMistford(page);
-  await page.keyboard.down('ArrowDown');
-  await expect(app(page)).toHaveAttribute('data-scene', 'RegionSelectScene', { timeout: 15_000 });
-  await page.keyboard.up('ArrowDown');
-  await page.keyboard.press('Digit1');
-  await expect(app(page)).toHaveAttribute('data-scene', 'GameScene');
-  await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, frame);
+  await runIn(page, 'nyc');
   await expect(app(page)).toHaveAttribute('data-objective', 'WIN HERE: GRAY SHARD');
   await page.evaluate(`window.__rk.spawnBoss()`);
   await expect(app(page)).toHaveAttribute('data-boss', 'PHANTOM BUS');
@@ -222,12 +217,7 @@ test('winning in New York recovers the Gray Shard: the HUD says so, the game-ove
 test('a win in the wrong city gives nothing: Miami is not wanted in stage 2', async ({ page }) => {
   await seed(page, stageAt(2));
   await intoMistford(page);
-  await page.keyboard.down('ArrowDown');
-  await expect(app(page)).toHaveAttribute('data-scene', 'RegionSelectScene', { timeout: 15_000 });
-  await page.keyboard.up('ArrowDown');
-  await page.keyboard.press('Digit2');
-  await expect(app(page)).toHaveAttribute('data-scene', 'GameScene');
-  await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, frame);
+  await runIn(page, 'miami');
   expect(await app(page).getAttribute('data-objective'), 'no story line in a city the story does not want').toBeNull();
   await page.evaluate(`window.__rk.spawnBoss()`);
   await page.evaluate(`window.__rk.killBoss()`);
@@ -363,13 +353,21 @@ async function downTo(page: Page, pick: (rows: { id: number; kind: string; pair?
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, frame);
 }
 
-/** Start a run in a city from Mistford by the south road (the story is already in the save). */
-async function runIn(page: Page, digit: string) {
-  await page.keyboard.down('ArrowDown');
-  await expect(app(page)).toHaveAttribute('data-scene', 'RegionSelectScene', { timeout: 15_000 });
-  await page.keyboard.up('ArrowDown');
-  await page.keyboard.press(digit);
-  await expect(app(page)).toHaveAttribute('data-scene', 'GameScene');
+/** Start a run in a city the real way: onto the pad in Mistford, up into the flight map, and down onto the city's star. */
+async function runIn(page: Page, city: string) {
+  await page.evaluate(`window.__hub.tp(14, 11)`);
+  await expect(app(page)).toHaveAttribute('data-interact', 'pad');
+  await page.keyboard.press('Space');
+  await expect(app(page)).toHaveAttribute('data-scene', 'FlightScene');
+  await page.waitForFunction(() => (window as any).__flight?.frames() > 3, undefined, frame);
+  await page.evaluate(`window.__flight.teleportTo('${city}', 0.02)`);
+  await page.waitForFunction((id) => (window as any).__flight.near() === id, city, frame);
+  await page.keyboard.down('Space');
+  try {
+    await expect(app(page)).toHaveAttribute('data-scene', 'GameScene', { timeout: 10_000 });
+  } finally {
+    await page.keyboard.up('Space');
+  }
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, frame);
 }
 
@@ -378,7 +376,7 @@ test('stage 5: a buried tablet in the tunnels counts once per city, and the HUD 
   const errors = watchErrors(page);
   await intoMistford(page);
   await expect(app(page)).toHaveAttribute('data-objective', 'Read 3 buried tablets 0/3');
-  await runIn(page, 'Digit1');
+  await runIn(page, 'nyc');
   await expect(app(page)).toHaveAttribute('data-objective', 'FIND A TABLET BELOW');
   await downTo(page, (rows) => rows[0].id);
   expect(await rk<boolean>(page, `tpToStairs('tablet', 0)`)).toBe(true);
@@ -399,7 +397,7 @@ test('stage 5: a buried tablet in the tunnels counts once per city, and the HUD 
 test('before stage 5 there are no tablets: the farthest dead end is just a chest', async ({ page }) => {
   await seed(page, stageAt(4));
   await intoMistford(page);
-  await runIn(page, 'Digit1');
+  await runIn(page, 'nyc');
   await downTo(page, (rows) => rows[0].id);
   expect(await rk<boolean>(page, `tpToStairs('tablet', 0)`)).toBe(false);
 });

@@ -60,7 +60,7 @@ export function generateVillagerTexture(scene: Phaser.Scene, key: string, shirt:
   tex.refresh();
 }
 
-/** A wooden signpost, 16×16, for the south road. */
+/** A wooden signpost, 16×16: it points the way to the flight pad. */
 export function generateSignTexture(scene: Phaser.Scene, key: string) {
   if (scene.textures.exists(key)) return;
   const tex = scene.textures.createCanvas(key, 16, 16)!;

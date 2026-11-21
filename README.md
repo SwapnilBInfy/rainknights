@@ -13,12 +13,12 @@ are AI-generated (via `npm run art:generate`).
 ## Play
 
 - **Start in Mistford**: a small rainy village. Your house is on the west
-  side of the street, the market is on the east, and the south road leaves
-  for the cities
+  side of the street, the market is on the east, and the **blue flight pad**
+  is how you reach the cities
 - **Choose a knight**: the mirror in your house switches Rain Knight
   (balanced), Hail Warden (tanky), or Storm Chaser (fast/fragile)
-- **Choose a city**: walk south out of Mistford, then pick New York, Miami, London, Tokyo or Mumbai.
-  That city's current weather sets which storm front the run starts on.
+- **Fly to a city**: stand on the blue pad, press A, and fly to New York, Miami, London, Tokyo or Mumbai (see
+  Flying between locations). **There is no other way to a city.** That city's current weather sets which storm front the run starts on.
   When the run ends you come home — rest in your bed to heal, and keep
   whatever you picked up
 - **Move**: Arrow keys or WASD (blocked by lakes and rock clusters on the map)
@@ -40,7 +40,7 @@ Keyboard, the on-screen buttons on a touch screen, and a gamepad Start button.
 
 | Input | What it does |
 | ----- | ------------ |
-| Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. In Mistford, Q opens the story journal (once the story has begun). On the city screen, Up/Down (or W/S, A/D) moves down the list, Enter picks, and 1-5 pick a city directly. |
+| Arrow keys or WASD | Move, including diagonals. Arrows and W/S move menu cursors. In Mistford, Q opens the story journal (once the story has begun). |
 | Space | Swing (hold). Also confirms menus, starts a run, and continues from game over. |
 | J or X | Energy beam (hold). |
 | Shift or K | Dodge roll: a quick tumble in the direction you are moving (or facing). You cannot be hit mid-roll. |
@@ -251,9 +251,8 @@ still. The roll is a dodge, not an attack: no swinging or firing while it lasts.
 
 ### Mistford
 
-New games wake up in **Mistford**, not in a fight. The south edge of the
-village is the road to the five cities. Esc on the road's city screen
-walks you back. After a victory or a defeat, PRESS START returns you home.
+New games wake up in **Mistford**, not in a fight. The village has no road to the cities: the way out is the blue
+flight pad on the plaza, east of the pond. After a victory or a defeat, PRESS START returns you home.
 
 | Place | What you can do |
 | ----- | --------------- |
@@ -356,7 +355,7 @@ face the shared roster and a boss borrowed from the first two cities.
 
 There is a **blue flight pad** on the plaza in Mistford, east of the pond. Stand on it and press A (the A bubble
 shows) to lift off. Every city has one too, on the plaza east of where you start (see below), so you can fly from any
-city to any other. The south road and the city list still work.
+city to any other. **Flying is the only way between cities**: there is no road, no list and no instant travel.
 
 The world is a **sphere**. You fly over a globe seen from behind and above the knight: the horizon curves away, an
 atmosphere glows at the edge of the planet, and the higher you climb the more of the ball you see and the darker the
@@ -380,7 +379,7 @@ about four times the ground per second, so go high to cross an ocean and come do
 The top-left **radar** shows where the stars are relative to the way you are facing (stars beyond its range are pinned to
 the rim, dimmed). The **world sketched in the clouds**, top right, shows where you are in the world. A plate across the
 top names the nearest star and its weather, and the strip along the bottom says what the buttons do (it reads "A: LAND
-LONDON" when you are low enough over a star). Landing on a city starts a run exactly as the city list does; landing on
+LONDON" when you are low enough over a star). Landing on a city starts a run there; landing on
 Mistford puts you back on the pad. Flying never touches your save.
 
 **The pad in each city.** A pad sits 56 px east of where you start. In a run A swings your weapon, so the pad works by

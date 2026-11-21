@@ -3,7 +3,7 @@ import type { SongKey } from '../audio/music';
 export interface RegionDef {
   id: string;
   name: string;
-  /** Fits the picker's list when the full name is too long. */
+  /** A shorter name for places where the full one is too long. */
   shortName?: string;
   subtitle: string;
   lat: number;
@@ -21,7 +21,7 @@ export interface RegionDef {
   bossIntro?: string;
   /** Seconds into the run when the boss arrives (default 5:00). */
   bossAt?: number;
-  /** A place only the story takes you: not in the city list, and not on the flight map until the story marks it. */
+  /** A place only the story takes you: not one of the cities (`CITIES`), and not on the flight map until the story marks it. */
   story?: boolean;
 
   /** How the world is laid out: a street grid, or a coast with an ocean edge. */

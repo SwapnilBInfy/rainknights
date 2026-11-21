@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { flyToCity } from './fixtures';
 
 /**
  * Paced walkthrough for the feel follow-ups. Not part of CI; the smoke
@@ -11,15 +12,7 @@ test('feel follow-ups demo', async ({ page }) => {
   await expect(app).toHaveAttribute('data-menu-hint', /A SWING/);
   await page.waitForTimeout(1400);
 
-  await page.keyboard.press('Space');
-  await expect(app).toHaveAttribute('data-scene', 'TownScene');
-  await page.waitForTimeout(700);
-  await page.keyboard.down('ArrowDown');
-  await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene');
-  await page.keyboard.up('ArrowDown');
-  await page.waitForTimeout(700);
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  await flyToCity(page, 'nyc');
   await expect(app).toHaveAttribute('data-attack-hint', /A\/SPACE: swing weapon/);
   await expect(app).toHaveAttribute('data-beam-key', 'B');
   await page.waitForTimeout(1700);

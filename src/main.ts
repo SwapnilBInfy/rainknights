@@ -97,7 +97,6 @@ async function start() {
       scenes.BootScene,
       scenes.MenuScene,
       scenes.CharacterSelectScene,
-      scenes.RegionSelectScene,
       scenes.TownScene,
       scenes.HouseScene,
       scenes.MarketScene,
@@ -116,6 +115,24 @@ async function start() {
   attachPauseOverlay(game);
   installExitSave(game);
 
+  // Under browser automation only: start a run in a city directly, so tests that are about something else do not each
+  // have to fly there. (Players reach cities by flying: there is no other way.) The real route is tested by the flight specs.
+  if (typeof navigator !== 'undefined' && navigator.webdriver) {
+    (window as unknown as Record<string, unknown>).__start = async (regionId: string) => {
+      const [{ getRegion }, { fetchRegionWeather }, { runStartData }, { arriveInTown, loadGame }] = await Promise.all([
+        import('./config/regions'),
+        import('./systems/WeatherService'),
+        import('./systems/runStart'),
+        import('./save/save'),
+      ]);
+      const region = getRegion(regionId);
+      arriveInTown(); // as if they had walked out of Mistford
+      const weather = await fetchRegionWeather(region);
+      const active = game.scene.getScenes(true)[0];
+      active?.scene.start('GameScene', runStartData(loadGame().town.characterId, region, weather));
+    };
+  }
+
   if (import.meta.env.DEV) {
     const [{ renderSong }, { SFX }] = await Promise.all([import('./audio/music'), import('./audio/sfx')]);
     (window as unknown as Record<string, unknown>).__game = game;
@@ -126,7 +143,6 @@ async function start() {
 const MARKED_SCENES = new Set([
   'MenuScene',
   'CharacterSelectScene',
-  'RegionSelectScene',
   'FlightScene',
   'CutsceneScene',
   'UndercroftScene',
