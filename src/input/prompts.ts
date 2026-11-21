@@ -11,7 +11,7 @@ export function attackHint(touch: boolean): string {
 
 export function menuHint(touch: boolean): string {
   if (touch) return 'STICK MOVE  A SWING  B BEAM';
-  return 'WASD MOVE  SPACE SWING  J BEAM';
+  return 'WASD MOVE  SPACE HIT  J BEAM'; // (28 characters: the screen is 30 wide)
 }
 
 /** Single letter beside the beam gauge. The box only fits one glyph. */

@@ -79,8 +79,8 @@ and attacks stay on the keyboard and the touch cluster.
 ### Tutorial
 
 New players can learn the game first. On the title screen press **T** (or tap
-**TAP: TUTORIAL** on a touch screen); it is there for fresh players and for
-anyone with a saved game.
+**TAP: TUTORIAL** on a touch screen). On a fresh save the link glows gold and pulses; it is also there for anyone with a
+saved game.
 
 It is the real game with nothing at stake: no storm clock, no waves, no boss,
 and you cannot lose. A panel at the bottom gives one short instruction at a
@@ -89,13 +89,15 @@ time, and each step finishes when you actually do the thing:
 1. **Move** around
 2. **Swing** at a training dummy
 3. **Energy beam** through two dummies in a line
-4. **XP gems**: collect them
-5. **Level up**: a level gives 3 stat points; open the Bag (I) to see them
-6. **Dodge roll** across a Cab Wraith's charge lane
-7. **Stall strike**: hit the cab while it is stalled (+50%)
-8. **Wet + shock**: beam a wet foe
-9. **Lightning**: leave the blinking circle before the bolt lands
-10. **All set**: Space (or **A**) returns to the title
+4. **Sleeping foe**: an imp stands still until you come close, then wakes; deal with it (this is how every enemy in a city
+   behaves)
+5. **XP gems**: collect them
+6. **Level up**: a level gives 3 stat points; open the Bag (I), go to STATS and spend one
+7. **Dodge roll** across a Cab Wraith's charge lane
+8. **Stall strike**: hit the cab while it is stalled (+50%)
+9. **Wet + shock**: beam a wet foe
+10. **Lightning**: leave the blinking circle before the bolt lands
+11. **All set**: Space (or **A**) returns to the title
 
 Instructions use your device's controls (WASD / SPACE / J / SHIFT or K, or
 the STICK / A / B / R on touch). **Enter** skips a step (a stuck step moves on
@@ -219,6 +221,24 @@ small camps of their own.
 The storm clock still runs, but only to move the weather through its fronts (Light Drizzle, Gusty Winds, Hailstorm,
 Thunderstorm, Blizzard, Tornado Warning: the flooding and the mood), the last lasting as long as you stay. It has no
 waves, no spawns and no boss time, and the battle screen no longer shows it.
+
+### Finding your way (for a player who skips the tutorial)
+
+The game tells a new player what to do next, in a few places, and never twice:
+
+- **Mistford's strip** along the bottom (for a knight not following the story): `FLY: STAND ON THE BLUE PAD` until the first
+  fight, then `POINTS TO SPEND: SHOP, I`, then `BUY A CHARM AT THE SHOP` once there are drips for one, then
+  `FIRST BOSS: NEW YORK, LV8+` until a boss has been won. The story's own objectives take the strip when the story is
+  started.
+- **A city's strip** says what to do there: `REACH LV3: OPENS THE GATE`, then `REACH LV6: OPENS THE CORE`, then
+  `BOSS AT THE FAR END: LV8+` (and `DEFEAT THE BOSS: FAR END` once you are at the level to bring). Arriving under the
+  suggested level also says when the gates open.
+- **One-time tips**: the first time a foe spots you ("Foes notice you up close. Sneak past, or fight!") and the first
+  time you walk up to a locked gate ("Gates open as you level. Foes drop XP gems!"). The save remembers them
+  (`tips`), so they are never repeated.
+- **HELP** in the Bag (I, then HELP): the controls for keyboard or touch, and three rules a new player would not guess.
+
+The lines are pure data (`src/systems/guide.ts`), unit-tested to fit the strip across every city and level.
 
 ### Zones and level gates
 

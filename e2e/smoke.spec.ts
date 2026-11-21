@@ -91,7 +91,7 @@ test('page title loads and a Phaser canvas renders without console errors', asyn
 
   // A mouse-only browser keeps the virtual controls out of the playfield.
   await expect(page.getByTestId('touch-controls')).toBeHidden();
-  await expect(page.locator('#app')).toHaveAttribute('data-menu-hint', 'WASD MOVE  SPACE SWING  J BEAM');
+  await expect(page.locator('#app')).toHaveAttribute('data-menu-hint', 'WASD MOVE  SPACE HIT  J BEAM');
 
   expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
 });

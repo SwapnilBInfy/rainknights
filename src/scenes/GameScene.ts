@@ -18,6 +18,7 @@ import { CampDirector } from '../systems/CampDirector';
 import { GateDirector, GATE_NAME } from '../systems/GateDirector';
 import { gateLevels, levelForZone, suggestedLevel, zoneAt } from '../systems/zones';
 import { NO_SCALE, bossScaleFor, scaleFor } from '../systems/difficulty';
+import { TIPS, runGoal, type TipId } from '../systems/guide';
 import { placeCamps, tunnelCamps } from '../systems/camps';
 import { laterHero } from '../systems/hero';
 import { HazardDirector, type HazardHost } from '../systems/HazardDirector';
@@ -45,7 +46,7 @@ import { replayHeldKeys } from '../input/keys';
 import { attackHint, beamKeyLabel, rollHint, rollKeyLabel } from '../input/prompts';
 import { isTouchControlsActive, onTouchControlsChange } from '../input/touchControls';
 import { bindGameplayPause, closePauseMenu, openPauseMenu } from '../ui/PauseOverlay';
-import { clearRun, loadGame, loadStory, recordRunResult, resetGameSave, saveRun, writeProfile, writeStory } from '../save/save';
+import { clearRun, loadGame, loadStory, markTip, recordRunResult, resetGameSave, saveRun, writeProfile, writeStory } from '../save/save';
 import { DEFEAT_HP_FRACTION, battleGear, charmDrop, charmOfPickup, charmPickup, collect, consumable, crateCharm, lootFor, spendItem, townMaxHp } from '../economy/economy';
 
 interface RunBridge {
@@ -421,9 +422,11 @@ export class GameScene extends Phaser.Scene {
       this.gateDir.onOpened = (gate) => {
         audio.play('levelUp');
         this.hud.showMessage(`Lv${gate.level}: the ${GATE_NAME[gate.ring]} gate opens!`, 2600);
+        this.refreshGoal();
       };
       this.gateDir.onBump = (gate) => {
         this.hud.showMessage(`${GATE_NAME[gate.ring]} gate: Lv${gate.level} needed.\nYou are Lv${this.player.level}.`, 2600);
+        this.showTip('gate', 2800);
       };
       this.gateDir.update(this.player.level, 0, false); // (those the knight already has the level for start open)
     }
@@ -438,7 +441,7 @@ export class GameScene extends Phaser.Scene {
     audio.playMusic(region.music);
     audio.setAmbience(this.level === 'underground' ? null : resume ? this.runWeatherCondition : (data.weatherCondition ?? null));
     this.hud = new HUD(this);
-    this.hud.setObjective(data.tutorial ? '' : runObjective(loadStory(), region.id));
+    this.refreshGoal();
     this.detachTouch = onTouchControlsChange((touch) => {
       this.hud.setBeamKeyLabel(beamKeyLabel(touch));
       this.hud.setRollKeyLabel(rollKeyLabel(touch));
@@ -807,6 +810,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.camps.start();
     if (this.bossHome) this.createBoss(this.bossHome.x, this.bossHome.y, true, bossHp);
+    this.refreshGoal();
   }
 
   /** An enemy at its spot, looping round it, until the knight is spotted. */
@@ -819,9 +823,33 @@ export class GameScene extends Phaser.Scene {
     return enemy;
   }
 
+  /**
+   * The line along the bottom of the screen: the story's objective if there is one for this place, else what a knight
+   * should do next in a city (reach the level that opens the next gate, then find the boss).
+   */
+  private refreshGoal() {
+    if (!this.hud) return;
+    if (this.tutorial) {
+      this.hud.setObjective('');
+      return;
+    }
+    const story = runObjective(loadStory(), this.region.id);
+    const goal = this.level === 'surface' && this.gateDir ? runGoal({ regionId: this.region.id, level: this.player.level, bossAlive: !!this.boss?.active }) : '';
+    this.hud.setObjective(story || goal);
+  }
+
+  /** Say what a rule means the first time it comes up, and never again (the save remembers). */
+  private showTip(id: TipId, delayMs = 0) {
+    if (this.tutorial || !markTip(id)) return;
+    const say = () => !this.ended && this.hud.showMessage(TIPS[id].join('\n'), 3000);
+    if (delayMs > 0) this.time.delayedCall(delayMs, say);
+    else say();
+  }
+
   private handleSpotted = (enemy: Enemy) => {
     if (this.ended || !enemy.active) return;
     if (enemy === this.boss) return; // (the boss has its own entrance)
+    this.showTip('spotted');
     this.floatText(enemy.x, enemy.y - 14, '!', '#f8d020');
     this.noteSignature(enemy.stats.key);
   };
@@ -1295,6 +1323,7 @@ export class GameScene extends Phaser.Scene {
     const n = this.player.statPoints;
     this.floatText(this.player.x, this.player.y - 16, `LEVEL ${this.player.level}!`, '#f8d020');
     this.hud.showMessage(`Level ${this.player.level}!\n${n} point${n === 1 ? '' : 's'} to spend: press I.`, 2600);
+    this.refreshGoal();
     this.checkpoint();
   }
 
@@ -1422,7 +1451,7 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(result.pages.length * 3600, () => {
         if (this.ended) return;
         this.hud.showMessage(n >= TABLETS_NEEDED ? 'All three tablets read!\nThe hatch in Mistford opens.' : `Tablets read: ${n} of ${TABLETS_NEEDED}.\nOne in each city.`, 3000);
-        this.hud.setObjective(runObjective(loadStory(), this.region.id));
+        this.refreshGoal();
       });
     }
   }
@@ -1692,7 +1721,6 @@ export class GameScene extends Phaser.Scene {
     this.paused = true;
     this.hud.setVisible(false);
     audio.setMuffled(true);
-    this.tutorial?.note('bag');
     if (this.sys.isActive()) this.sys.pause();
     this.bagMenu.show(page);
   }
@@ -1722,6 +1750,7 @@ export class GameScene extends Phaser.Scene {
     const next = dir > 0 ? addPoint(state, id) : removePoint(state, id);
     if (!next) return false;
     this.player.setAllocation(next.alloc);
+    if (dir > 0) this.tutorial?.note('spend');
     this.checkpoint();
     return true;
   }
@@ -1831,6 +1860,13 @@ export class GameScene extends Phaser.Scene {
       spawnDummy: (x, y) => {
         const p = this.openSpot(x, y);
         return this.spawnEnemyAt('trainingDummy', p.x, p.y);
+      },
+      spawnSleeper: (x, y) => {
+        const p = this.openSpot(x, y);
+        const imp = this.spawnEnemyAt('rainImp', p.x, p.y);
+        imp.live(p, 0, 0); // it stands still where it is until the knight is near
+        imp.on('spotted', () => this.tutorial?.note('spotted'));
+        return imp;
       },
       spawnCab: (x, y) => {
         const p = this.openSpot(x, y);

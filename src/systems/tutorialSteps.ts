@@ -14,7 +14,11 @@ export interface TutorialState {
   /** Beam hits landed (a piercing beam can score several at once). */
   beamHits: number;
   gems: number;
-  bagOpened: boolean;
+  /** A sleeping foe noticed the knight (they came close, or hit it), and it was then defeated. */
+  noticed: boolean;
+  sleeperDown: boolean;
+  /** A stat point was spent in the Bag. */
+  statSpent: boolean;
   /** A Cab Wraith charged and the player was not touched. */
   dodgedCharge: boolean;
   cabKilled: boolean;
@@ -32,7 +36,9 @@ export function freshState(): TutorialState {
     swingHits: 0,
     beamHits: 0,
     gems: 0,
-    bagOpened: false,
+    noticed: false,
+    sleeperDown: false,
+    statSpent: false,
     dodgedCharge: false,
     cabKilled: false,
     wetShocks: false,
@@ -58,6 +64,7 @@ export type TutorialStepId =
   | 'move'
   | 'swing'
   | 'beam'
+  | 'notice'
   | 'gems'
   | 'levelup'
   | 'dodge'
@@ -96,6 +103,12 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     done: (s) => s.beamHits >= 2,
   },
   {
+    id: 'notice',
+    title: 'SLEEPING FOE',
+    lines: () => ['Sneak up on the sleeping', 'imp: it wakes. Then fight!'],
+    done: (s) => s.noticed && s.sleeperDown,
+  },
+  {
     id: 'gems',
     title: 'XP GEMS',
     lines: () => ['Defeated foes drop gems.', 'Walk over them to collect!'],
@@ -104,8 +117,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   {
     id: 'levelup',
     title: 'LEVEL UP',
-    lines: (c) => ['Each level: 3 stat points.', `Press ${c.bag} for the Bag.`],
-    done: (s) => s.bagOpened,
+    lines: (c) => ['Each level: 3 stat points.', `${c.bag} > STATS: add a point!`],
+    done: (s) => s.statSpent,
   },
   {
     id: 'dodge',

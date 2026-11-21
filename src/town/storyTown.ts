@@ -71,7 +71,10 @@ export class StoryTown {
 
   /** Put the props and people in the village. */
   mount() {
-    if (!this.story.started) return;
+    if (!this.story.started) {
+      this.refreshTracker(); // (a knight not on the story still gets the tip for what to do next)
+      return;
+    }
     const solid = (cell: Cell, key: string, w: number, h: number, ox: number, oy: number, depth = 7) => {
       const at = cellCenter(cell);
       const sprite = this.scene.physics.add.staticImage(at.x, at.y, key).setDepth(depth);
@@ -200,8 +203,11 @@ export class StoryTown {
     this.tracker?.setVisible(!hidden && !this.journal);
   }
 
+  /** What to do next, for a player not following the story: shown in the strip when the story has nothing to say. */
+  guide = '';
+
   refreshTracker() {
-    const text = trackerText(this.story);
+    const text = trackerText(this.story) || this.guide;
     if (text === this.trackerKey) return;
     this.trackerKey = text;
     this.tracker?.destroy();

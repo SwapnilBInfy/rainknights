@@ -5,6 +5,8 @@ import { audio } from '../audio/engine';
 import { ListMenu } from '../ui/listMenu';
 import { HubChrome } from '../ui/hubChrome';
 import { arriveInTown, loadGame, loadStory, writeStory } from '../save/save';
+import { townTip } from '../systems/guide';
+import { pointsForLevel, pointsSpent } from '../systems/stats';
 import { clearPending } from '../story/story';
 import { CONSUMABLES, bagLabel, townMaxHp } from '../economy/economy';
 import { Avatar } from '../town/avatar';
@@ -104,6 +106,16 @@ export class TownScene extends Phaser.Scene {
 
     // The story's props and people, if the story has begun
     this.storyTown = new StoryTown(this, this.avatar, this.talkables);
+    // ...and, for a knight not following the story, the next thing worth doing
+    const meta = loadGame().meta;
+    this.storyTown.guide = townTip({
+      runs: meta.runs,
+      wins: meta.wins,
+      level: profile.hero.level,
+      unspent: Math.max(0, pointsForLevel(profile.hero.level) - pointsSpent(profile.hero.alloc)),
+      coins: profile.coins,
+      charmsOwned: Object.keys(profile.charms).length,
+    });
     this.storyTown.mount();
 
     if (sunny) {

@@ -6,8 +6,9 @@ import { drawWindow, textStyle } from './Window';
 import { charm, charmSlots, rankLabel, type CharmBox } from '../economy/charms';
 import { STAT_BLURBS, STAT_IDS, STAT_NAMES, type Allocation, type StatId } from '../systems/stats';
 import type { Grid } from '../systems/mapGen';
+import { isTouchControlsActive } from '../input/touchControls';
 
-type Page = 'top' | 'items' | 'map' | 'stats' | 'charms';
+type Page = 'top' | 'items' | 'map' | 'stats' | 'charms' | 'help';
 
 /** What the Bag needs from the game: the knight's things to show, and the ways to change them. */
 export interface BagHost {
@@ -72,7 +73,7 @@ export class BagMenu {
     if (k === 'i') {
       e.preventDefault();
       this.close();
-    } else if (this.page === 'map' && ['escape', 'enter', ' ', 'z', 'n', 'p'].includes(k)) {
+    } else if ((this.page === 'map' || this.page === 'help') && ['escape', 'enter', ' ', 'z', 'n', 'p'].includes(k)) {
       e.preventDefault();
       this.goto('top');
     }
@@ -105,6 +106,7 @@ export class BagMenu {
     if (app) app.dataset.bagPage = page;
     this.clearMap();
     if (page === 'map') return this.showMap();
+    if (page === 'help') return this.showHelp();
     if (page === 'top') this.showTop(keepIndex);
     else if (page === 'items') this.showItems();
     else if (page === 'stats') this.showStats();
@@ -121,6 +123,7 @@ export class BagMenu {
       { id: 'map', label: 'MAP' },
       { id: 'stats', label: 'STATS', value: points > 0 ? String(points) : undefined },
       { id: 'charms', label: 'CHARMS', value: String(box.worn.length) },
+      { id: 'help', label: 'HELP' },
       { id: 'close', label: 'CLOSE' },
     ];
     this.menu.show({
@@ -221,6 +224,31 @@ export class BagMenu {
       onClose: () => this.goto('top'),
       driven: true,
     });
+  }
+
+  // --- the help card: what the keys do, and the rules a new player would not guess ---
+
+  private showHelp() {
+    this.menu.hide();
+    const touch = isTouchControlsActive();
+    const lines = touch
+      ? ['STICK  move', 'A swing  B beam', 'R  roll', 'BAG  bag  START  pause']
+      : ['WASD  move', 'SPACE swing  J beam', 'SHIFT / K  roll', 'I bag  N map  ESC pause'];
+    // (each line must fit the 216px window: 24 characters)
+    const tips = ['Foes wake when near.', 'Gates open at levels.', 'Levels give stat points.'];
+    const add = <T extends Phaser.GameObjects.GameObject>(o: T): T => {
+      (o as unknown as Phaser.GameObjects.Components.ScrollFactor).setScrollFactor(0);
+      (o as unknown as Phaser.GameObjects.Components.Depth).setDepth(200);
+      this.mapParts.push(o);
+      return o;
+    };
+    const x = 12;
+    const y = 14;
+    add(drawWindow(this.scene, x, y, 216, 132));
+    add(this.scene.add.text(x + 10, y + 6, 'HELP', textStyle('#3078d8')));
+    lines.forEach((t, i) => add(this.scene.add.text(x + 10, y + 22 + i * 11, t, textStyle())));
+    tips.forEach((t, i) => add(this.scene.add.text(x + 10, y + 74 + i * 11, t, textStyle('#686868'))));
+    add(this.scene.add.text(x + 10, y + 114, 'Esc: back', textStyle('#686868')));
   }
 
   // --- the map ---
