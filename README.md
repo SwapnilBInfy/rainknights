@@ -229,15 +229,15 @@ needs. Enemies cannot get through a shut gate either. A map the rings cut up bad
 two or three gates in a ring so that no stretch is shut away; the second ring's gate is on another side of midtown, so the
 way on is across it.
 
-| City | Midtown gate | Core gate (and the level to bring for the boss) |
-| ---- | ------------ | ------- |
-| New York | Lv 3 | Lv 6 |
-| Miami | Lv 4 | Lv 8 |
-| London | Lv 6 | Lv 10 |
-| Tokyo | Lv 8 | Lv 13 |
-| Mumbai | Lv 10 | Lv 16 |
+| City | Midtown gate | Core gate | Level to bring for the boss |
+| ---- | ------------ | --------- | --------------------------- |
+| New York | Lv 3 | Lv 6 | 8 |
+| Miami | Lv 4 | Lv 8 | 10 |
+| London | Lv 6 | Lv 10 | 12 |
+| Tokyo | Lv 8 | Lv 13 | 15 |
+| Mumbai | Lv 10 | Lv 16 | 18 |
 
-Later cities ask more: the flight map shows each city's suggested level (`LV6`) beside its name, and arriving under it tells
+Later cities ask more: the flight map shows each city's suggested level (`LV8` for New York) beside its name, and arriving under it tells
 you when the gates open. The gates are drawn on the Bag's map (orange when shut, green when open). A **tunnel is no way
 round a gate**: its far stairs are sealed ("bring Lv N to go up") to a knight too low for the zone they come out in. The
 tutorial's arena and the story's finale (Stormhold) have no gates. Where the rings and gates go is a pure function of the
@@ -256,6 +256,30 @@ what to do:
 
 They are handed over when a fight ends (the game-over screen says `NEW KNIGHT: ...`) or when you look in the mirror. A save
 from before this keeps whichever knight it was using.
+
+### How hard the enemies are
+
+Every enemy is scaled on top of its base stats (`src/systems/difficulty.ts`, pure and unit-tested), by the **zone** it lives
+in and by the **city**: the outskirts are an easy start (about 1.7x health), midtown a real fight (4x) and the core a hard one
+(4.5x, hitting 1.8x as hard); a boss has 3.2x its base health. Each later city is tougher again (Miami 1.35x health up to
+Mumbai 3.1x), so a knight who has outgrown New York still has a fight in Mumbai. The XP an enemy gives is scaled too, so the
+gates can be reached by playing: clearing New York's outskirts once is enough for the first gate, and the outskirts and midtown
+once are enough for the second (both checked by unit tests), with no grinding.
+
+**The balance bot.** `tools/balance` plays the real game: for each knight level it walks into a camp of each zone (and the
+boss) on several maps and fights like a reasonable player (steers at the nearest foe, stands at sword reach, rolls when hit),
+and records wins, deaths, time and health lost. No charms, armor or food, so a real player does somewhat better.
+
+```bash
+npm run build
+npx playwright test --config=playwright.balance.config.ts
+node tools/balance/report.mjs
+```
+
+What it found when it was first run, before the scaling above: a level-1 knight cleared a core camp without a scratch, and a
+level-6 knight killed a boss in nine seconds. With the scaling, a knight just through the midtown gate (Lv 3) has a real fight
+(about a third lose a camp), the core is hard until Lv 6 to 10, and the boss beats a Lv 6 knight three times in four but a Lv 16
+one almost never.
 
 ### Your knight lasts
 

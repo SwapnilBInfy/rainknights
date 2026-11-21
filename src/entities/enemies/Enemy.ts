@@ -3,6 +3,7 @@ import type { EnemyStats } from '../../config/constants';
 import { FONT } from '../../ui/Window';
 import { StatusSet, type ApplyResult, type StatusId } from '../../systems/status';
 import type { TerrainField } from '../../systems/Terrain';
+import type { Scale } from '../../systems/difficulty';
 import { HOME_RADIUS, HOME_SPEED, PATROL_SPEED, nextMode, patrolPoint, tuningFor, type AggroTuning, type Mode } from '../../systems/aggro';
 
 const STATUS_TINT: Partial<Record<StatusId, number>> = {
@@ -49,6 +50,17 @@ export abstract class Enemy extends Phaser.Physics.Arcade.Sprite {
   private loopPhase = 0;
   private loopRadius = 14;
   private returningSince = 0;
+
+  /** Make this enemy as tough as the zone and city it is in call for (see difficulty.ts): health, damage and the XP it gives. */
+  scaleTo(scale: Scale) {
+    this.stats = {
+      ...this.stats,
+      hp: Math.max(1, Math.round(this.stats.hp * scale.hp)),
+      damage: Math.max(1, Math.round(this.stats.damage * scale.damage)),
+      xp: Math.max(1, Math.round(this.stats.xp * scale.xp)),
+    };
+    this.hp = this.maxHp = this.stats.hp;
+  }
 
   /** Make this enemy a resident of the spot it stands on. A radius of 0 stands still (a boss waiting). */
   live(home: { x: number; y: number }, phase = 0, loopRadius = 14) {

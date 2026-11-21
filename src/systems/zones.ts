@@ -27,8 +27,11 @@ const DEFAULT_LEVELS: readonly [number, number] = [3, 6];
 
 export const gateLevels = (regionId: string): readonly [number, number] => GATE_LEVELS[regionId] ?? DEFAULT_LEVELS;
 
-/** The level to bring to a city: the one its second gate opens at (the core, and the boss, are beyond it). */
-export const suggestedLevel = (regionId: string): number => gateLevels(regionId)[1];
+/**
+ * The level to bring to a city's boss: a couple above the second gate's, since a knight just through it is not yet a match
+ * for the boss (the balance bot, tools/balance, finds a knight of the gate's level loses to the boss three times in four).
+ */
+export const suggestedLevel = (regionId: string): number => gateLevels(regionId)[1] + 2;
 
 /** The level needed to be in a zone at all. */
 export const levelForZone = (regionId: string, zone: 0 | 1 | 2): number => (zone === 0 ? 1 : gateLevels(regionId)[zone - 1]);
