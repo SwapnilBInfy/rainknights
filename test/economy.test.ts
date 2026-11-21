@@ -125,7 +125,10 @@ describe('Mistford economy', () => {
     const worn = equip(owned, 'cloak');
     expect(worn.armorId).toBe('cloak');
     expect(worn.hp).toBe(100);
-    const warden = chooseKnight(worn, 'hailWarden');
+    // a knight not yet earned cannot be chosen; one that is, can
+    expect(chooseKnight(worn, 'hailWarden')).toBe(worn);
+    expect(worn.unlocked).toEqual(['rainKnight']);
+    const warden = chooseKnight({ ...worn, unlocked: ['rainKnight', 'hailWarden'] }, 'hailWarden');
     expect(warden.characterId).toBe('hailWarden');
     expect(warden.hp).toBe(Math.round(100 * 1.5));
     const rows = shopRows(warden);

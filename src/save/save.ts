@@ -1,9 +1,10 @@
-import { CHARACTERS } from '../config/characters';
+import { CHARACTERS, getCharacter } from '../config/characters';
 import { WEATHER_FRONTS, WORLD } from '../config/constants';
 import { REGIONS } from '../config/regions';
 import { freshStory, sanitizeStory, type StoryState } from '../story/story';
 import { sanitizeCharms } from '../economy/charms';
 import { sanitizeHero } from '../systems/hero';
+import { newlyEarned, sanitizeUnlocked, type UnlockContext } from '../systems/unlocks';
 import { freshAllocation, pointsForLevel, pointsSpent, sanitizeAllocation, type Allocation } from '../systems/stats';
 import {
   ARMOR,
@@ -366,6 +367,25 @@ export function arriveInTown(): TownProfile {
   return gameSave.load().town;
 }
 
+/** Hand over any knight the player has now earned. Returns their names, for a "new knight!" message. */
+export function grantUnlocks(): string[] {
+  const save = gameSave.load();
+  const story = save.story;
+  const ctx: UnlockContext = {
+    wins: save.meta.wins,
+    level: save.town.hero.level,
+    storyStarted: !!story?.started,
+    storyStage: story?.stage ?? 0,
+    storyComplete: !!story?.complete,
+  };
+  const fresh = newlyEarned(save.town.unlocked, ctx);
+  if (fresh.length === 0) return [];
+  gameSave.update((s) => {
+    s.town = { ...s.town, unlocked: [...s.town.unlocked, ...fresh] };
+  });
+  return fresh.map((id) => getCharacter(id).name);
+}
+
 export function writeProfile(profile: TownProfile): boolean {
   return gameSave.update((save) => {
     save.town = profile;
@@ -457,6 +477,7 @@ function readTown(value: unknown): TownProfile {
   const coins = readInt(value.coins, 0, MAX_DRIPS) ?? 0;
   return {
     characterId,
+    unlocked: sanitizeUnlocked(value.unlocked, CHARACTER_IDS, characterId),
     coins,
     bag: readStacks(value.bag, BAG_CAP),
     stash: readStacks(value.stash, STASH_CAP),

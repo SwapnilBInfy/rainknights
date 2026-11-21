@@ -5,7 +5,8 @@ import { UI } from '../gfx/palette';
 import { drawCursor, drawWindow, textStyle } from '../ui/Window';
 import { audio } from '../audio/engine';
 import { chooseKnight } from '../economy/economy';
-import { loadGame, writeProfile } from '../save/save';
+import { grantUnlocks, loadGame, writeProfile } from '../save/save';
+import { unlockHint } from '../systems/unlocks';
 
 /** Maps a stat multiplier to 1-5 filled segments (1.0 = 3). */
 function segments(mult: number, invert = false): number {
@@ -18,6 +19,8 @@ export class CharacterSelectScene extends Phaser.Scene {
   private chosen = false;
   /** Opened from the house mirror: pick a knight and return home, instead of starting a run. */
   private wardrobe = false;
+  /** The knights the player has earned. */
+  private have: string[] = [];
 
   constructor() {
     super('CharacterSelectScene');
@@ -27,6 +30,8 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.selected = 0;
     this.chosen = false;
     this.wardrobe = data.wardrobe === true;
+    grantUnlocks(); // (a knight earned since the last visit is here now)
+    this.have = loadGame().town.unlocked;
     audio.playMusic(this.wardrobe ? 'town' : 'title');
     const { width } = this.scale;
     this.cameras.main.setBackgroundColor('#181c38');
@@ -40,8 +45,10 @@ export class CharacterSelectScene extends Phaser.Scene {
     const names: Phaser.GameObjects.Text[] = [];
     CHARACTERS.forEach((character, i) => {
       const y = 22 + i * 44;
-      this.add.image(14, y + 10, chibiKey(character.id, 'down', 'stand')).setOrigin(0, 0);
-      names.push(this.add.text(33, y + 20, character.name, textStyle()));
+      const open = this.have.includes(character.id);
+      const portrait = this.add.image(14, y + 10, chibiKey(character.id, 'down', 'stand')).setOrigin(0, 0);
+      if (!open) portrait.setTintFill(0x202030); // a shadow: not met yet
+      names.push(this.add.text(33, y + 20, open ? character.name : '???', textStyle()));
       const zone = this.add
         .rectangle(8, y, 124, 42, 0xffffff, 0)
         .setOrigin(0, 0)
@@ -77,9 +84,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     names.forEach((n, i) => n.setColor(i === index ? '#c07800' : '#383838'));
 
     detail.removeAll(true);
+    const open = this.have.includes(character.id);
     const sprite = this.add.image(188, 22, chibiKey(character.id, 'down', 'stand')).setOrigin(0.5, 0).setScale(2);
-    const tagline = this.add.text(146, 74, character.tagline, { ...textStyle('#686868'), lineSpacing: 2, wordWrap: { width: 84 } });
+    if (!open) sprite.setTintFill(0x202030);
+    const tagline = this.add.text(146, 74, open ? character.tagline : `LOCKED\n${unlockHint(character.id)}`, { ...textStyle(open ? '#686868' : '#c07800'), lineSpacing: 2, wordWrap: { width: 84 } });
     detail.add([sprite, tagline]);
+    const app = document.getElementById('app');
+    if (app) app.dataset.knightLocked = open ? '' : character.id;
+    if (!open) return; // (the numbers are a secret until the knight is earned)
 
     const g = this.add.graphics();
     const rows: [string, number][] = [
@@ -101,6 +113,10 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private choose(character: CharacterDef) {
     if (this.chosen) return;
+    if (!this.have.includes(character.id)) {
+      audio.play('move'); // not yet earned
+      return;
+    }
     this.chosen = true;
     audio.play('confirm');
     if (this.wardrobe) {

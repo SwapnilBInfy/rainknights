@@ -31,6 +31,7 @@ const LEGEND: { color: number; label: string }[] = [
   { color: 0xc080ff, label: 'SHRINE' },
   { color: 0x58e0d0, label: 'STAIRS' },
   { color: 0x3f8cf0, label: 'PAD' },
+  { color: 0xff8a3a, label: 'GATE' },
   { color: 0xff9ad8, label: 'TABLET' },
 ];
 

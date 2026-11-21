@@ -15,6 +15,8 @@ import type { Enemy } from '../entities/enemies/Enemy';
 import { createEnemy } from '../entities/enemies/factory';
 import { WeatherDirector } from '../systems/WeatherDirector';
 import { CampDirector } from '../systems/CampDirector';
+import { GateDirector, GATE_NAME } from '../systems/GateDirector';
+import { gateLevels, levelForZone, suggestedLevel, zoneAt } from '../systems/zones';
 import { placeCamps, tunnelCamps } from '../systems/camps';
 import { laterHero } from '../systems/hero';
 import { HazardDirector, type HazardHost } from '../systems/HazardDirector';
@@ -69,6 +71,10 @@ interface RunBridge {
   triggerHazard: (kind: HazardKind, dx?: number, dy?: number, instant?: boolean) => void;
   /** Put a status on the player or nearest enemy (debug / tests). */
   applyStatus: (target: 'player' | 'enemy', id: StatusId, ms?: number) => void;
+  /** The gates between the zones: where, what level, and whether open (debug / tests). */
+  gates: () => { ring: number; level: number; open: boolean; x: number; y: number; tiles: number }[];
+  /** Set the knight's level outright (debug / tests); the points and slots follow. */
+  setLevel: (level: number) => void;
   /** Put the knight here (debug / tests). */
   tpTo: (x: number, y: number) => void;
   /** Spawn an enemy a short way from the player (debug / tests). */
@@ -254,6 +260,8 @@ export class GameScene extends Phaser.Scene {
   private poiDirector: PoiDirector | null = null;
   private darkness: Darkness | null = null;
   private camps: CampDirector | null = null;
+  private gateDir: GateDirector | null = null;
+  private surfaceSpawn = { col: 0, row: 0 };
   /** Where the boss waits (the far end of the map), in px. */
   private bossHome: { x: number; y: number } | null = null;
   private castCount = 0;
@@ -307,7 +315,10 @@ export class GameScene extends Phaser.Scene {
     const startFront = resume ? frontIndexAt(resume.elapsedSeconds) : (data.startFrontIndex ?? 0);
     // The surface map's points of interest (where the stairs down are, the crates, the shrines) come from the map alone,
     // so a trip underground and back finds everything where it was.
-    const surfaceMap = generateMap(region.id, this.mapSeed);
+    // The game's cities are cut into zones by level-locked gates; the tutorial's arena and the story's finale are not
+    const zoned = !data.tutorial && !region.story;
+    const surfaceMap = generateMap(region.id, this.mapSeed, undefined, undefined, zoned);
+    this.surfaceSpawn = surfaceMap.spawn;
     this.surfacePois = data.tutorial ? [] : placePois(surfaceMap.grid, surfaceMap.spawn, this.mapSeed, region.dress);
     this.tunnelPlan = null;
     if (resume && data.underground && !data.tutorial) {
@@ -323,7 +334,7 @@ export class GameScene extends Phaser.Scene {
       const start = reversed ? tun.b : tun.a;
       this.terrain = buildUndergroundTerrain(this, region, tun.grid, this.mapSeed, { col: start.col + (reversed ? -3 : 3), row: start.row });
     } else {
-      this.terrain = buildTerrain(this, region, { seed: this.mapSeed, condition: this.runWeatherCondition, frontIndex: startFront });
+      this.terrain = buildTerrain(this, region, { seed: this.mapSeed, condition: this.runWeatherCondition, frontIndex: startFront, zoned });
     }
 
     this.player = new Player(this, this.terrain.spawn.x, this.terrain.spawn.y, character);
@@ -403,6 +414,18 @@ export class GameScene extends Phaser.Scene {
     );
     this.physics.add.collider(this.player, this.terrain.layer);
     this.physics.add.collider(this.enemyGroup, this.terrain.layer);
+    this.gateDir = null;
+    if (zoned && this.level === 'surface') {
+      this.gateDir = new GateDirector(this, surfaceMap.gates, this.player, this.enemyGroup);
+      this.gateDir.onOpened = (gate) => {
+        audio.play('levelUp');
+        this.hud.showMessage(`Lv${gate.level}: the ${GATE_NAME[gate.ring]} gate opens!`, 2600);
+      };
+      this.gateDir.onBump = (gate) => {
+        this.hud.showMessage(`${GATE_NAME[gate.ring]} gate: Lv${gate.level} needed.\nYou are Lv${this.player.level}.`, 2600);
+      };
+      this.gateDir.update(this.player.level, 0, false); // (those the knight already has the level for start open)
+    }
 
     this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
@@ -444,6 +467,11 @@ export class GameScene extends Phaser.Scene {
         else this.getActiveEnemies()[0]?.applyStatus(id, ms);
       },
       tpTo: (x, y) => this.player.setPosition(x, y),
+      gates: () => (this.gateDir?.gates ?? []).map(({ gate, open }) => ({ ring: gate.ring, level: gate.level, open, x: gate.col * TILE + TILE / 2, y: gate.row * TILE + TILE / 2, tiles: gate.tiles.length })),
+      setLevel: (level) => {
+        this.player.setHero({ level: Math.max(1, Math.floor(level)), xp: 0, alloc: this.player.toHero().alloc });
+        this.syncCharms();
+      },
       spawnEnemy: (type, dx = 50, dy = 0) => {
         // (returns nothing: Playwright would try to serialize a returned Phaser sprite, which stalls the page)
         this.spawnEnemyAt(type, this.player.x + dx, this.player.y + dy);
@@ -620,6 +648,11 @@ export class GameScene extends Phaser.Scene {
       this.hud.showMessage(`${region.name}.\nThe ${this.weather.frontName} resumes.`);
     } else {
       this.hud.showMessage(`${region.name}: ${data.weatherLabel ?? 'unknown'}.\nThe ${this.weather.frontName} begins!`);
+      // the gates ask for a level: say which, once the weather has been read, unless the knight is past them
+      if (zoned && this.player.level < suggestedLevel(region.id)) {
+        const [a, b] = gateLevels(region.id);
+        this.time.delayedCall(4200, () => !this.ended && !this.paused && this.hud.showMessage(`Gates open at Lv${a} and Lv${b}.\nBring Lv${suggestedLevel(region.id)} for the boss.`, 3200));
+      }
     }
     if (!data.tutorial) this.setupCamps(surfaceMap, resume?.bossHp ?? null);
 
@@ -668,6 +701,8 @@ export class GameScene extends Phaser.Scene {
 
     this.events.once('shutdown', () => {
       this.closeBagNow();
+      this.gateDir?.destroy();
+      this.gateDir = null;
       this.detachPause?.();
       this.detachPause = null;
       this.detachTouch?.();
@@ -722,6 +757,7 @@ export class GameScene extends Phaser.Scene {
       this.updateWeatherEffects(delta);
     }
     this.camps?.update();
+    this.gateDir?.update(this.player.level, time);
     this.updateTerrainEffects(delta);
     this.updateGems();
     this.updatePickups();
@@ -1327,6 +1363,7 @@ export class GameScene extends Phaser.Scene {
       dots.push({ x: item.x, y: item.y, color });
     }
     if (this.level === 'surface' && !this.tutorial) dots.push({ ...padCenterFor(this.terrain.spawn), color: 0x3f8cf0 });
+    for (const { gate, open } of this.gateDir?.gates ?? []) dots.push({ x: gate.col * TILE + TILE / 2, y: gate.row * TILE + TILE / 2, color: open ? 0x58e058 : 0xff8a3a });
     if (this.boss?.active && this.level === 'surface') dots.push({ x: this.boss.x, y: this.boss.y, color: 0xff4a4a });
     return dots;
   }
@@ -1406,6 +1443,12 @@ export class GameScene extends Phaser.Scene {
     if (!plan || !base) return;
     const exit = this.surfacePois.find((p) => p.id === (which === 'back' ? plan.entry : plan.exitId));
     if (!exit) return;
+    // a tunnel is no way round a gate: the far stairs are sealed to a knight too low for the zone they come out in
+    const needed = levelForZone(this.region.id, zoneAt(exit.col, exit.row, this.surfaceSpawn));
+    if (which === 'far' && this.player.level < needed) {
+      this.hud.showMessage(`The far stairs are sealed:\nbring Lv${needed} to go up.`, 2600);
+      return;
+    }
     const at = poiCenter(exit);
     saveRun({
       ...base,
