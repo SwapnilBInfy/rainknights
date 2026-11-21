@@ -204,6 +204,7 @@ export class FlightScene extends Phaser.Scene {
     this.events.once('shutdown', () => {
       alive = false;
       if (window.__flight === bridge) delete window.__flight;
+      delete document.getElementById('app')?.dataset.objective;
     });
     for (const region of REGIONS.filter((r) => !r.story)) {
       void fetchRegionWeather(region).then((w) => {

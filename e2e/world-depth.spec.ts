@@ -256,8 +256,9 @@ test('mud: rain churns the grass into mud that slows the knight; a clear day lea
   const counts = await rk<Record<string, number>>(page, 'terrain().counts');
   expect(counts.MUD).toBeGreaterThan(10);
   expect(await rk<boolean>(page, 'tpToTile(12, 0)')).toBe(true);
-  await page.waitForFunction(() => (window as any).__rk.terrain().under === 12, undefined, frame);
-  expect((await rk<{ speed: number }>(page, 'terrain()')).speed).toBeLessThan(0.7);
+  // the slow-down is applied by the terrain update a moment after the knight lands on the tile
+  await page.waitForFunction(() => (window as any).__rk.terrain().under === 12 && (window as any).__rk.terrain().speed < 0.7, undefined, frame);
+  expect((await rk<{ speed: number }>(page, 'terrain()')).speed).toBeCloseTo(0.6, 1);
 });
 
 test('a clear day leaves no mud', async ({ page }) => {

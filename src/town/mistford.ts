@@ -27,7 +27,7 @@ const TOWN_ART = [
   '#.......==..~~...#',
   '#.......==..~~FF.#',
   '#.......==....FF.#',
-  '#....********....#',
+  '#................#',
   '##################',
 ];
 
@@ -114,7 +114,6 @@ export const TOWN = {
   spawn: { col: 8, row: 7 } as Cell,
   houseMat: doorMats[0],
   shopMat: doorMats[1],
-  gates: cells(TOWN_ART, '*'),
   /** The blue flight pad: a 2x2 plate. Stand on it and press A to fly. */
   pad: cells(TOWN_ART, 'F'),
   /** The cellar hatch, revealed once the Stormglass is whole, and the step beside it where you come up from the Undercroft. */
@@ -171,7 +170,7 @@ export const TOWN_NPCS: TownNpc[] = [
 
 export const TOWN_SIGN: { at: Cell; lines: [string, string] } = {
   at: { col: 6, row: 10 },
-  lines: ['South road: the cities.', 'Or fly from the blue pad.'],
+  lines: ['The cities are far away.', 'Fly from the blue pad.'],
 };
 
 /** The middle of the flight pad, in pixels. */

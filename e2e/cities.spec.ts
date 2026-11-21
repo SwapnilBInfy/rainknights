@@ -1,4 +1,4 @@
-import { beginCityRun, test, expect } from './fixtures';
+import { beginCityRun, flyToCity, test, expect } from './fixtures';
 import { type Page } from '@playwright/test';
 import { CITIES as REGIONS } from '../src/config/regions';
 
@@ -16,48 +16,29 @@ async function begin(page: Page, city: string, query = '?seed=33') {
   return errors;
 }
 
-async function toPicker(page: Page) {
-  const app = page.locator('#app');
+test('there is no way to a city on foot: the south road out of Mistford is just a road', async ({ page }) => {
   await page.goto('/');
+  const app = page.locator('#app');
   await expect(app).toHaveAttribute('data-scene', 'MenuScene');
   await page.keyboard.press('Space');
   await expect(app).toHaveAttribute('data-scene', 'TownScene');
+  await page.waitForFunction(() => (window as any).__hub?.frames() > 2);
+  // where the old gate was, and then hold south against the bottom edge for a while
+  await page.evaluate(`window.__hub.tp(8, 12)`);
   await page.keyboard.down('ArrowDown');
-  try {
-    await expect(app).toHaveAttribute('data-scene', 'RegionSelectScene', { timeout: 8_000 });
-  } finally {
-    await page.keyboard.up('ArrowDown');
-  }
-}
-
-test('the picker lists every city and Down + Enter picks one from the list', async ({ page }) => {
-  expect(REGIONS.map((r) => r.id)).toEqual(['nyc', 'miami', 'london', 'tokyo', 'mumbai']);
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  await toPicker(page);
-  // Press Down until the highlight is on Mumbai, then Enter. (Outcome-based: the picker's first key presses are
-  // unreliable at the moment, see the "wraps round" test below, so this does not count them.)
-  const highlighted = () => page.locator('#app').getAttribute('data-region-selected');
-  for (let i = 0; i < 14 && (await highlighted()) !== 'mumbai'; i++) {
-    await page.keyboard.press('ArrowDown');
-    await page.waitForTimeout(80);
-  }
-  expect(await highlighted()).toBe('mumbai');
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'GameScene');
-  expect(await rk<string>(page, 'regionId()')).toBe('mumbai');
-  expect(errors, errors.join('\n')).toEqual([]);
+  await page.waitForTimeout(1500);
+  await page.keyboard.up('ArrowDown');
+  await expect(app).toHaveAttribute('data-scene', 'TownScene');
+  expect(await page.evaluate(`window.__hub.place()`)).toBe('town');
 });
 
-// FIXME: the city list's first key presses are flaky (a press sometimes moves two rows, or backwards), which breaks any
-// test that counts presses. Reproduced on main; tracked in a separate follow-up. Re-enable once that is fixed.
-test.fixme('the list wraps round: Up from New York is Mumbai', async ({ page }) => {
-  await toPicker(page);
-  await page.keyboard.press('ArrowUp');
-  await expect(page.locator('#app')).toHaveAttribute('data-region-selected', 'mumbai');
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'GameScene');
-  expect(await rk<string>(page, 'regionId()')).toBe('mumbai');
+test('the way to a city is by air: the pad, the flight map, and a landing', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/');
+  await flyToCity(page, 'london');
+  expect(await page.evaluate(`window.__rk.regionId()`)).toBe('london');
+  expect(errors, errors.join('\n')).toEqual([]);
 });
 
 for (const [city, boss] of [

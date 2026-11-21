@@ -1,7 +1,6 @@
 export { BootScene } from './BootScene';
 export { MenuScene } from './MenuScene';
 export { CharacterSelectScene } from './CharacterSelectScene';
-export { RegionSelectScene } from './RegionSelectScene';
 export { TownScene } from './TownScene';
 export { HouseScene } from './HouseScene';
 export { MarketScene } from './MarketScene';

@@ -1,6 +1,6 @@
 import { test, expect, artifactPath } from './fixtures';
 import type { Page } from '@playwright/test';
-import { HOUSE, MARKET, TOWN, cellCenter } from '../src/town/mistford';
+import { HOUSE, MARKET, TOWN, cellCenter, padCenter } from '../src/town/mistford';
 
 // Mistford: wake up in town, buy a bun, leave for a city, pick up drips, come home.
 
@@ -88,11 +88,16 @@ test('start in Mistford, buy a bun, collect drips, and come home', async ({ page
   const out = cellCenter(MARKET.door);
   await steer(page, { ...out, scene: 'TownScene' });
 
-  const gate = cellCenter(TOWN.gates[Math.floor(TOWN.gates.length / 2)]);
-  await steer(page, { x: gate.x, y: cellCenter(TOWN.spawn).y });
-  await steer(page, { ...gate, scene: 'RegionSelectScene' });
-  await page.keyboard.press('Digit1');
-  await expect(app).toHaveAttribute('data-scene', 'GameScene');
+  // The only way to a city is by air: walk onto the pad, take off, fly over New York's star and come down on it.
+  await steer(page, { ...padCenter(), interact: 'pad' });
+  await page.keyboard.press('Space');
+  await expect(app).toHaveAttribute('data-scene', 'FlightScene');
+  await page.waitForFunction(() => (window as unknown as { __flight?: { frames: () => number } }).__flight!.frames() > 3);
+  await page.evaluate(`window.__flight.teleportTo('nyc', 0.02)`);
+  await page.waitForFunction(() => (window as unknown as { __flight: { near: () => string } }).__flight.near() === 'nyc');
+  await page.keyboard.down('Space');
+  await expect(app).toHaveAttribute('data-scene', 'GameScene', { timeout: 10_000 });
+  await page.keyboard.up('Space');
 
   await page.evaluate(() => (window as unknown as { __rk: { spawnEnemy: (t: string, x: number, y: number) => void } }).__rk.spawnEnemy('rainImp', 18, 0));
   await page.evaluate(() => (window as unknown as { __rk: { killNearest: () => void } }).__rk.killNearest());

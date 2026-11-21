@@ -11,8 +11,8 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    // AI-generated region emblems are optional — RegionSelectScene falls back
-    // to a plain block if a file is missing. Cities with a drawn emblem have no file.
+    // AI-generated region emblems are optional (nothing breaks if a file is missing).
+    // Cities with a drawn emblem have no file.
     this.load.on('loaderror', (file: Phaser.Loader.File) => {
       console.warn(`Optional generated asset missing, using fallback: ${file.key}`);
     });
