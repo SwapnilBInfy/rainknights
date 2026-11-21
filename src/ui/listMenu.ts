@@ -28,6 +28,13 @@ export class ListMenu {
   private onPick: (id: string) => void = () => {};
   private onClose: () => void = () => {};
   private onMove: (id: string) => void = () => {};
+  /** Left (-1) or right (+1) on a row: for menus where a row holds a value (the stats screen). */
+  private onSide: ((id: string, dir: number) => void) | null = null;
+  private pendingSide = 0;
+  /** The first visible row, when the list is longer than the window. */
+  private top = 0;
+  private title = '';
+  private hint = '';
   private listening = false;
   private pendingDir = 0;
   private pendingConfirm = false;
@@ -40,8 +47,51 @@ export class ListMenu {
   private padConfirmWas = false;
   private padBackWas = false;
   isOpen = false;
+  /**
+   * Driven from the window instead of the scene: for a menu opened over a paused scene (Phaser stops feeding a paused
+   * scene its keys and its update, so the usual `pump` would never run). Keys come from the window and a frame loop
+   * pumps the menu itself.
+   */
+  private driven = false;
+  private held = new Set<string>();
+  private loop = 0;
 
   constructor(private readonly scene: Phaser.Scene) {}
+
+  private startDriving() {
+    if (this.driven) return;
+    this.driven = true;
+    this.held.clear();
+    window.addEventListener('keydown', this.onWindowKey, true);
+    window.addEventListener('keyup', this.onWindowKeyUp, true);
+    const tick = (now: number) => {
+      if (!this.driven) return;
+      this.pump(now);
+      this.loop = requestAnimationFrame(tick);
+    };
+    this.loop = requestAnimationFrame(tick);
+  }
+
+  private stopDriving() {
+    if (!this.driven) return;
+    this.driven = false;
+    window.removeEventListener('keydown', this.onWindowKey, true);
+    window.removeEventListener('keyup', this.onWindowKeyUp, true);
+    cancelAnimationFrame(this.loop);
+    this.held.clear();
+  }
+
+  private onWindowKey = (event: KeyboardEvent) => {
+    if (!this.isOpen) return;
+    const key = event.key.toLowerCase();
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'enter', 'escape'].includes(key)) event.preventDefault();
+    this.held.add(key);
+    this.onPhaserKey(event);
+  };
+
+  private onWindowKeyUp = (event: KeyboardEvent) => {
+    this.held.delete(event.key.toLowerCase());
+  };
 
   show(opts: {
     title: string;
@@ -52,10 +102,17 @@ export class ListMenu {
     onPick: (id: string) => void;
     onClose: () => void;
     onMove?: (id: string) => void;
+    onSide?: (id: string, dir: number) => void;
+    /** Open over a paused scene: see `driven`. */
+    driven?: boolean;
   }) {
     this.onPick = opts.onPick;
     this.onClose = opts.onClose;
     this.onMove = opts.onMove ?? (() => {});
+    this.onSide = opts.onSide ?? null;
+    this.pendingSide = 0;
+    this.top = 0;
+    if (opts.driven) this.startDriving();
     this.titleValue = opts.titleValue ?? '';
     this.index = 0;
     this.isOpen = true;
@@ -77,19 +134,21 @@ export class ListMenu {
     if (!this.isOpen) return;
     this.titleValue = titleValue;
     const keep = this.rows[this.index]?.id;
+    this.rows = rows;
+    const next = rows.findIndex((row) => row.id === keep);
+    this.index = next >= 0 ? next : Math.min(this.index, Math.max(0, rows.length - 1));
     this.render(title, rows, hint);
-    const next = this.rows.findIndex((row) => row.id === keep);
-    this.index = next >= 0 ? next : Math.min(this.index, Math.max(0, this.rows.length - 1));
-    this.paint();
   }
 
   setHint(hint: string) {
+    this.hint = hint;
     this.hintText?.setText(hint);
   }
 
   hide() {
     if (!this.isOpen && !this.root) return;
     this.isOpen = false;
+    this.stopDriving();
     this.silence();
     this.pendingDir = 0;
     this.pendingConfirm = false;
@@ -132,7 +191,7 @@ export class ListMenu {
       this.pendingConfirm = false;
       if (n >= 0 && n < this.rows.length) {
         this.index = n;
-        this.paint();
+        this.render(this.title, this.rows, this.hint); // (scrolls the window to the row if it is out of view)
         this.confirm();
       }
       return;
@@ -162,6 +221,13 @@ export class ListMenu {
       this.repeatAt = time + 150;
     }
 
+    if (this.isOpen && this.pendingSide !== 0) {
+      const side = this.pendingSide;
+      this.pendingSide = 0;
+      const id = this.rows[this.index]?.id;
+      if (id && this.onSide) this.onSide(id, side);
+    }
+
     // A down-then-confirm that lands in the same frame should buy the row you moved to.
     if (this.isOpen && this.pendingConfirm) {
       this.pendingConfirm = false;
@@ -169,15 +235,25 @@ export class ListMenu {
     }
   }
 
+  /** How many rows fit in the window at once; a longer list scrolls. */
+  static readonly MAX_ROWS = 8;
+
   private render(title: string, rows: MenuRow[], hint: string) {
     this.rows = rows;
+    this.title = title;
+    this.hint = hint;
     this.root?.destroy(true);
     this.labels = [];
     this.rowY = [];
+    const maxRows = ListMenu.MAX_ROWS;
+    this.top = Math.max(0, Math.min(this.top, Math.max(0, rows.length - maxRows)));
+    if (this.index < this.top) this.top = this.index;
+    if (this.index >= this.top + maxRows) this.top = this.index - maxRows + 1;
+    const visible = rows.slice(this.top, this.top + maxRows);
 
     const rowH = 13;
     const winW = 216;
-    const winH = Math.min(150, 24 + rows.length * rowH + (hint ? 14 : 0));
+    const winH = Math.min(150, 24 + visible.length * rowH + (hint ? 14 : 0));
     const x = Math.round((240 - winW) / 2);
     const y = Math.max(4, Math.round((160 - winH) / 2));
 
@@ -192,7 +268,7 @@ export class ListMenu {
     this.cursor = this.scene.add.graphics().setScrollFactor(0);
     root.add(this.cursor);
     let ry = y + 20;
-    for (const row of rows) {
+    for (const row of visible) {
       const text = this.scene.add.text(x + 22, ry, row.label, textStyle()).setScrollFactor(0);
       root.add(text);
       this.labels.push(text);
@@ -214,16 +290,36 @@ export class ListMenu {
   }
 
   private paint() {
-    this.labels.forEach((label, i) => label.setColor(i === this.index ? '#c07800' : '#383838'));
-    const y = this.rowY[this.index];
+    const at = this.index - this.top;
+    this.labels.forEach((label, i) => label.setColor(i === at ? '#c07800' : '#383838'));
+    const y = this.rowY[at];
     if (this.cursor && y !== undefined) {
       this.cursor.clear();
       drawCursor(this.cursor, 240 / 2 - 216 / 2 + 10, y);
+      this.drawArrows();
+    }
+  }
+
+  /** The "more above / below" arrows, redrawn with the cursor (which clears its graphics). */
+  private drawArrows() {
+    if (!this.cursor) return;
+    const winW = 216;
+    const maxRows = ListMenu.MAX_ROWS;
+    const visible = Math.min(maxRows, this.rows.length - this.top);
+    const winH = Math.min(150, 24 + visible * 13 + (this.hint ? 14 : 0));
+    const x = Math.round((240 - winW) / 2);
+    const y = Math.max(4, Math.round((160 - winH) / 2));
+    this.cursor.fillStyle(0x686868, 1);
+    if (this.top > 0) this.cursor.fillTriangle(x + winW - 16, y + 12, x + winW - 8, y + 12, x + winW - 12, y + 7);
+    if (this.top + maxRows < this.rows.length) {
+      const by = y + winH - (this.hint ? 20 : 8);
+      this.cursor.fillTriangle(x + winW - 16, by, x + winW - 8, by, x + winW - 12, by + 5);
     }
   }
 
   private listen() {
     const kb = this.scene.input.keyboard;
+    if (this.driven) return; // the window feeds a driven menu
     if (!kb || this.listening) return;
     kb.on('keydown', this.onPhaserKey);
     this.listening = true;
@@ -240,6 +336,8 @@ export class ListMenu {
     const key = event.key.toLowerCase();
     if (key === 'arrowup' || key === 'w') this.pendingDir = -1;
     else if (key === 'arrowdown' || key === 's') this.pendingDir = 1;
+    else if (key === 'arrowleft' || key === 'a') this.pendingSide = -1;
+    else if (key === 'arrowright' || key === 'd') this.pendingSide = 1;
     else if (key === 'escape' || key === 'p') this.pendingClose = true;
     else if (key === 'enter' || key === ' ' || key === 'z') this.pendingConfirm = true;
     else if (key >= '1' && key <= '9') this.pendingPick = Number(key);
@@ -247,12 +345,14 @@ export class ListMenu {
 
   private upHeld() {
     const kb = this.scene.input.keyboard;
+    if (this.driven) return this.held.has('arrowup') || this.held.has('w');
     if (!kb) return false;
     return !!(kb.addKey('UP').isDown || kb.addKey('W').isDown);
   }
 
   private downHeld() {
     const kb = this.scene.input.keyboard;
+    if (this.driven) return this.held.has('arrowdown') || this.held.has('s');
     if (!kb) return false;
     return !!(kb.addKey('DOWN').isDown || kb.addKey('S').isDown);
   }
@@ -282,7 +382,13 @@ export class ListMenu {
     if (next === this.index) return;
     this.index = next;
     audio.play('move');
-    this.paint();
+    const before = this.top;
+    const maxRows = ListMenu.MAX_ROWS;
+    if (this.index < this.top) this.top = this.index;
+    else if (this.index >= this.top + maxRows) this.top = this.index - maxRows + 1;
+    // wrapping from the last row to the first (or back) shows the other end of the list
+    if (this.top !== before) this.render(this.title, this.rows, this.hint);
+    else this.paint();
     this.onMove(this.rows[this.index]?.id ?? '');
   }
 

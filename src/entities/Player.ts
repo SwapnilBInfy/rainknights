@@ -8,6 +8,8 @@ import { audio } from '../audio/engine';
 import { STATUS_TUNING, StatusSet, type ApplyResult, type StatusId } from '../systems/status';
 import { DodgeRoll, ROLL } from '../systems/dodgeRoll';
 import type { PlayerSnapshot } from '../save/save';
+import { freshAllocation, pointsForLevel, pointsSpent, statEffects, NO_EFFECTS, type Allocation, type StatEffects } from '../systems/stats';
+import { charmEffects, emptyBox, NO_CHARMS, type CharmBox, type CharmEffects } from '../economy/charms';
 
 export interface PowerupLevels {
   sunbeam: number;
@@ -26,6 +28,27 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   attackCooldown = PLAYER_BASE.attackCooldown;
   magnetRadius = PLAYER_BASE.magnetRadius;
   pierce = 0;
+
+  /**
+   * What the knight is made of before stat points and charms: the character, the armor and (in the finale) the
+   * Stormglass. The numbers above are always this plus what the points and the worn charms add (see `recompute`).
+   */
+  private base = {
+    maxHp: PLAYER_BASE.maxHp as number,
+    moveSpeed: PLAYER_BASE.moveSpeed as number,
+    attackDamage: PLAYER_BASE.attackDamage as number,
+    attackRange: PLAYER_BASE.attackRange as number,
+    attackCooldown: PLAYER_BASE.attackCooldown as number,
+    magnetRadius: PLAYER_BASE.magnetRadius as number,
+  };
+  /** Stat points spent on Strength, Power, Endurance and Speed. Unspent points are the level's earnings less these. */
+  statAlloc: Allocation = freshAllocation();
+  /** The charms worn (and owned: only the worn ones count). */
+  charms: CharmBox = emptyBox();
+  /** Powers from shrines: the worn charms' powers are added on top. */
+  bonusPowers: PowerupLevels = { sunbeam: 0, rainbowShield: 0, gale: 0, frost: 0, staticCharge: 0 };
+  private stat: StatEffects = NO_EFFECTS;
+  private charmFx: CharmEffects = NO_CHARMS;
 
   xp = 0;
   level = 1;
@@ -95,11 +118,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.weapon = scene.add.image(x, y, weaponKey(character.style.weapon)).setOrigin(0.5, 1).setDepth(11);
     this.on(Phaser.GameObjects.Events.DESTROY, () => this.weapon.destroy());
 
-    this.maxHp = Math.round(PLAYER_BASE.maxHp * character.mods.maxHp);
+    this.base.maxHp = Math.round(PLAYER_BASE.maxHp * character.mods.maxHp);
+    this.base.moveSpeed = PLAYER_BASE.moveSpeed * character.mods.moveSpeed;
+    this.base.attackDamage = Math.round(PLAYER_BASE.attackDamage * character.mods.attackDamage);
+    this.base.attackCooldown = Math.round(PLAYER_BASE.attackCooldown * character.mods.attackCooldown);
+    this.recompute();
     this.hp = this.maxHp;
-    this.baseMoveSpeed = PLAYER_BASE.moveSpeed * character.mods.moveSpeed;
-    this.attackDamage = Math.round(PLAYER_BASE.attackDamage * character.mods.attackDamage);
-    this.attackCooldown = Math.round(PLAYER_BASE.attackCooldown * character.mods.attackCooldown);
 
     // Small circle around the feet, like a GBA tile-sized footprint.
     const body = this.body as Phaser.Physics.Arcade.Body;
@@ -173,10 +197,82 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   /** Armor and the HP you left Mistford with. A continued run uses the checkpoint instead. */
   applyBattleGear(stats: { hp: number; maxHp: number; baseMoveSpeed: number; attackDamage: number }) {
-    this.maxHp = stats.maxHp;
-    this.hp = Math.max(1, Math.min(stats.maxHp, stats.hp));
-    this.baseMoveSpeed = stats.baseMoveSpeed;
-    this.attackDamage = stats.attackDamage;
+    this.setBase(stats);
+    this.hp = Math.max(1, Math.min(this.maxHp, stats.hp));
+  }
+
+  /** The knight's make before points and charms (character + armor + any buff). Keeps the HP it had. */
+  setBase(stats: { maxHp: number; baseMoveSpeed: number; attackDamage: number }) {
+    this.base.maxHp = stats.maxHp;
+    this.base.moveSpeed = stats.baseMoveSpeed;
+    this.base.attackDamage = stats.attackDamage;
+    this.recompute();
+  }
+
+  /** A permanent bump to the knight's make (the Stormglass in the finale). */
+  boostBase(extraHp: number, damageFactor: number) {
+    this.base.maxHp += extraHp;
+    this.base.attackDamage = Math.round(this.base.attackDamage * damageFactor);
+    this.recompute();
+    this.hp = Math.min(this.maxHp, this.hp + extraHp);
+  }
+
+  /** Stat points the level has earned and not yet spent. */
+  get statPoints(): number {
+    return Math.max(0, pointsForLevel(this.level) - pointsSpent(this.statAlloc));
+  }
+
+  /** Swing damage and beam / bolt damage multipliers, from Strength and Power. */
+  get meleeMult(): number {
+    return this.stat.melee;
+  }
+  get rangedMult(): number {
+    return this.stat.ranged;
+  }
+
+  setAllocation(alloc: Allocation) {
+    this.statAlloc = { ...alloc };
+    this.recompute();
+  }
+
+  setCharms(box: CharmBox) {
+    this.charms = { owned: { ...box.owned }, worn: [...box.worn] };
+    this.recompute();
+  }
+
+  setBonusPowers(levels: PowerupLevels) {
+    this.bonusPowers = { ...levels };
+    this.recompute();
+  }
+
+  /** A shrine's blessing: one more level of a power (up to 4). */
+  addBonusPower(name: keyof PowerupLevels): number {
+    this.bonusPowers[name] = Math.min(4, this.bonusPowers[name] + 1);
+    this.recompute();
+    return this.powerups[name];
+  }
+
+  /**
+   * Work out every number from the make, the spent points and the worn charms. A bigger max HP also fills that much
+   * HP (a stronger knight is not hurt by it); a smaller one trims HP to fit.
+   */
+  recompute() {
+    this.stat = statEffects(this.statAlloc);
+    this.charmFx = charmEffects(this.charms);
+    const oldMax = this.maxHp;
+    this.maxHp = Math.max(1, Math.round(this.base.maxHp + this.stat.maxHp + this.charmFx.maxHp));
+    if (this.maxHp > oldMax && oldMax > 0) this.hp += this.maxHp - oldMax;
+    this.hp = Math.min(this.hp, this.maxHp);
+    this.baseMoveSpeed = this.base.moveSpeed * this.stat.move;
+    this.attackDamage = this.base.attackDamage + this.charmFx.attackDamage;
+    this.attackRange = this.base.attackRange + this.charmFx.range;
+    this.attackCooldown = Math.max(180, Math.round(this.base.attackCooldown * this.charmFx.cooldownMult));
+    this.magnetRadius = this.base.magnetRadius + this.charmFx.magnet;
+    this.pierce = this.charmFx.pierce;
+    this.roll.cooldownScale = this.stat.roll;
+    for (const name of Object.keys(this.powerups) as (keyof PowerupLevels)[]) {
+      this.powerups[name] = Math.min(4, this.bonusPowers[name] + this.charmFx.powers[name]);
+    }
   }
 
   applyHaste(ms: number) {
@@ -453,6 +549,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       }
       return;
     }
+    amount = Math.max(1, Math.round(amount * this.stat.taken));
     this.hp -= amount;
     audio.play('hurt');
     this.emit('hurt', amount);
@@ -498,6 +595,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       xpToNext: this.xpToNext,
       kills: this.kills,
       powerups: { ...this.powerups },
+      statAlloc: { ...this.statAlloc },
+      bonusPowers: { ...this.bonusPowers },
       facing: this.facing,
       flipX: this.flipX,
       aimX: this.aim.x,
@@ -507,19 +606,16 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   /** Restore a checkpoint over the fresh character defaults. */
   applySnapshot(snap: PlayerSnapshot) {
-    this.maxHp = snap.maxHp;
-    this.hp = snap.hp;
-    this.baseMoveSpeed = snap.baseMoveSpeed;
-    this.attackDamage = snap.attackDamage;
-    this.attackRange = snap.attackRange;
-    this.attackCooldown = snap.attackCooldown;
-    this.magnetRadius = snap.magnetRadius;
-    this.pierce = snap.pierce;
+    // The numbers in a snapshot are the old, all-in-one ones; the scene has already set the make and the charms, so
+    // what carries over is who the knight is (level, XP, spent points, shrine powers) and how hurt they are.
     this.xp = snap.xp;
     this.level = snap.level;
     this.xpToNext = snap.xpToNext;
     this.kills = snap.kills;
-    this.powerups = { ...snap.powerups };
+    this.statAlloc = snap.statAlloc ? { ...snap.statAlloc } : freshAllocation();
+    this.bonusPowers = { ...(snap.bonusPowers ?? snap.powerups) };
+    this.recompute();
+    this.hp = Math.max(1, Math.min(this.maxHp, snap.hp));
     this.setPosition(snap.x, snap.y);
     if (Math.hypot(snap.aimX, snap.aimY) < 0.1) this.aim.set(0, 1);
     else this.aim.set(snap.aimX, snap.aimY).normalize();
