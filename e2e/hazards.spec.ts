@@ -25,7 +25,7 @@ test('thunderstorm: rain soaks the knight and a lightning strike is telegraphed 
   await expect(page.locator('#app')).toHaveAttribute('data-statuses', /wet/);
 
   // Clear the ambient enemies and any hit invulnerability first, so the only thing that can hurt is the strike.
-  await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.waitForFunction(() => !(window as any).__rk.invulnerable(), undefined, { polling: 'raf', timeout: 3000 });
   const hpBefore = await page.evaluate(() => (window as any).__rk.hp() as number);
   await trigger(page, 'lightning', 0);

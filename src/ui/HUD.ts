@@ -21,7 +21,6 @@ export class HUD {
 
   private bars: Phaser.GameObjects.Graphics;
   private lvText: Phaser.GameObjects.Text;
-  private timeText: Phaser.GameObjects.Text;
   private beamKeyText: Phaser.GameObjects.Text;
   private rollKeyText: Phaser.GameObjects.Text;
 
@@ -50,7 +49,6 @@ export class HUD {
     this.scene = scene;
 
     this.lvText = this.text(2, 1, 'Lv1');
-    this.timeText = this.text(30, 1, '00:00');
     this.beamKeyText = this.text(72, 11, 'J', '#3078d8');
     this.rollKeyText = this.text(104, 11, 'K', '#28a038');
     this.bars = this.add(scene.add.graphics());
@@ -70,7 +68,7 @@ export class HUD {
     return this.add(this.scene.add.text(x, y, str, textStyle(color)));
   }
 
-  update(player: Player, elapsedSeconds: number, frontName: string, delta = 16, beamCharge = 1, rollCharge = 1) {
+  update(player: Player, frontName: string, delta = 16, beamCharge = 1, rollCharge = 1) {
     if (this.displayHp < 0) this.displayHp = player.hp;
     // HP drains/refills smoothly like the real games.
     const step = (60 * delta) / 1000;
@@ -78,9 +76,6 @@ export class HUD {
     else if (this.displayHp < player.hp) this.displayHp = Math.min(player.hp, this.displayHp + step);
 
     this.lvText.setText(`Lv${player.level}`);
-    const m = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
-    const s = Math.floor(elapsedSeconds % 60).toString().padStart(2, '0');
-    this.timeText.setText(`${m}:${s}`);
 
     const g = this.bars;
     g.clear();

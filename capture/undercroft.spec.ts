@@ -58,11 +58,11 @@ test('the Undercroft', async () => {
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, raf);
   await page.waitForTimeout(500);
   await shot(page, 'run-objective');
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.evaluate(`window.__rk.tpToPoi('entrance', 0)`);
   await page.waitForFunction(() => (window as any).__rk?.depth?.() === 'underground', undefined, raf);
   await page.waitForTimeout(800);
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.evaluate(`window.__rk.tpToStairs('tablet', 0)`);
   await page.waitForTimeout(700);
   await shot(page, 'tablet');

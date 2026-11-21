@@ -32,7 +32,7 @@ async function begin(page: Page, query: string, digit: string) {
   await page.waitForTimeout(500);
   await page.keyboard.press(digit);
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, raf);
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
 }
 
 for (const [city, digit] of [['nyc', 'Digit1'], ['miami', 'Digit2']] as const) {
@@ -63,14 +63,14 @@ for (const [city, digit] of [['nyc', 'Digit1'], ['miami', 'Digit2']] as const) {
     await shot(page, `${city}-shrine-blessed`);
     await dismissMenus(page);
 
-    await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+    await page.evaluate(`window.__rk.clearEnemies()`);
     await rk(page, `tpToPoi('entrance', 0)`);
     await page.waitForTimeout(450);
     await shot(page, `${city}-stairs`);
     await dismissMenus(page);
     await page.waitForFunction(() => (window as any).__rk?.depth?.() === 'underground', undefined, raf);
     await page.waitForTimeout(1600);
-    await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+    await page.evaluate(`window.__rk.clearEnemies()`);
     await shot(page, `${city}-underground`);
 
     await rk(page, `tpToStairs('chest', 0)`);

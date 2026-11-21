@@ -37,6 +37,7 @@ const phaseLog = (page: Page) => page.evaluate(`window.__log`) as Promise<{ phas
 
 test('a Cab Wraith winds up with a warning, charges, stalls, then cruises again', async ({ page }) => {
   const errors = await beginRun(page, 'nyc');
+  await page.evaluate(`window.__rk.clearEnemies()`); // (the city's own Cab Wraiths would be recorded too)
   await recordPhases(page, 'cabWraith');
   await page.evaluate(`window.__rk.spawnEnemy('cabWraith', 80, 0)`);
   await page.waitForFunction(() => (window as any).__log.phases.filter((p: string) => p === 'cruise').length >= 2, undefined, frame);
@@ -46,13 +47,16 @@ test('a Cab Wraith winds up with a warning, charges, stalls, then cruises again'
   expect(errors, errors.join('\n')).toEqual([]);
 });
 
-test('NYC spawns Cab Wraiths as the storm builds, and the first one announces itself', async ({ page }) => {
-  const errors = await beginRun(page, 'nyc', 'thunderstorm'); // starts on the Thunderstorm front
-  // This test is about the hint, not survival: an idle knight in a storm would otherwise be overrun.
-  await page.evaluate(`setInterval(() => window.__rk && window.__rk.heal(), 150)`);
-  await page.waitForFunction(() => (window as any).__rk.enemyTypes().includes('cabWraith'), undefined, frame);
+test('NYC has Cab Wraiths in its camps, and the first one to spot the knight announces itself', async ({ page }) => {
+  const errors = await beginRun(page, 'nyc');
   const app = page.locator('#app');
-  for (let i = 0; i < 80 && !(await app.getAttribute('data-signature-hint')); i++) await page.waitForTimeout(250);
+  const spots = await page.evaluate(`window.__rk.camps().spots`) as { x: number; y: number; type: string }[];
+  const cab = spots.find((s) => s.type === 'cabWraith');
+  expect(cab, 'a camp with a Cab Wraith').toBeTruthy();
+  // nothing has been said yet: no cab has noticed the knight
+  expect(await app.getAttribute('data-signature-hint')).toBeNull();
+  // walk up to it (stand a short way off, on open ground)
+  await page.evaluate(`window.__rk.tpTo(${cab!.x + 40}, ${cab!.y})`);
   await expect(app).toHaveAttribute('data-signature-hint', /Cab Wraiths charge/);
   expect(errors, errors.join('\n')).toEqual([]);
 });

@@ -1,7 +1,7 @@
 # Rainknights
 
-A top-down survival game: you play a lone knight fighting off waves of enemies
-conjured from real weather patterns, as an incoming storm escalates around you.
+A top-down action-RPG: you play a lone knight who flies between cities under real weather, fights the weather-born
+enemies that live there, grows stronger for good, and faces the boss waiting at each city's far end.
 
 Built with **Phaser 3** + **TypeScript** + **Vite**. The look and feel is a
 homage to the GBA Pokémon games: a native 240×160 canvas (integer-scaled to
@@ -31,8 +31,12 @@ are AI-generated (via `npm run art:generate`).
   and earns **3 stat points** (see "Stat points and charms"). The fight never stops for it: spend the points
   from the Bag whenever you like
 - **Pause**: **Esc** or **P** during a run (see Controls)
-- **Goal**: survive the escalating storm fronts and defeat the **Tornado**
-  boss that arrives at the 5-minute mark
+- **Enemies live at fixed spots**: each city is dotted with camps that loop round their spots and ignore you until
+  you are **spotted** (see "Camps, aggro and respawn"). There are no waves and no clock; the weather stays as atmosphere
+  (flooding, mud, lightning)
+- **Your knight lasts**: level, XP and the stat points you spend are kept with your profile. A defeat, a retreat by air
+  and a return to Mistford never take them away
+- **Goal**: walk to the far end of a city and defeat the **boss** waiting there
 
 ### Controls
 
@@ -124,7 +128,7 @@ With nothing stored, the title is still **PRESS START**.
 Once a run is in progress, the title offers **Continue**, **New game**, and
 **Reset save**, in a GBA-style window. Up/Down, W/S, or the d-pad move the
 cursor. Enter, Space, Z, A, or Start confirms. 1–3 pick a row. **Continue**
-is selected first. The window shows the saved level and storm clock.
+is selected first. The window shows the saved level.
 
 **New game** does not delete the checkpoint. The old run stays available
 until the new fight actually starts. **Reset save** asks **Erase save?**
@@ -145,15 +149,14 @@ The game writes that save when a fight starts, when you spend a point or change 
 when the weather front changes, when you pause, and when the tab is hidden
 or the page closes.
 
-A checkpoint keeps the knight, city, weather, storm clock, position, HP,
-level, XP, spent stat points, shrine powers, and the tornado's HP if it is already on the field.
+A checkpoint keeps the knight, city, weather, position, HP, shrine powers, and the boss's HP if you have hurt it.
+Level, XP and spent stat points are kept with the profile (see "Your knight lasts"), so they outlive any one fight.
 Charms live with the drips and the bag, so you keep them between fights.
 Drips, the bag, the chest, and worn armor live beside the run, so they
 stay when a fight ends. A save from version 1 still loads: Continue
 resumes that fight, and the knight arrives in Mistford afterwards with
 an empty purse.
-Enemies, shots, and XP gems are not stored; the storm keeps spawning after
-you continue.
+Enemies, shots, and XP gems are not stored; the camps are full again when you continue.
 
 Mute used to live in its own key (`rainknights:muted`). The first load
 folds that into the save and then removes the old key.
@@ -183,17 +186,45 @@ current conditions and uses them to choose the starting row in the table
 below — a storm already over the city starts you further in. If the request
 fails, the run starts on the calm fallback.
 
-### Weather fronts (escalating difficulty)
+### Camps, aggro and respawn
 
-| Time    | Front            | New enemy         |
-| ------- | ---------------- | ------------------ |
-| 0:00    | Light Drizzle    | Rain Imp            |
-| 0:45    | Gusty Winds      | Wind Wraith          |
-| 1:40    | Hailstorm        | Hail Brute            |
-| 2:40    | Thunderstorm     | Lightning Wisp          |
-| 3:40    | Blizzard         | Snow Golem                |
-| 4:40    | Tornado Warning  | —                            |
-| 5:00    | —                | **Tornado** (boss)             |
+Where the enemies are is a pure function of the map and its seed (`src/systems/camps.ts`, no Phaser, unit-tested): about
+sixteen **camps** of two to four enemies spread over the map, on open ground away from the plaza you start on, so the same
+map always has the same camps. They get **tougher the farther they are from the plaza**, in three rings:
+
+| Ring (distance from the plaza) | Who lives there |
+| ------------------------------ | --------------- |
+| Outskirts (under 30 tiles)     | Rain Imp, Wind Wraith |
+| Midtown (30 to 52)             | Wind Wraith, Hail Brute, Lightning Wisp |
+| Core (beyond)                  | Hail Brute, Lightning Wisp, Snow Golem |
+
+A city's signature enemy (the New York Cab Wraith, on a street) leads some camps from midtown outwards. Tunnels hold a few
+small camps of their own.
+
+- **Loops.** Every resident walks a slow, small figure-of-eight round its spot and does you no harm: walking into one that
+  has not noticed you hurts nobody.
+- **Spotted.** Come within a resident's **sight** (about 60 to 90 px: flighty Wisps see farther, heavy Golems less far;
+  vehicles and bosses farther still) and a yellow `!` shows: it chases. A hit on it wakes it too. Your backup auto-attack
+  only fights what is already after you, so it never wakes a camp by itself.
+- **Giving up.** A chaser gives up and walks home if you get more than about twice its sight away, or if the chase drags
+  it three sights from its spot. It is left alone until you come close again.
+- **Respawn.** A defeated resident stays down until you have been at least 300 px from its spot (off-screen) and then it is
+  back: leave an area and return and it is populated again.
+- **The boss waits.** It stands at the far end of the city, stock still, until you come near; then the boss bar, the music
+  and its backup begin. Walk away and it settles again. Defeating it wins the run. The Tornado's pull only starts once it
+  has noticed you.
+
+The storm clock still runs, but only to move the weather through its fronts (Light Drizzle, Gusty Winds, Hailstorm,
+Thunderstorm, Blizzard, Tornado Warning: the flooding and the mood), the last lasting as long as you stay. It has no
+waves, no spawns and no boss time, and the battle screen no longer shows it.
+
+### Your knight lasts
+
+Level, XP and spent stat points are saved in the town profile (`hero`, `src/systems/hero.ts`), written when you level, at
+every checkpoint, and whenever a fight ends however it ends. A defeat sends you home at about 30% HP but keeps all of it;
+flying out keeps it; a new fight in any city starts as that knight. The Bag's CHARMS slots (3, then 4 at level 5 and 5 at
+level 10) follow that level, and the market's bag (**I** at the counter) shows your level, lets you spend points and
+swap charms at home. (A fight saved before this existed carries its own level; whichever is further along wins.)
 
 ### Status effects and weather hazards
 
@@ -438,7 +469,7 @@ last 40% longer. (A story saved before this stage existed keeps its place: its o
 can still be opened for the Lantern.)
 
 **The finale.** Quill marks the Eye on your map; fly there and land. Stormhold is a story-only place (it is not in the city
-list) and the Regent arrives after 50 seconds, from above. Every shard on the altar makes the knight stronger for this
+list) and the Regent waits at the far end of the Eye, like any boss. Every shard on the altar makes the knight stronger for this
 fight (+10 HP and +6% damage each). The Regent drifts after you and calls lightning: a ring shows where each strike
 will land, the first always on you, then it hits. It has three phases, below two thirds and below a third of its health,
 each faster, casting sooner and calling more strikes (2, 3, 4), and it calls for backup at each change. When it falls
@@ -459,7 +490,7 @@ York, London, Tokyo), cave mouths on the coast (Miami, Mumbai). Stand still on o
 knight goes down into a **tunnel**. A tunnel is a dark, dry maze under the city: a subway of straight corridors and
 pillared stations in the street cities, a winding cave with pools on the coast. It is lit only by a pool of light
 round the knight (and a glow at stairs and chests), full of **buried chests** (richer than crates), and with a
-trickle of enemies. **Time stands still down there**: the storm clock does not run, there is no weather and no boss.
+few small camps. **Time stands still down there**: the storm clock does not run, there is no weather and no boss.
 At one end are the stairs you came down; at the other, the stairs to the **linked entrance**, which can be anywhere
 on the map, so a tunnel is a way across it. The knight comes back as they left: level, health, powers and kills. A boss
 on the field waits for you, as hurt as you left it. Continue after leaving a run underground puts you on the surface at
@@ -488,13 +519,12 @@ and many seeds; every tunnel can be walked from its way in to its way out, to ev
 Each city can have its own signature enemy and boss on top of the shared
 weather roster. **New York** has both; **Miami** still faces the Tornado.
 
-| City | Signature enemy | Boss (5:00) |
+| City | Signature enemy | Boss (waits at the far end) |
 | ---- | --------------- | ----------- |
 | New York | **Cab Wraith** | **Phantom Bus** |
 | Miami | none yet | **Tornado** |
 
-The Cab Wraith replaces a share of each front's spawns from the second front
-on (10% rising to 20% by the last front). Both New York foes drive by the same
+The Cab Wraith leads some camps from midtown outwards (on a street). Both New York foes drive by the same
 loop, always telegraphed:
 
 1. **Cruise**: steers toward you (the bus turns slowly).

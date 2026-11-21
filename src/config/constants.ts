@@ -92,12 +92,10 @@ export function frontIndexAt(seconds: number): number {
   return 0;
 }
 
-export const TORNADO_SPAWN_TIME = 300;
-
 /**
- * The most enemies alive at once from the storm's regular spawns. Without a cap a knight who cannot keep up
- * (or enemies that get stuck behind buildings) lets hundreds pile up, which is a lot of work for every frame
- * and makes the game stutter and then lock up on slower devices. (The boss is not counted.)
+ * The most enemies alive at once from summons (a boss's backup) and the debug bridge. Without a cap a knight who cannot
+ * keep up lets hundreds pile up, which is a lot of work for every frame and makes the game stutter and then lock up on
+ * slower devices. (The camps' residents and the boss are not counted.)
  */
 export const MAX_LIVING_ENEMIES = 140;
 

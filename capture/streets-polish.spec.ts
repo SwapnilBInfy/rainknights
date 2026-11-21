@@ -29,7 +29,7 @@ async function begin(page: Page, query: string, city: 'Digit1' | 'Digit2' = 'Dig
   await page.waitForTimeout(2200);
   await page.keyboard.press(city); // the run begins
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, raf);
-  await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`); // a quiet moment for the shot
+  await page.evaluate(`window.__rk.clearEnemies()`); // a quiet moment for the shot
 }
 const tp = (page: Page, type: number, run = 0, dx = 0, dy = 0) => page.evaluate(`window.__rk.tpToTile(${type}, ${run}, ${dx}, ${dy})`);
 

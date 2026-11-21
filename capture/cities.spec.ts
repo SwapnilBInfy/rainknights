@@ -60,7 +60,7 @@ test('five cities: pick any from the list, each plays in its own shape and colou
     await toPicker(page, '?seed=33&weather=rain');
     await page.keyboard.press(`Digit${i + 1}`);
     await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, raf);
-    await page.evaluate(`for (let i = 0; i < 30; i++) window.__rk.killNearest()`);
+    await page.evaluate(`window.__rk.clearEnemies()`);
     await page.waitForTimeout(900);
     await page.screenshot({ path: join(OUTPUT_DIR, `${FEATURE}-${city}.png`) });
     // and on a bridge, so the river or the sea shows

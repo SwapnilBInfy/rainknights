@@ -23,7 +23,7 @@ async function begin(page: Page, city = 'nyc', query = '?seed=33') {
 /** A quiet moment: nothing around to knock the knight about, a full health bar, and no Bag open. */
 async function quiet(page: Page) {
   for (let i = 0; i < 6; i++) {
-    await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+    await page.evaluate(`window.__rk.clearEnemies()`);
     await rk(page, 'heal()');
     if ((await app(page).getAttribute('data-bag-page')) === null) return;
     await page.keyboard.press('KeyI');
@@ -176,7 +176,7 @@ test('the knight comes back as they left: level, kills, health and powers carry 
   await quiet(page);
   const level = await rk<number>(page, 'level()');
   expect(level).toBeGreaterThan(1);
-  await rk(page, 'hurt(30)');
+  await rk(page, 'wound(30)'); // (a hit would bounce off the level-up's grace)
   const hp = await rk<number>(page, 'hp()');
   await goDown(page);
   expect(await rk<number>(page, 'level()')).toBe(level);

@@ -122,7 +122,7 @@ test('story mode: the finale', async () => {
   await page.keyboard.down('Space');
   await page.waitForFunction(() => (window as any).__rk?.hp?.() > 0, undefined, raf);
   await page.keyboard.up('Space');
-  await page.evaluate(`for (let i = 0; i < 40; i++) window.__rk.killNearest()`);
+  await page.evaluate(`window.__rk.clearEnemies()`);
   await page.waitForTimeout(1200);
   await shot(page, 'stormhold');
   await page.evaluate(`window.__rk.spawnBoss()`);

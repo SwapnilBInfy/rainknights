@@ -9,6 +9,7 @@ import { STATUS_TUNING, StatusSet, type ApplyResult, type StatusId } from '../sy
 import { DodgeRoll, ROLL } from '../systems/dodgeRoll';
 import type { PlayerSnapshot } from '../save/save';
 import { freshAllocation, pointsForLevel, pointsSpent, statEffects, NO_EFFECTS, type Allocation, type StatEffects } from '../systems/stats';
+import { xpToNextFor, type Hero } from '../systems/hero';
 import { charmEffects, emptyBox, NO_CHARMS, type CharmBox, type CharmEffects } from '../economy/charms';
 
 export interface PowerupLevels {
@@ -215,6 +216,20 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.base.attackDamage = Math.round(this.base.attackDamage * damageFactor);
     this.recompute();
     this.hp = Math.min(this.maxHp, this.hp + extraHp);
+  }
+
+  /** Take up the knight's lasting growth: level, XP and the points spent. */
+  setHero(hero: Hero) {
+    this.level = hero.level;
+    this.xp = hero.xp;
+    this.xpToNext = xpToNextFor(hero.level);
+    this.statAlloc = { ...hero.alloc };
+    this.recompute();
+  }
+
+  /** The growth worth keeping (see `setHero`). */
+  toHero(): Hero {
+    return { level: this.level, xp: this.xp, alloc: { ...this.statAlloc } };
   }
 
   /** Stat points the level has earned and not yet spent. */

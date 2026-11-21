@@ -3,6 +3,7 @@ import { WEATHER_FRONTS, WORLD } from '../config/constants';
 import { REGIONS } from '../config/regions';
 import { freshStory, sanitizeStory, type StoryState } from '../story/story';
 import { sanitizeCharms } from '../economy/charms';
+import { sanitizeHero } from '../systems/hero';
 import { freshAllocation, pointsForLevel, pointsSpent, sanitizeAllocation, type Allocation } from '../systems/stats';
 import {
   ARMOR,
@@ -463,6 +464,7 @@ function readTown(value: unknown): TownProfile {
     armorId,
     charms: charms.owned,
     worn: charms.worn,
+    hero: sanitizeHero(value.hero),
     hp: hpRaw === null ? max : Math.min(max, hpRaw),
     visited: value.visited === true,
     fromLegacy: value.fromLegacy === true,

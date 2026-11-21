@@ -1,5 +1,6 @@
 import { getCharacter } from '../config/characters';
 import { PLAYER_BASE } from '../config/constants';
+import { freshHero, type Hero } from '../systems/hero';
 import { CHARMS, charm as charmDef, charmSlots, gain, nextPrice, rankLabel, randomCharm, type CharmBox } from './charms';
 
 /**
@@ -78,6 +79,8 @@ export interface TownProfile {
   /** Charms owned (rank 1 to 3) and which are worn. */
   charms: Record<string, number>;
   worn: string[];
+  /** The knight's level, XP and spent stat points: they last across fights, defeats and flights. */
+  hero: Hero;
   hp: number;
   /** Set the first time Mistford is entered, so the title can offer a way back. */
   visited: boolean;
@@ -115,6 +118,7 @@ export function freshProfile(characterId = 'rainKnight'): TownProfile {
     armorId: null,
     charms: {},
     worn: [],
+    hero: freshHero(),
     hp: townMaxHp(id, null),
     visited: false,
     fromLegacy: false,
@@ -201,7 +205,7 @@ export function buy(profile: TownProfile, id: string): { ok: true; profile: Town
     const price = nextPrice({ owned: profile.charms, worn: profile.worn }, id);
     if (price === null) return { ok: false, reason: 'maxed', profile };
     if (profile.coins < price) return { ok: false, reason: 'coins', profile };
-    const got = gain({ owned: profile.charms, worn: profile.worn }, id, charmSlots(1));
+    const got = gain({ owned: profile.charms, worn: profile.worn }, id, charmSlots(profile.hero.level));
     if (!got) return { ok: false, reason: 'maxed', profile };
     return { ok: true, profile: { ...profile, coins: profile.coins - price, charms: got.box.owned, worn: got.box.worn } };
   }
@@ -289,7 +293,7 @@ export function collect(
   profile: TownProfile,
   coins: number,
   itemId: string | null,
-  slots = charmSlots(1)
+  slots = charmSlots(profile.hero.level)
 ): { profile: TownProfile; storedItem: boolean; charm?: { id: string; rank: number; wornNow: boolean } } {
   const next: TownProfile = { ...profile, coins: Math.min(MAX_DRIPS, profile.coins + Math.max(0, coins)), bag: { ...profile.bag } };
   const found = charmOfPickup(itemId);
